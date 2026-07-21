@@ -8,6 +8,7 @@ import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyRepor
 import { reportPeriod, type ReportPeriodPreset } from "../services/time";
 import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
+import { aiLanguageInstruction, draftFallback, normalizeAiLang, riskFallback, scheduleReason, taskFallback } from "../services/ai-language";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -90,19 +91,20 @@ aiRoutes.post("/draft-update", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const rawText = requiredString(body, "raw_text");
   const projectId = requiredString(body, "project_id");
+  const lang = normalizeAiLang(body.lang);
   if (!rawText || !projectId) return c.json({ error: "請提供雜記與專案" }, 422);
   const access = await getProjectAccess(c.env.DB, projectId);
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access) || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   try {
     const draft = await llmChat(c.env, [
-      { role: "system", content: "你是專案管理助理。將使用者雜記整理成繁體中文 Markdown，固定分為「本期進展」「風險或阻礙」「下一步」三段，每段用條列，不能捏造。只輸出草稿。" },
+      { role: "system", content: `${aiLanguageInstruction(lang)} Organize the notes as Markdown with exactly three sections covering progress, risks or blockers, and next steps. Use bullet points, do not invent facts, and output only the draft.` },
       { role: "user", content: rawText },
     ]);
     return c.json({ draft });
   } catch (error) {
     console.error(JSON.stringify({ message: "AI 快寫降級", error: error instanceof Error ? error.message : String(error) }));
-    return c.json({ draft: `## 本期進展\n- ${rawText}\n\n## 風險或阻礙\n- 待補充\n\n## 下一步\n- 待補充`, fallback: true });
+    return c.json({ draft: draftFallback(rawText, lang), fallback: true });
   }
 });
 
@@ -122,6 +124,7 @@ function validRisk(value: unknown): value is RiskResult {
 aiRoutes.post("/task-summary", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const taskId = requiredString(body, "task_id");
+  const lang = normalizeAiLang(body.lang);
   if (!taskId) return c.json({ error: "請提供任務" }, 422);
   const task = await c.env.DB.prepare("SELECT t.*,s.name AS stage_name FROM tasks t JOIN stages s ON s.id=t.stage_id WHERE t.id=?").bind(taskId).first<Record<string, unknown>>();
   if (!task) return c.json({ error: "找不到任務" }, 404);
@@ -131,7 +134,7 @@ aiRoutes.post("/task-summary", async (c) => {
   const source = JSON.stringify({ task, comments: comments.results });
   try {
     const text = await llmChat(c.env, [
-      { role: "system", content: "請用繁體中文回傳 JSON：{summary:string, unresolved:string[]}。summary 最多 3 句，unresolved 是未決事項，不可捏造。" },
+      { role: "system", content: `${aiLanguageInstruction(lang)} Return JSON only: {summary:string, unresolved:string[]}. Limit summary to three sentences; unresolved lists open items. Do not invent facts.` },
       { role: "user", content: source },
     ], { json: true });
     const parsed = parseLooseJson<{ summary?: unknown; unresolved?: unknown }>(text);
@@ -139,13 +142,14 @@ aiRoutes.post("/task-summary", async (c) => {
     throw new Error("AI 摘要格式不正確");
   } catch (error) {
     console.error(JSON.stringify({ message: "任務摘要降級", task_id: taskId, error: error instanceof Error ? error.message : String(error) }));
-    return c.json({ summary: `${String(task.title)}目前位於「${String(task.stage_name)}」，狀態為${Number(task.done) ? "已完成" : "進行中"}。${String(task.description || "尚無描述")}`, unresolved: comments.results.length ? ["請確認留言中的待辦與決議"] : ["尚無留言可判斷未決事項"], fallback: true });
+    return c.json({ ...taskFallback(task, comments.results.length, lang), fallback: true });
   }
 });
 
 aiRoutes.post("/project-risk", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const projectId = requiredString(body, "project_id");
+  const lang = normalizeAiLang(body.lang);
   if (!projectId) return c.json({ error: "請提供專案" }, 422);
   const access = await getProjectAccess(c.env.DB, projectId);
   if (!access) return c.json({ error: "找不到專案" }, 404);
@@ -166,7 +170,7 @@ aiRoutes.post("/project-risk", async (c) => {
   let fallback = false;
   try {
     const text = await llmChat(c.env, [
-      { role: "system", content: "你是專案風險分析師。只回 JSON：{level:'low'|'medium'|'high',summary:string,suggestions:string[]}，使用繁體中文且以輸入事實為限。" },
+      { role: "system", content: `${aiLanguageInstruction(lang)} You are a project risk analyst. Return JSON only: {level:'low'|'medium'|'high',summary:string,suggestions:string[]}. Use only facts from the input.` },
       { role: "user", content: JSON.stringify(input) },
     ], { json: true });
     const parsed = parseLooseJson<unknown>(text);
@@ -176,7 +180,7 @@ aiRoutes.post("/project-risk", async (c) => {
     fallback = true;
     const high = (overdueTasks ?? 0) + (overdueMilestones ?? 0) >= 3 || stagnationDays > 21 || elapsedRatio - Number(project.progress) / 100 > 0.3;
     const medium = (overdueTasks ?? 0) + (overdueMilestones ?? 0) > 0 || stagnationDays > 10 || elapsedRatio - Number(project.progress) / 100 > 0.15;
-    result = { level: high ? "high" : medium ? "medium" : "low", summary: high ? "時程、逾期項目或停滯指標顯示高風險。" : medium ? "目前有需要追蹤的時程或逾期訊號。" : "目前數據未顯示明顯風險。", suggestions: ["確認逾期任務與里程碑負責人", "更新下一步與目標日期"] };
+    result = riskFallback(high, medium, lang) as RiskResult;
     console.error(JSON.stringify({ message: "專案風險降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
   }
   await c.env.DB.prepare("UPDATE projects SET risk_level=?,risk_summary=?,risk_suggestions=?,risk_updated_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -209,6 +213,7 @@ function validateSuggestions(
 aiRoutes.post("/schedule-suggest", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const projectId = requiredString(body, "project_id");
+  const lang = normalizeAiLang(body.lang);
   if (!projectId) return c.json({ error: "請提供專案" }, 422);
   const access = await getProjectAccess(c.env.DB, projectId);
   if (!access) return c.json({ error: "找不到專案" }, 404);
@@ -228,7 +233,7 @@ aiRoutes.post("/schedule-suggest", async (c) => {
   let fallback = false;
   try {
     const text = await llmChat(c.env, [
-      { role: "system", content: "請為缺少日期的任務提出排程。只回 JSON：{suggestions:[{task_id,start_date,due_date,reason}]}。日期須在專案起訖內，前置任務 due_date 不得晚於後繼 start_date。" },
+      { role: "system", content: `${aiLanguageInstruction(lang)} Propose dates for tasks that have no schedule. Return JSON only: {suggestions:[{task_id,start_date,due_date,reason}]}. Dates must be within the project range, and each prerequisite due_date must be no later than the dependent task start_date.` },
       { role: "user", content: JSON.stringify({ project, tasks: tasks.results, dependencies: edges.results }) },
     ], { json: true });
     const parsed = parseLooseJson<{ suggestions?: unknown }>(text);
@@ -241,7 +246,7 @@ aiRoutes.post("/schedule-suggest", async (c) => {
       const startDate = task.start_date ?? cursor;
       const due = task.due_date ?? new Date(Math.min(new Date(`${project.target_date}T00:00:00Z`).getTime(), new Date(`${startDate}T00:00:00Z`).getTime() + 2 * 86_400_000)).toISOString().slice(0, 10);
       cursor = new Date(Math.min(new Date(`${project.target_date}T00:00:00Z`).getTime(), new Date(`${due}T00:00:00Z`).getTime() + 86_400_000)).toISOString().slice(0, 10);
-      return { task_id: task.id, start_date: startDate, due_date: due, reason: "依現有任務順序安排三日工作窗" };
+      return { task_id: task.id, start_date: startDate, due_date: due, reason: scheduleReason(lang) };
     });
     suggestions = validateSuggestions(raw, tasks.results, edges.results, project.start_date, project.target_date);
     console.error(JSON.stringify({ message: "排程建議降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
