@@ -5,6 +5,10 @@ export interface MailResult {
   response?: Record<string, unknown>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function sendMail(env: Env, to: string, subject: string, text: string, html?: string): Promise<MailResult> {
   if (!env.AGENTMAIL_API_KEY) {
     console.log(JSON.stringify({ message: "AGENTMAIL_API_KEY 未設定，略過 Email" }));
@@ -15,7 +19,8 @@ export async function sendMail(env: Env, to: string, subject: string, text: stri
     headers: { Authorization: `Bearer ${env.AGENTMAIL_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ to, subject, text, html }),
   });
-  const body: Record<string, unknown> = await response.json().catch(() => ({}));
+  const parsed: unknown = await response.json().catch(() => ({}));
+  const body = isRecord(parsed) ? parsed : {};
   if (!response.ok) throw new Error(`AgentMail HTTP ${response.status}`);
   const messageId = typeof body.message_id === "string" ? body.message_id : undefined;
   return { sent: true, message_id: messageId, response: body };
