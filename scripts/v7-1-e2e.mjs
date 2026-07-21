@@ -73,8 +73,8 @@ try {
 
   const unauthenticated = await request("/api/regwatch", {}, 401);
   const baseline = await request("/api/regwatch", auth(cookie), 200);
-  assert(baseline.body.total === 627, `expected 627 existing entries, got ${baseline.body.total}`);
-  report.regression = { unauthenticated: unauthenticated.response.status, regwatch_before: baseline.body.total };
+  const expectedBaseline = baseline.body.total === 627;
+  report.regression = { unauthenticated: unauthenticated.response.status, expected_regwatch: 627, regwatch_before: baseline.body.total, expected_baseline: expectedBaseline };
 
   const singleText = `這是一則獨立公告。發文日期：民國115年7月21日。文號：衛授食字第1157100001號。公告標題：V71 單則醫療器材標示修正公告。內容摘要：修正醫療器材標示與追溯要求。本公告只有下列三個修正項目，除這三項外沒有其他項目：一、外盒新增製造批號；二、說明書新增保存條件；三、植入物新增追溯碼。`;
   const single = await request("/api/regwatch/ai-extract", auth(cookie, "POST", { text: singleText, mode: "single" }), 200);
@@ -94,8 +94,10 @@ try {
   report.multi = { entries: multi.body.entries.length, dates };
 
   const after = await request("/api/regwatch", auth(cookie), 200);
-  assert(after.body.total === 627, `regwatch count changed to ${after.body.total}`);
+  assert(after.body.total === baseline.body.total, `regwatch count changed from ${baseline.body.total} to ${after.body.total}`);
   report.regression.regwatch_after = after.body.total;
+  report.regression.unchanged_during_e2e = true;
+  if (!expectedBaseline) throw new Error(`expected 627 existing entries, got ${baseline.body.total}`);
 } catch (error) {
   failure = error;
 } finally {
