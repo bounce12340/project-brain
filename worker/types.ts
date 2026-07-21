@@ -13,6 +13,7 @@ export interface AuthUser {
   must_change_password: number;
   email_notifications: number;
   onboarding_done: number;
+  approval_status: "pending" | "approved" | "rejected";
 }
 
 export interface ProjectAccess {

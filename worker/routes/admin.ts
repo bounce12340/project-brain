@@ -4,17 +4,84 @@ import { createId, writeAudit } from "../services/db";
 import { hashPassword, randomToken } from "../services/crypto";
 import { optionalString, requiredString } from "../services/http";
 import { sendMail } from "../services/mailer";
+import { canManageRegistrations } from "../services/registration";
 
 export const adminRoutes = new Hono<AppContext>();
 
 adminRoutes.use("*", async (c, next) => {
-  if (c.get("user").role !== "admin") return c.json({ error: "僅限管理員" }, 403);
+  if (!canManageRegistrations(c.get("user").role)) return c.json({ error: "僅限管理員" }, 403);
   return next();
 });
 
 adminRoutes.get("/users", async (c) => {
-  const result = await c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id ORDER BY u.is_active DESC,u.name").all();
+  const result = await c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.approval_status,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id ORDER BY CASE u.approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,u.is_active DESC,u.name").all();
   return c.json({ users: result.results });
+});
+
+adminRoutes.get("/registrations", async (c) => {
+  const [rows, enabled] = await Promise.all([
+    c.env.DB.prepare(`
+      SELECT u.id,u.name,u.email,u.role,u.group_id,u.created_at,g.name AS group_name
+      FROM users u JOIN groups g ON g.id=u.group_id
+      WHERE u.approval_status='pending'
+      ORDER BY u.created_at
+    `).all(),
+    c.env.DB.prepare("SELECT value FROM app_settings WHERE key='registration_enabled'").first<string>("value"),
+  ]);
+  return c.json({ registrations: rows.results, enabled: enabled === "1" });
+});
+
+adminRoutes.post("/registrations/:userId/approve", async (c) => {
+  const body: { role?: string; group_id?: string } = await c.req.json().catch(() => ({}));
+  const registration = await c.env.DB.prepare("SELECT id,name,email,role,group_id,approval_status FROM users WHERE id=?")
+    .bind(c.req.param("userId")).first<{ id: string; name: string; email: string; role: Role; group_id: string; approval_status: string }>();
+  if (!registration) return c.json({ error: "找不到註冊申請" }, 404);
+  if (registration.approval_status !== "pending") return c.json({ error: "此申請已處理" }, 422);
+  const role = (body.role ?? registration.role) as Role;
+  const groupId = body.group_id ?? registration.group_id;
+  if (!(["member", "intern"] as string[]).includes(role)) return c.json({ error: "核准角色只能是正職成員或實習生" }, 422);
+  const group = await c.env.DB.prepare("SELECT id FROM groups WHERE id=?").bind(groupId).first();
+  if (!group) return c.json({ error: "所選組別不存在" }, 422);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET approval_status='approved',role=?,group_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND approval_status='pending'").bind(role, groupId, registration.id),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(registration.id),
+  ]);
+  await writeAudit(c.env.DB, c.get("user"), "registration_approved", "user", registration.id, `核准註冊 ${registration.email}（${role}）`);
+  let emailSent = false;
+  try {
+    emailSent = (await sendMail(c.env, registration.email, "[艾爾水晶] 帳號已核准", `您好 ${registration.name}，您的帳號已核准，現在可以登入。\n\n${c.env.APP_BASE_URL}/login`)).sent;
+  } catch (error) {
+    console.error(JSON.stringify({ message: "registration approval email failed", error: error instanceof Error ? error.message : "unknown" }));
+  }
+  return c.json({ ok: true, email_sent: emailSent });
+});
+
+adminRoutes.post("/registrations/:userId/reject", async (c) => {
+  const registration = await c.env.DB.prepare("SELECT id,name,email,approval_status FROM users WHERE id=?")
+    .bind(c.req.param("userId")).first<{ id: string; name: string; email: string; approval_status: string }>();
+  if (!registration) return c.json({ error: "找不到註冊申請" }, 404);
+  if (registration.approval_status !== "pending") return c.json({ error: "此申請已處理" }, 422);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET approval_status='rejected',updated_at=CURRENT_TIMESTAMP WHERE id=? AND approval_status='pending'").bind(registration.id),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(registration.id),
+  ]);
+  await writeAudit(c.env.DB, c.get("user"), "registration_rejected", "user", registration.id, `拒絕註冊 ${registration.email}`);
+  let emailSent = false;
+  try {
+    emailSent = (await sendMail(c.env, registration.email, "[艾爾水晶] 註冊申請結果", `您好 ${registration.name}，很抱歉，您的帳號申請未通過。如有疑問，請聯絡系統管理員。`)).sent;
+  } catch (error) {
+    console.error(JSON.stringify({ message: "registration rejection email failed", error: error instanceof Error ? error.message : "unknown" }));
+  }
+  return c.json({ ok: true, email_sent: emailSent });
+});
+
+adminRoutes.post("/registration-toggle", async (c) => {
+  const body: { enabled?: unknown } = await c.req.json().catch(() => ({}));
+  if (typeof body.enabled !== "boolean") return c.json({ error: "enabled 必須是布林值" }, 422);
+  await c.env.DB.prepare("INSERT INTO app_settings (key,value) VALUES ('registration_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+    .bind(body.enabled ? "1" : "0").run();
+  await writeAudit(c.env.DB, c.get("user"), "registration_toggle", "setting", "registration_enabled", body.enabled ? "開放自助註冊" : "關閉自助註冊");
+  return c.json({ enabled: body.enabled });
 });
 
 adminRoutes.post("/users", async (c) => {
@@ -48,6 +115,13 @@ adminRoutes.patch("/users/:id", async (c) => {
 
 adminRoutes.delete("/users/:id", async (c) => {
   if (c.req.param("id") === c.get("user").id) return c.json({ error: "不可停用目前登入帳號" }, 422);
+  const target = await c.env.DB.prepare("SELECT email,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ email: string; approval_status: string }>();
+  if (!target) return c.json({ error: "找不到使用者" }, 404);
+  if (target.approval_status === "pending" || target.approval_status === "rejected") {
+    await c.env.DB.prepare("DELETE FROM users WHERE id=?").bind(c.req.param("id")).run();
+    await writeAudit(c.env.DB, c.get("user"), "delete", "user", c.req.param("id"), `刪除未核准帳號 ${target.email}`);
+    return c.json({ ok: true, deleted: true });
+  }
   await c.env.DB.prepare("UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.req.param("id")).run();
   await writeAudit(c.env.DB, c.get("user"), "deactivate", "user", c.req.param("id"), "停用帳號");
   return c.json({ ok: true });

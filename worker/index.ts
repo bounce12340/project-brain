@@ -10,6 +10,7 @@ import { aiRoutes, reportsRoutes } from "./routes/reports";
 import { runDailyReminders } from "./services/cron";
 import { regenerateWeeklyReports } from "./services/reports";
 import { v2Routes } from "./routes/v2";
+import { registerRoutes } from "./routes/register";
 
 const app = new Hono<AppContext>();
 
@@ -22,6 +23,7 @@ app.use("/api/*", originGuard);
 app.use("/api/*", sessionAuth);
 app.get("/api/health", (c) => c.json({ ok: true, service: "project-brain" }));
 app.route("/api/auth", authRoutes);
+app.route("/api/register", registerRoutes);
 app.route("/api/projects", projectsRoutes);
 app.route("/api", resourcesRoutes);
 app.route("/api", generalRoutes);

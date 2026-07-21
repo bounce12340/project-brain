@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppContext, AuthUser } from "../types";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../services/crypto";
+import { approvalLoginError, type ApprovalStatus } from "../services/registration";
 
 export const authRoutes = new Hono<AppContext>();
 
@@ -11,7 +12,7 @@ authRoutes.post("/login", async (c) => {
   if (!email || !body.password) return c.json({ error: "請輸入 Email 與密碼" }, 422);
   const account = await c.env.DB.prepare(`
     SELECT u.*, g.name AS group_name, g.type AS group_type FROM users u JOIN groups g ON g.id = u.group_id WHERE u.email = ?
-  `).bind(email).first<AuthUser & { password_hash: string; is_active: number; failed_count: number; locked_until: string | null }>();
+  `).bind(email).first<AuthUser & { password_hash: string; is_active: number; failed_count: number; locked_until: string | null; approval_status: ApprovalStatus }>();
   if (!account || account.is_active !== 1) return c.json({ error: "帳號或密碼錯誤" }, 401);
   if (account.locked_until && new Date(account.locked_until).getTime() > Date.now()) return c.json({ error: "登入失敗次數過多，請稍後再試" }, 423);
   if (!(await verifyPassword(body.password, account.password_hash))) {
@@ -21,6 +22,8 @@ authRoutes.post("/login", async (c) => {
       .bind(nextCount >= 5 ? 0 : nextCount, lockedUntil, account.id).run();
     return c.json({ error: "帳號或密碼錯誤" }, 401);
   }
+  const approvalError = approvalLoginError(account.approval_status);
+  if (approvalError) return c.json({ error: approvalError }, 403);
   const token = randomToken();
   const sessionId = await sha256(token);
   const expiresAt = new Date(Date.now() + 30 * 86_400_000);

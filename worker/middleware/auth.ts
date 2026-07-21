@@ -3,7 +3,13 @@ import { getCookie, setCookie } from "hono/cookie";
 import type { AppContext, AuthUser } from "../types";
 import { sha256 } from "../services/crypto";
 
-const PUBLIC_PATHS = new Set(["/api/health", "/api/auth/login"]);
+const PUBLIC_PATHS = new Set([
+  "/api/health",
+  "/api/auth/login",
+  "/api/register/meta",
+  "/api/register/send-code",
+  "/api/register/submit",
+]);
 const PASSWORD_PATHS = new Set(["/api/auth/me", "/api/auth/logout", "/api/auth/change-password"]);
 
 export const originGuard: MiddlewareHandler<AppContext> = async (c, next) => {
@@ -22,9 +28,9 @@ export const sessionAuth: MiddlewareHandler<AppContext> = async (c, next) => {
   const sessionId = await sha256(token);
   const user = await c.env.DB.prepare(`
     SELECT u.id, u.email, u.name, u.role, u.group_id, g.name AS group_name, g.type AS group_type,
-           u.must_change_password, u.email_notifications, u.onboarding_done
+           u.must_change_password, u.email_notifications, u.onboarding_done, u.approval_status
     FROM sessions s JOIN users u ON u.id = s.user_id JOIN groups g ON g.id = u.group_id
-    WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1
+    WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1 AND u.approval_status = 'approved'
   `).bind(sessionId).first<AuthUser>();
   if (!user) return c.json({ error: "登入已失效" }, 401);
   const expiresAt = new Date(Date.now() + 30 * 86_400_000);
