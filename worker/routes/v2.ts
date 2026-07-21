@@ -6,6 +6,7 @@ import { r2FileStore } from "../services/filestore";
 import { optionalString, requiredString } from "../services/http";
 import { parseMentionedUserIds } from "../services/mentions";
 import { canEditProgress, canManageAutomation, canViewProject } from "../services/permissions";
+import { groupTimelineProjects } from "../services/timeline";
 import { isValidRuleCombination, type ActionType, type TriggerType } from "../services/automation";
 import { accessFrom, projectRows } from "./projects";
 
@@ -215,6 +216,13 @@ v2Routes.delete("/rules/:id", async (c) => {
 
 v2Routes.get("/timeline", async (c) => {
   const user = c.get("user");
-  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group: row.group_name }));
-  return c.json({ projects });
+  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }> }));
+  if (projects.length) {
+    const marks = projects.map(() => "?").join(",");
+    const tasks = await c.env.DB.prepare(`SELECT t.id,t.project_id,t.title,t.start_date,t.due_date,t.created_at,t.done,u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id IN (${marks}) ORDER BY t.position,t.created_at`).bind(...projects.map((project) => project.id)).all<{ id: string; project_id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }>();
+    const byProject = new Map<string, typeof tasks.results>();
+    for (const task of tasks.results) byProject.set(task.project_id, [...(byProject.get(task.project_id) ?? []), task]);
+    for (const project of projects) project.tasks = byProject.get(project.id) ?? [];
+  }
+  return c.json({ groups: groupTimelineProjects(projects) });
 });
