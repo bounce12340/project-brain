@@ -15,3 +15,8 @@
 - 2026-07-21（v2）：AI 三功能若外部 LLM 與 Workers AI 都失敗，回傳相同 JSON shape 的規則式 fallback 並標記 `fallback=true`，避免 UI 中斷。
 - 2026-07-21（v2）：驗收指定由 `bd1` 在 `prj_bd` 提及陳收案；因提及名單依法只含可見專案者，0003 將 demo 使用者 `usr_clinical2` 加入該 demo 專案成員，不調整任何權限函式或 admin 資料。
 - 2026-07-21（v2）：正式唯讀驗收發現 `usr_admin.must_change_password=0` 且已有既存 active session（`updated_at=2026-07-21 02:42:40 UTC`）；依「不得碰 admin」限制不修正、不撤銷 session，於 ACCEPTANCE-V2 如實標 FAIL。
+- 2026-07-21（v3）：規格未指定「公司 Email」的網域白名單，因此只驗證一般 Email 格式；不臆測或硬編公司網域。
+- 2026-07-21（v3）：同 IP 每日上限採 send-code 10 次、submit 20 次；僅以 SHA-256 後的 IP 與台北日期存入 `registration_rate_limits`，不保存原始 IP。
+- 2026-07-21（v3）：`usr_admin.updated_at` 開工唯讀基線為 `2026-07-21 02:42:40` UTC；本輪不登入、不修改、不重設、不刪除該帳號，結案再唯讀比對。
+- 2026-07-21（v3）：驗證碼先寫入 D1 再寄信；若 AgentMail 未設定或寄送失敗，立即刪除該筆驗證資料並回 503，絕不建立未驗證帳號。
+- 2026-07-21（v3）：核准／拒絕的資料狀態與 audit log 是主流程；若通知信臨時失敗，狀態仍保留並以 `email_sent=false` 回報，避免重複核准造成資料不一致。
