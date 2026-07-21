@@ -1,19 +1,23 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, Protected } from "./auth";
 import { Layout } from "./components/Layout";
-import { AdminPage } from "./pages/AdminPage";
-import { ChangePasswordPage } from "./pages/ChangePasswordPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { LoginPage } from "./pages/LoginPage";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { ProjectDetailPage } from "./pages/ProjectDetailPage";
-import { ProjectsPage } from "./pages/ProjectsPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { TodosPage } from "./pages/TodosPage";
+
+const AdminPage = lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
+const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then((m) => ({ default: m.ChangePasswordPage })));
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const HelpPage = lazy(() => import("./pages/HelpPage").then((m) => ({ default: m.HelpPage })));
+const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then((m) => ({ default: m.NotificationsPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
+const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage").then((m) => ({ default: m.ProjectDetailPage })));
+const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
+const TimelinePage = lazy(() => import("./pages/TimelinePage").then((m) => ({ default: m.TimelinePage })));
+const TodosPage = lazy(() => import("./pages/TodosPage").then((m) => ({ default: m.TodosPage })));
 
 const page = (content: React.ReactNode, admin = false) => <Protected admin={admin}><Layout>{content}</Layout></Protected>;
 
 export function App() {
-  return <AuthProvider><Routes><Route path="/login" element={<LoginPage />} /><Route path="/change-password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={page(<DashboardPage />)} /><Route path="/projects" element={page(<ProjectsPage />)} /><Route path="/projects/:id" element={page(<ProjectDetailPage />)} /><Route path="/reports" element={page(<ReportsPage />)} /><Route path="/todos" element={page(<TodosPage />)} /><Route path="/notifications" element={page(<NotificationsPage />)} /><Route path="/admin" element={page(<AdminPage />, true)} /><Route path="/profile" element={page(<ProfilePage />)} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></AuthProvider>;
+  return <AuthProvider><Suspense fallback={<div className="grid min-h-screen place-items-center text-slate-500">載入中…</div>}><Routes><Route path="/login" element={<LoginPage />} /><Route path="/change-password" element={<Protected><ChangePasswordPage /></Protected>} /><Route path="/" element={page(<DashboardPage />)} /><Route path="/projects" element={page(<ProjectsPage />)} /><Route path="/projects/:id" element={page(<ProjectDetailPage />)} /><Route path="/timeline" element={page(<TimelinePage />)} /><Route path="/reports" element={page(<ReportsPage />)} /><Route path="/todos" element={page(<TodosPage />)} /><Route path="/notifications" element={page(<NotificationsPage />)} /><Route path="/help" element={page(<HelpPage />)} /><Route path="/admin" element={page(<AdminPage />, true)} /><Route path="/profile" element={page(<ProfilePage />)} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></Suspense></AuthProvider>;
 }

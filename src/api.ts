@@ -3,10 +3,11 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const isForm = options.body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     ...options,
     credentials: "include",
-    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    headers: { ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   const body: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -14,6 +15,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new ApiError(typeof value.error === "string" ? value.error : `HTTP ${response.status}`, response.status, typeof value.code === "string" ? value.code : undefined);
   }
   return body as T;
+}
+
+export async function apiDownload(path: string): Promise<Blob> {
+  const response = await fetch(`/api${path}`, { credentials: "include" });
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => ({}));
+    throw new ApiError(typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : `HTTP ${response.status}`, response.status);
+  }
+  return await response.blob();
 }
 
 export const jsonBody = (value: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(value) });

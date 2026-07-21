@@ -1,3 +1,5 @@
+import { recomputeAutoProgress } from "./auto-progress";
+
 export type TriggerType = "task_done" | "task_moved_to_stage" | "milestone_done" | "progress_reached";
 export type ActionType = "notify_user" | "assign_task_to" | "create_todo_for" | "log_update";
 
@@ -56,6 +58,7 @@ export async function runAutomationRules(
   const rules = await db.prepare("SELECT * FROM automation_rules WHERE project_id=? AND enabled=1 ORDER BY created_at")
     .bind(projectId).all<StoredRule>();
   let fired = 0;
+  let createdTodo = false;
   for (const rule of rules.results) {
     const event = events.find((candidate) => ruleMatches(rule, candidate));
     if (!event) continue;
@@ -68,6 +71,7 @@ export async function runAutomationRules(
     } else if (rule.action_type === "create_todo_for" && rule.action_param_user) {
       await db.prepare("INSERT INTO todos (id,user_id,title,project_id) VALUES (?,?,?,?)")
         .bind(id("todo"), rule.action_param_user, rule.action_param_text || `處理自動化：${rule.name}`, projectId).run();
+      createdTodo = true;
     } else if (rule.action_type === "log_update") {
       await db.prepare("INSERT INTO progress_updates (id,project_id,author_id,content,progress_snapshot) SELECT ?,?,?,?,progress FROM projects WHERE id=?")
         .bind(id("upd"), projectId, actorId, rule.action_param_text || `自動化規則「${rule.name}」已觸發`, projectId).run();
@@ -76,5 +80,6 @@ export async function runAutomationRules(
       .bind(id("audit"), actorId, "automation_fired", "automation_rule", rule.id, `觸發規則「${rule.name}」`).run();
     fired += 1;
   }
+  if (createdTodo) await recomputeAutoProgress(db, projectId, actorId);
   return fired;
 }

@@ -7,3 +7,9 @@
 - 2026-07-21：Markdown 以安全的 React text node 最小渲染器呈現標題、粗體與清單，不使用 `dangerouslySetInnerHTML`，也不新增大型套件。
 - 2026-07-21：CSV 使用 UTF-8 BOM，讓台灣常用的 Excel 可直接正確顯示繁體中文。
 - 2026-07-21：預先生成的公司／組別 AI 週報可能包含該範圍內的保密專案，因此僅 admin 可讀；member 與 intern 仍可使用依個人可見專案即時計算的報表摘要，避免跨權限洩漏。
+- 2026-07-21（v2）：migration 為既有專案設定 `progress_mode=manual`；建立新專案時 API 明確寫入 `auto`，避免改變 v1 既有資料語意。
+- 2026-07-21（v2）：風險建議以新增 `projects.risk_suggestions` JSON 文字欄保存，`risk_summary` 維持單純摘要，讓畫面可分開呈現且不需新增資料表。
+- 2026-07-21（v2）：R2 經 `FileStore` 介面封裝；本次先使用 `FILES` binding，只有實際部署因 R2 權限失敗才依規格改用 KV fallback。
+- 2026-07-21（v2）：`/api/ai/schedule-suggest` 同時支援預覽與 `apply=true`，套用時由後端再次驗證專案日期範圍與任務依賴。
+- 2026-07-21（v2）：首次導覽跨頁尋找第一個可見專案與任務；若當下沒有可聚焦元素，仍顯示置中說明泡泡，使用者可完成或略過。
+- 2026-07-21（v2）：AI 三功能若外部 LLM 與 Workers AI 都失敗，回傳相同 JSON shape 的規則式 fallback 並標記 `fallback=true`，避免 UI 中斷。

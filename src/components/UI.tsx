@@ -12,6 +12,13 @@ export function Empty({ children }: { children: ReactNode }) { return <div class
 export function ErrorBox({ message }: { message: string }) { return <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</div>; }
 export function Loading() { return <div className="py-20 text-center text-slate-500">載入中…</div>; }
 
+export function RiskBadge({ level }: { level?: string | null }) {
+  if (!level) return <span className="badge">未分析</span>;
+  const style = level === "high" ? "bg-red-100 text-red-700" : level === "medium" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+  const label = level === "high" ? "高風險" : level === "medium" ? "中風險" : "低風險";
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}>{label}</span>;
+}
+
 export function Markdown({ content }: { content: string }) {
   const lines = content.split("\n");
   return <div className="space-y-2 text-sm leading-6">{lines.map((line, index) => {

@@ -105,7 +105,7 @@ v2Routes.get("/projects/:id/files", async (c) => {
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const result = await c.env.DB.prepare("SELECT f.*,u.name AS uploaded_by_name,t.title AS task_title FROM files f JOIN users u ON u.id=f.uploaded_by LEFT JOIN tasks t ON t.id=f.task_id WHERE f.project_id=? ORDER BY f.created_at DESC").bind(projectId).all();
-  return c.json({ files: result.results });
+  return c.json({ files: result.results.map((file) => ({ ...file, can_delete: c.get("user").role === "admin" || access.owner_id === c.get("user").id || file.uploaded_by === c.get("user").id })) });
 });
 
 v2Routes.post("/projects/:id/files", async (c) => {
@@ -216,4 +216,3 @@ v2Routes.get("/timeline", async (c) => {
   const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group: row.group_name }));
   return c.json({ projects });
 });
-

@@ -1,27 +1,32 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Line, LineChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, formatDate, patchBody, today } from "../api";
-import { Kanban } from "../components/Kanban";
-import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar } from "../components/UI";
+import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import type { BdCase, Metadata, ProjectDetail } from "../types";
+import { TaskWorkspace } from "../components/TaskViews";
+import { ProjectFiles } from "../components/ProjectFiles";
+import { AutomationPanel } from "../components/AutomationPanel";
 
-const baseTabs = [["overview", "總覽"], ["board", "看板"], ["updates", "進度紀錄"]] as const;
+const baseTabs = [["overview", "總覽"], ["tasks", "任務"], ["updates", "進度紀錄"]] as const;
 
 export function ProjectDetailPage() {
-  const { id = "" } = useParams(); const navigate = useNavigate(); const [data, setData] = useState<ProjectDetail | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [tab, setTab] = useState("overview"); const [error, setError] = useState("");
+  const { id = "" } = useParams(); const navigate = useNavigate(); const [params] = useSearchParams(); const [data, setData] = useState<ProjectDetail | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [tab, setTab] = useState("overview"); const [error, setError] = useState("");
   const load = () => api<ProjectDetail>(`/projects/${id}`).then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : "載入失敗"));
   useEffect(() => { void load(); }, [id]); useEffect(() => { void api<Metadata>("/metadata").then(setMeta); }, []);
+  useEffect(() => { if (params.get("tour") === "automation") setTab("automation"); else if (params.get("tour") === "tasks" || params.get("task")) setTab("tasks"); }, [params]);
   if (error) return <ErrorBox message={error} />; if (!data) return <Loading />;
-  const tabs = [...baseTabs, ...(data.project.group_type === "clinical" ? [["clinical", "臨床"]] as const : []), ...(data.project.group_type === "bd" ? [["bd", "BD"]] as const : [])];
+  const tabs = [...baseTabs, ...(data.project.group_type === "clinical" ? [["clinical", "臨床"]] as const : []), ...(data.project.group_type === "bd" ? [["bd", "BD"]] as const : []), ["files", "檔案"], ["automation", "自動化"]] as const;
   const remove = async () => { if (window.confirm("刪除後無法復原，確定刪除此專案？")) { await api(`/projects/${id}`, { method: "DELETE" }); navigate("/projects"); } };
   return <><PageHeader title={`${data.project.visibility === "private" ? "🔒 " : ""}${data.project.name}`} description={`${data.project.group_name} · Owner：${data.project.owner_name}`} actions={<div className="flex gap-2"><span className="badge">{statusLabel[data.project.status]}</span>{data.permissions.can_manage && <button className="btn-danger !py-1.5" onClick={() => void remove()}>刪除</button>}</div>} />
-    <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">{tabs.map(([key, label]) => <button key={key} className={`border-b-2 px-4 py-3 text-sm font-medium ${tab === key ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500"}`} onClick={() => setTab(key)}>{label}</button>)}</div>
+    <div data-tour="project-tabs" className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">{tabs.map(([key, label]) => <button key={key} className={`border-b-2 px-4 py-3 text-sm font-medium ${tab === key ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500"}`} onClick={() => setTab(key)}>{label}</button>)}</div>
     {tab === "overview" && <Overview data={data} metadata={meta} reload={load} />}
-    {tab === "board" && <Kanban projectId={id} initialStages={data.stages} initialTasks={data.tasks} canEdit={data.permissions.can_edit} onReload={load} />}
+    {tab === "tasks" && <TaskWorkspace data={data} metadata={meta} reload={load} />}
     {tab === "updates" && <Updates data={data} reload={load} />}
     {tab === "clinical" && <Clinical data={data} reload={load} />}
     {tab === "bd" && <Bd data={data} reload={load} />}
+    {tab === "files" && <ProjectFiles projectId={id} canEdit={data.permissions.can_edit} onChanged={load} />}
+    {tab === "automation" && <AutomationPanel data={data} metadata={meta} />}
   </>;
 }
 
@@ -29,14 +34,18 @@ const statusLabel: Record<string, string> = { active: "進行中", paused: "暫�
 const submitData = (event: FormEvent<HTMLFormElement>) => Object.fromEntries(new FormData(event.currentTarget).entries());
 
 function Overview({ data, metadata, reload }: { data: ProjectDetail; metadata: Metadata | null; reload(): void }) {
-  const [progress, setProgress] = useState(data.project.progress);
+  const [progress, setProgress] = useState(data.project.progress); const [riskBusy, setRiskBusy] = useState(false); const [riskError, setRiskError] = useState("");
+  useEffect(() => setProgress(data.project.progress), [data.project.progress]);
   const saveProgress = async () => { await api(`/projects/${data.project.id}`, patchBody({ progress })); reload(); };
   const addMilestone = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); await api(`/projects/${data.project.id}/milestones`, { method: "POST", body: JSON.stringify(submitData(event)) }); event.currentTarget.reset(); reload(); };
   const toggleMilestone = async (id: string, done: boolean) => { await api(`/milestones/${id}`, patchBody({ done })); reload(); };
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); await api(`/projects/${data.project.id}`, patchBody(submitData(event))); reload(); };
   const addMember = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); await api(`/projects/${data.project.id}/members`, { method: "POST", body: JSON.stringify(submitData(event)) }); reload(); };
   const archive = async () => { await api(`/projects/${data.project.id}/${data.project.status === "archived" ? "unarchive" : "archive"}`, { method: "POST" }); reload(); };
-  return <div className="grid gap-6 lg:grid-cols-3"><div className="space-y-6 lg:col-span-2"><section className="card"><h2 className="mb-3 font-bold">專案目標</h2><p className="text-sm leading-6 text-slate-600">{data.project.goal_summary || "尚未設定專案目標。"}</p><div className="mt-6"><div className="mb-2 flex justify-between text-sm"><span>整體進度</span><span className="font-bold">{progress}%</span></div><input className="w-full" type="range" min="0" max="100" value={progress} disabled={!data.permissions.can_edit} onChange={(e) => setProgress(Number(e.target.value))} />{data.permissions.can_edit && <button className="btn mt-3" onClick={() => void saveProgress()}>儲存進度</button>}</div></section>
+  const analyzeRisk = async () => { setRiskBusy(true); setRiskError(""); try { await api("/ai/project-risk", { method: "POST", body: JSON.stringify({ project_id: data.project.id }) }); reload(); } catch (cause) { setRiskError(cause instanceof Error ? cause.message : "分析失敗"); } finally { setRiskBusy(false); } };
+  const suggestions = (() => { try { const parsed: unknown = JSON.parse(data.project.risk_suggestions || "[]"); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; } catch { return []; } })();
+  return <div className="grid gap-6 lg:grid-cols-3"><div className="space-y-6 lg:col-span-2"><section className="card"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">專案目標</h2>{data.permissions.can_manage && <label className="flex items-center gap-2 text-sm">進度模式<select value={data.project.progress_mode} onChange={(e) => void api(`/projects/${data.project.id}`, patchBody({ progress_mode: e.target.value })).then(reload)}><option value="manual">手動</option><option value="auto">自動</option></select></label>}</div><p className="mt-3 text-sm leading-6 text-slate-600">{data.project.goal_summary || "尚未設定專案目標。"}</p><div className="mt-6"><div className="mb-2 flex justify-between text-sm"><span>整體進度 {data.project.progress_mode === "auto" && <span className="text-brand-600">（依任務、里程碑與待辦自動計算）</span>}</span><span className="font-bold">{progress}%</span></div>{data.project.progress_mode === "manual" ? <><input className="w-full" type="range" min="0" max="100" value={progress} disabled={!data.permissions.can_edit} onChange={(e) => setProgress(Number(e.target.value))} />{data.permissions.can_edit && <button className="btn mt-3" onClick={() => void saveProgress()}>儲存進度</button>}</> : <ProgressBar value={data.project.progress} />}</div></section>
+    <section className="card"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3"><h2 className="font-bold">AI 專案風險</h2><RiskBadge level={data.project.risk_level} /></div>{data.permissions.can_edit && <button className="btn-secondary" disabled={riskBusy} onClick={() => void analyzeRisk()}>{riskBusy ? "分析中…" : "重新分析"}</button>}</div>{riskError && <ErrorBox message={riskError} />}<p className="mt-4 text-sm leading-6 text-slate-600">{data.project.risk_summary || "尚未分析；可依時程、逾期與最近進度產生風險預測。"}</p>{suggestions.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">{suggestions.map((item) => <li key={item}>{item}</li>)}</ul>}</section>
     <section className="card"><h2 className="mb-4 font-bold">里程碑</h2><div className="space-y-2">{data.milestones.map((item) => <label className={`flex items-center gap-3 rounded-lg border p-3 ${!item.done && item.due_date && item.due_date < today() ? "border-red-200 bg-red-50" : "border-slate-100"}`} key={item.id}><input type="checkbox" checked={!!item.done} disabled={!data.permissions.can_edit} onChange={(e) => void toggleMilestone(item.id, e.target.checked)} /><span className={`flex-1 text-sm ${item.done ? "text-slate-400 line-through" : ""}`}>{item.title}</span><span className="text-xs text-slate-500">{item.due_date || "未排程"}</span></label>)}</div>{data.permissions.can_edit && <form className="mt-4 flex flex-wrap gap-2" onSubmit={addMilestone}><input name="title" placeholder="新增里程碑" required /><input name="due_date" type="date" /><button className="btn">新增</button></form>}</section></div>
     <aside className="space-y-6"><section className="card"><h2 className="mb-3 font-bold">專案資訊</h2><dl className="space-y-3 text-sm"><div><dt className="text-slate-400">起始日</dt><dd>{data.project.start_date || "—"}</dd></div><div><dt className="text-slate-400">目標日</dt><dd>{data.project.target_date || "—"}</dd></div><div><dt className="text-slate-400">最近活動</dt><dd>{formatDate(data.project.last_activity_at, true)}</dd></div></dl></section>
     <section className="card"><h2 className="mb-3 font-bold">成員</h2><div className="space-y-2">{data.members.map((member) => <div className="flex justify-between text-sm" key={member.id}><span>{member.name}<span className="ml-1 text-xs text-slate-400">{member.role}</span></span>{data.permissions.can_manage && <button className="text-xs text-red-500" onClick={() => void api(`/projects/${data.project.id}/members/${member.id}`, { method: "DELETE" }).then(reload)}>移除</button>}</div>)}</div>{data.permissions.can_manage && metadata && <form className="mt-4 flex gap-2" onSubmit={addMember}><select className="min-w-0 flex-1" name="user_id">{metadata.users.filter((user) => !data.members.some((member) => member.id === user.id) && user.id !== data.project.owner_id).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select><button className="btn !px-3">加入</button></form>}</section>

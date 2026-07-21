@@ -10,6 +10,7 @@ describe("v2 core", () => {
   it("keeps current progress when denominator is zero", () => expect(calculateAutoProgress({ completedTasks: 0, totalTasks: 0, completedMilestones: 0, totalMilestones: 0, completedTodos: 0, totalTodos: 0 }, 42)).toBe(42));
   it("parses and de-duplicates known mentions", () => expect(parseMentionedUserIds("請 @陳收案 與 @陳收案 確認", [{ id: "u1", name: "陳收案" }])).toEqual(["u1"]));
   it("ignores unknown mentions", () => expect(parseMentionedUserIds("@不存在 請確認", [{ id: "u1", name: "陳收案" }])).toEqual([]));
+  it("does not match a longer unknown name", () => expect(parseMentionedUserIds("@陳收案助理 請確認", [{ id: "u1", name: "陳收案" }])).toEqual([]));
   it("normalizes mention width and case", () => expect(parseMentionedUserIds("＠ＡＬＩＣＥ 請確認".replace("＠", "@"), [{ id: "u1", name: "Alice" }])).toEqual(["u1"]));
   it("rejects a direct dependency cycle", () => expect(wouldCreateDependencyCycle("a", "b", [{ task_id: "b", depends_on_task_id: "a" }])).toBe(true));
   it("rejects a transitive dependency cycle", () => expect(wouldCreateDependencyCycle("a", "b", [{ task_id: "b", depends_on_task_id: "c" }, { task_id: "c", depends_on_task_id: "a" }])).toBe(true));
@@ -23,4 +24,3 @@ describe("v2 core", () => {
   it("blocks assignment for non-task triggers", () => expect(isValidRuleCombination("progress_reached", "assign_task_to")).toBe(false));
   it("allows assignment for task triggers", () => expect(isValidRuleCombination("task_done", "assign_task_to")).toBe(true));
 });
-

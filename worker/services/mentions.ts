@@ -6,6 +6,8 @@ function normalize(value: string): string {
 
 export function parseMentionedUserIds(content: string, users: Mentionable[]): string[] {
   const normalized = normalize(content);
-  return users.filter((user) => normalized.includes(`@${normalize(user.name)}`)).map((user) => user.id);
+  return users.filter((user) => {
+    const name = normalize(user.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`@${name}(?=$|[\\s.,，。!！?？、:：;；()（）\\[\\]{}])`, "u").test(normalized);
+  }).map((user) => user.id);
 }
-
