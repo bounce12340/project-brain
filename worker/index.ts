@@ -11,6 +11,8 @@ import { runDailyReminders } from "./services/cron";
 import { regenerateWeeklyReports } from "./services/reports";
 import { v2Routes } from "./routes/v2";
 import { registerRoutes } from "./routes/register";
+import { v6Routes } from "./routes/v6";
+import { importRoutes } from "./routes/import";
 
 const app = new Hono<AppContext>();
 
@@ -28,8 +30,10 @@ app.route("/api/projects", projectsRoutes);
 app.route("/api", resourcesRoutes);
 app.route("/api", generalRoutes);
 app.route("/api", v2Routes);
+app.route("/api", v6Routes);
 app.route("/api/reports", reportsRoutes);
 app.route("/api/ai", aiRoutes);
+app.route("/api/admin", importRoutes);
 app.route("/api/admin", adminRoutes);
 app.notFound((c) => c.json({ error: "找不到資源" }, 404));
 

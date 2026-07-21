@@ -238,7 +238,7 @@ adminRoutes.post("/groups", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const name = requiredString(body, "name");
   const type = requiredString(body, "type");
-  if (!name || !type || !["clinical", "bd", "general"].includes(type)) return c.json({ error: "組別資料不正確" }, 422);
+  if (!name || !type || !["clinical", "bd", "general", "qa"].includes(type)) return c.json({ error: "組別資料不正確" }, 422);
   const id = createId("grp");
   await c.env.DB.prepare("INSERT INTO groups (id,name,type) VALUES (?,?,?)").bind(id, name, type).run();
   await writeAudit(c.env.DB, c.get("user"), "create", "group", id, `建立組別「${name}」`);

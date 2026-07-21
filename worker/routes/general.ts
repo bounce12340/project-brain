@@ -4,7 +4,7 @@ import { createId, getProjectAccess, touchProject } from "../services/db";
 import { optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { accessFrom, projectRows } from "./projects";
-import { taipeiDate } from "../services/time";
+import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 
@@ -23,6 +23,9 @@ generalRoutes.get("/dashboard", async (c) => {
   let updates: Record<string, unknown>[] = [];
   let enrollments: Record<string, unknown>[] = [];
   let fees: Record<string, unknown>[] = [];
+  let licenseAlerts: Record<string, unknown>[] = [];
+  const quarter = currentTaipeiQuarter();
+  let keyResults = { completed: 0, total: 0 };
   if (ids.length) {
     const inList = placeholders(ids.length);
     const [overdueResult, updateResult, enrollmentResult] = await Promise.all([
@@ -35,6 +38,12 @@ generalRoutes.get("/dashboard", async (c) => {
     enrollments = enrollmentResult.results;
     const feeIds = visible.filter((row) => canViewFees(user, accessFrom(row))).map((row) => row.id);
     if (feeIds.length) fees = (await c.env.DB.prepare(`SELECT substr(fee_date,1,7) AS month,currency,SUM(amount) AS total FROM bd_fees WHERE project_id IN (${placeholders(feeIds.length)}) GROUP BY month,currency ORDER BY month`).bind(...feeIds).all<Record<string, unknown>>()).results;
+    const krCounts = await c.env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN status='完成' THEN 1 ELSE 0 END) AS completed FROM key_results WHERE quarter=? AND project_id IN (${inList})`).bind(quarter, ...ids).first<{ completed: number | null; total: number }>();
+    keyResults = { completed: Number(krCounts?.completed ?? 0), total: Number(krCounts?.total ?? 0) };
+    if (user.role === "admin" || user.group_id === "grp_qa") {
+      const qaIds = visible.filter((row) => row.group_type === "qa").map((row) => row.id);
+      if (qaIds.length) licenseAlerts = (await c.env.DB.prepare(`SELECT l.id,l.name,l.subject,l.expires_at,l.status,p.id AS project_id,p.name AS project_name FROM licenses l JOIN projects p ON p.id=l.project_id WHERE l.status!='已停用' AND l.expires_at<=? AND l.project_id IN (${placeholders(qaIds.length)}) ORDER BY l.expires_at`).bind(addDaysForDashboard(today, 90), ...qaIds).all<Record<string, unknown>>()).results;
+    }
   }
   const todoCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM todos WHERE user_id=? AND done=0 AND due_date=?").bind(user.id, today).first<number>("value");
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
@@ -49,8 +58,15 @@ generalRoutes.get("/dashboard", async (c) => {
     kpis: { active_projects: visible.filter((row) => row.status === "active").length, overdue_milestones: overdue, today_todos: todoCount ?? 0, week_updates: weekUpdates ?? 0 },
     projects: visible.map(({ member_ids_csv: _memberIds, ...row }) => row), recent_updates: updates,
     charts: { group_status: [...groupStatus.values()], clinical_enrollments: enrollments, bd_fees: fees },
+    v6: { quarter, key_results: keyResults, license_alerts: licenseAlerts },
   });
 });
+
+function addDaysForDashboard(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
 
 generalRoutes.get("/metadata", async (c) => {
   const [groups, templates, users] = await Promise.all([

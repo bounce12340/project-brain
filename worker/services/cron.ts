@@ -3,6 +3,7 @@ import { createId } from "./db";
 import { sendMail } from "./mailer";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
+import { licenseNotificationStage } from "./licenses";
 
 interface Recipient { id: string; email: string; email_notifications: number }
 interface ReminderSource { project_id: string; project_name: string; owner_id: string; group_id: string }
@@ -23,13 +24,15 @@ async function projectRecipients(db: D1Database, source: ReminderSource, sameGro
   return result.results;
 }
 
-export async function runDailyReminders(env: Env): Promise<{ notifications: number; emails: number; archived: number }> {
+export async function runDailyReminders(env: Env): Promise<{ notifications: number; emails: number; archived: number; license_notifications: number }> {
   const today = taipeiDate();
   const next3 = addDays(today, 3);
   const next7 = addDays(today, 7);
   const staleProjectAt = new Date(Date.now() - 21 * 86_400_000).toISOString();
   const staleCaseDate = addDays(today, -14);
   const notifications: NotificationItem[] = [];
+  const licenseUpdates: D1PreparedStatement[] = [];
+  let licenseNotificationCount = 0;
   const addFor = async (source: ReminderSource, title: string, body: string, sameGroup = false) => {
     for (const recipient of await projectRecipients(env.DB, source, sameGroup)) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${source.project_id}` });
   };
@@ -48,12 +51,28 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const stalledProjects = await env.DB.prepare("SELECT id AS project_id,name AS project_name,owner_id,group_id FROM projects WHERE status='active' AND last_activity_at<?").bind(staleProjectAt).all<ReminderSource>();
   for (const row of stalledProjects.results) await addFor(row, "專案停滯", `${row.project_name} 已超過 21 天無更新。`, true);
 
+  const licenses = await env.DB.prepare(`SELECT l.id,l.name,l.expires_at,l.last_notified_stage,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id
+    FROM licenses l JOIN projects p ON p.id=l.project_id
+    WHERE l.status NOT IN ('已停用') AND p.status!='archived' ORDER BY l.expires_at`).all<ReminderSource & { id: string; name: string; expires_at: string; last_notified_stage: string | null }>();
+  for (const row of licenses.results) {
+    const stage = licenseNotificationStage(row.expires_at, today, row.last_notified_stage);
+    if (!stage) continue;
+    const recipients = await env.DB.prepare("SELECT DISTINCT id,email,email_notifications FROM users WHERE is_active=1 AND approval_status='approved' AND (id=? OR group_id='grp_qa')")
+      .bind(row.owner_id).all<Recipient>();
+    const title = stage === "expired" ? "證照效期已逾期" : `證照效期剩餘 ${stage} 天`;
+    const body = `${row.project_name}／${row.name}（效期 ${row.expires_at}）`;
+    for (const recipient of recipients.results) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${row.project_id}` });
+    licenseNotificationCount += recipients.results.length;
+    licenseUpdates.push(env.DB.prepare("UPDATE licenses SET last_notified_stage=?,status=CASE WHEN ?='expired' THEN '已過期' ELSE status END,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(stage, stage, row.id));
+  }
+
   const archiveAt = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const archiveRows = await env.DB.prepare("SELECT id AS project_id,name AS project_name,owner_id,group_id FROM projects WHERE status='done' AND auto_archive=1 AND last_activity_at<?").bind(archiveAt).all<ReminderSource>();
   if (archiveRows.results.length) await env.DB.batch(archiveRows.results.map((row) => env.DB.prepare("UPDATE projects SET status='archived',archived_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.project_id)));
   for (const row of archiveRows.results) await addFor(row, "專案已自動歸檔", `${row.project_name} 完成超過 14 天，已自動歸檔。`);
 
-  if (notifications.length) await env.DB.batch(notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link)));
+  const notificationStatements = notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link));
+  if (notificationStatements.length || licenseUpdates.length) await env.DB.batch([...notificationStatements, ...licenseUpdates]);
   const recentMentions = await env.DB.prepare(`SELECT n.user_id,u.email,n.title,n.body,n.link FROM notifications n JOIN users u ON u.id=n.user_id
     WHERE n.type IN ('mention','automation') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
   const emailItems = [...notifications.filter((item) => item.email), ...recentMentions.results];
@@ -63,5 +82,5 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
     const result = await sendMail(env, digest.email, "[艾爾水晶] 今日提醒", text);
     if (result.sent) sent += 1;
   }
-  return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length };
+  return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length, license_notifications: licenseNotificationCount };
 }

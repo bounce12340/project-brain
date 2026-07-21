@@ -4,6 +4,11 @@ export function taipeiDate(date = new Date()): string {
   return new Date(date.getTime() + TAIPEI_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+export function currentTaipeiQuarter(date = new Date()): string {
+  const local = new Date(date.getTime() + TAIPEI_OFFSET_MS);
+  return `${local.getUTCFullYear()}Q${Math.floor(local.getUTCMonth() / 3) + 1}`;
+}
+
 export function taipeiDayBounds(date = new Date()): { start: string; end: string } {
   const localDate = taipeiDate(date);
   return { start: `${localDate}T00:00:00+08:00`, end: `${localDate}T23:59:59+08:00` };

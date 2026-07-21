@@ -5,11 +5,13 @@ export interface ProgressCounts {
   totalMilestones: number;
   completedTodos: number;
   totalTodos: number;
+  completedKeyResults?: number;
+  totalKeyResults?: number;
 }
 
 export function calculateAutoProgress(counts: ProgressCounts, current: number): number {
-  const completed = counts.completedTasks + counts.completedMilestones + counts.completedTodos;
-  const total = counts.totalTasks + counts.totalMilestones + counts.totalTodos;
+  const completed = counts.completedTasks + counts.completedMilestones + counts.completedTodos + (counts.completedKeyResults ?? 0);
+  const total = counts.totalTasks + counts.totalMilestones + counts.totalTodos + (counts.totalKeyResults ?? 0);
   return total === 0 ? current : Math.round(100 * completed / total);
 }
 
@@ -36,8 +38,10 @@ export async function recomputeAutoProgress(
       (SELECT COUNT(*) FROM milestones WHERE project_id=?) AS totalMilestones,
       (SELECT COUNT(*) FROM milestones WHERE project_id=? AND done=1) AS completedMilestones,
       (SELECT COUNT(*) FROM todos WHERE project_id=?) AS totalTodos,
-      (SELECT COUNT(*) FROM todos WHERE project_id=? AND done=1) AS completedTodos
-  `).bind(projectId, projectId, projectId, projectId, projectId, projectId).first<ProgressCounts>();
+      (SELECT COUNT(*) FROM todos WHERE project_id=? AND done=1) AS completedTodos,
+      (SELECT COUNT(*) FROM key_results WHERE project_id=?) AS totalKeyResults,
+      (SELECT COUNT(*) FROM key_results WHERE project_id=? AND status='完成') AS completedKeyResults
+  `).bind(projectId, projectId, projectId, projectId, projectId, projectId, projectId, projectId).first<ProgressCounts>();
   if (!counts) return null;
   const progress = calculateAutoProgress(counts, project.progress);
   const statements: D1PreparedStatement[] = [
