@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "project-brain",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "project-brain-db",
+      "database_id": "31e51358-0ace-4f6f-99fd-ba602d8d4509",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "ai": { "binding": "AI" },
+  "triggers": { "crons": ["0 1 * * *", "30 0 * * 1"] },
+  "routes": [{ "pattern": "projects.uic-ai.com", "custom_domain": true }],
+  "vars": {
+    "APP_BASE_URL": "https://projects.uic-ai.com",
+    "LLM_BASE_URL": "https://ollama.com/v1",
+    "LLM_MODEL": "deepseek-v4-pro",
+    "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
+    "MAIL_FROM_NAME": "專案進度大腦"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}
