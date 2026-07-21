@@ -3,7 +3,7 @@ import { canEditProgress, canManageProject, canViewFees, canViewProject } from "
 import type { AuthUser, ProjectAccess, Role, Visibility } from "../worker/types";
 
 const user = (id: string, role: Role, group = "g1"): AuthUser => ({
-  id, role, group_id: group, email: `${id}@test`, name: id, group_name: group, group_type: "general", must_change_password: 0, email_notifications: 1,
+  id, role, group_id: group, email: `${id}@test`, name: id, group_name: group, group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1,
 });
 const project = (visibility: Visibility, members: string[] = []): ProjectAccess => ({ id: "p1", owner_id: "owner", group_id: "g1", visibility, member_ids: members });
 

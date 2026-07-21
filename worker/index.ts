@@ -9,6 +9,7 @@ import { adminRoutes } from "./routes/admin";
 import { aiRoutes, reportsRoutes } from "./routes/reports";
 import { runDailyReminders } from "./services/cron";
 import { regenerateWeeklyReports } from "./services/reports";
+import { v2Routes } from "./routes/v2";
 
 const app = new Hono<AppContext>();
 
@@ -24,6 +25,7 @@ app.route("/api/auth", authRoutes);
 app.route("/api/projects", projectsRoutes);
 app.route("/api", resourcesRoutes);
 app.route("/api", generalRoutes);
+app.route("/api", v2Routes);
 app.route("/api/reports", reportsRoutes);
 app.route("/api/ai", aiRoutes);
 app.route("/api/admin", adminRoutes);

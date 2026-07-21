@@ -12,6 +12,7 @@ export interface AuthUser {
   group_type: GroupType;
   must_change_password: number;
   email_notifications: number;
+  onboarding_done: number;
 }
 
 export interface ProjectAccess {

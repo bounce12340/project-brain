@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import type { AppContext, ProjectAccess } from "../types";
-import { createId, getProjectAccess } from "../services/db";
+import { createId, getProjectAccess, touchProject } from "../services/db";
 import { optionalString, requiredString } from "../services/http";
-import { canViewFees, canViewProject } from "../services/permissions";
+import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { accessFrom, projectRows } from "./projects";
 import { taipeiDate } from "../services/time";
+import { recomputeAutoProgress } from "../services/auto-progress";
+import { runAutomationRules } from "../services/automation";
 
 export const generalRoutes = new Hono<AppContext>();
 
@@ -71,10 +73,15 @@ generalRoutes.post("/todos", async (c) => {
   const projectId = optionalString(body, "project_id");
   if (projectId) {
     const access = await getProjectAccess(c.env.DB, projectId);
-    if (!access || !canViewProject(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
   }
   const id = createId("todo");
   await c.env.DB.prepare("INSERT INTO todos (id,user_id,title,due_date,project_id) VALUES (?,?,?,?,?)").bind(id, c.get("user").id, title, optionalString(body, "due_date"), projectId).run();
+  if (projectId) {
+    await touchProject(c.env.DB, projectId);
+    const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
+    if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
+  }
   return c.json({ id }, 201);
 });
 
@@ -83,13 +90,31 @@ generalRoutes.patch("/todos/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM todos WHERE id=? AND user_id=?").bind(c.req.param("id"), c.get("user").id).first<{ title: string; due_date: string | null; project_id: string | null; done: number }>();
   if (!current) return c.json({ error: "找不到待辦事項" }, 404);
   const done = "done" in body ? (body.done ? 1 : 0) : current.done;
+  const nextProjectId = "project_id" in body ? optionalString(body, "project_id") : current.project_id;
+  if (nextProjectId) {
+    const access = await getProjectAccess(c.env.DB, nextProjectId);
+    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+  }
   await c.env.DB.prepare("UPDATE todos SET title=?,due_date=?,project_id=?,done=?,done_at=? WHERE id=? AND user_id=?")
-    .bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, "project_id" in body ? optionalString(body, "project_id") : current.project_id, done, done ? new Date().toISOString() : null, c.req.param("id"), c.get("user").id).run();
-  return c.json({ ok: true });
+    .bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, nextProjectId, done, done ? new Date().toISOString() : null, c.req.param("id"), c.get("user").id).run();
+  let projectProgress: number | undefined;
+  for (const projectId of new Set([current.project_id, nextProjectId].filter((value): value is string => !!value))) {
+    await touchProject(c.env.DB, projectId);
+    const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id, projectId === nextProjectId && !current.done && done ? `完成待辦「${current.title}」` : undefined);
+    if (projectId === nextProjectId) projectProgress = progress?.progress;
+    if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
+  }
+  return c.json({ ok: true, project_progress: projectProgress });
 });
 
 generalRoutes.delete("/todos/:id", async (c) => {
+  const current = await c.env.DB.prepare("SELECT project_id FROM todos WHERE id=? AND user_id=?").bind(c.req.param("id"), c.get("user").id).first<{ project_id: string | null }>();
   await c.env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=?").bind(c.req.param("id"), c.get("user").id).run();
+  if (current?.project_id) {
+    await touchProject(c.env.DB, current.project_id);
+    const progress = await recomputeAutoProgress(c.env.DB, current.project_id, c.get("user").id);
+    if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, current.project_id, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
+  }
   return c.json({ ok: true });
 });
 

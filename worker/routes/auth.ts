@@ -53,3 +53,8 @@ authRoutes.post("/change-password", async (c) => {
     .bind(passwordHash, user.id).run();
   return c.json({ ok: true });
 });
+
+authRoutes.post("/onboarding-done", async (c) => {
+  await c.env.DB.prepare("UPDATE users SET onboarding_done=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.get("user").id).run();
+  return c.json({ ok: true });
+});

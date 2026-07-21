@@ -24,3 +24,7 @@ export function canManageProject(user: AuthUser, project: ProjectAccess): boolea
 export function canViewFees(user: AuthUser, project: ProjectAccess): boolean {
   return user.role === "admin" || project.owner_id === user.id || (user.role === "member" && user.group_id === project.group_id);
 }
+
+export function canManageAutomation(user: AuthUser, project: ProjectAccess): boolean {
+  return user.role === "admin" || project.owner_id === user.id || (user.role === "member" && user.group_id === project.group_id);
+}

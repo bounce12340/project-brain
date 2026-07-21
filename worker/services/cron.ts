@@ -54,10 +54,13 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   for (const row of archiveRows.results) await addFor(row, "專案已自動歸檔", `${row.project_name} 完成超過 14 天，已自動歸檔。`);
 
   if (notifications.length) await env.DB.batch(notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link)));
+  const recentMentions = await env.DB.prepare(`SELECT n.user_id,u.email,n.title,n.body,n.link FROM notifications n JOIN users u ON u.id=n.user_id
+    WHERE n.type IN ('mention','automation') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
+  const emailItems = [...notifications.filter((item) => item.email), ...recentMentions.results];
   let sent = 0;
-  for (const digest of groupEmailNotifications(notifications.filter((item) => item.email))) {
-    const text = [`今日共有 ${digest.items.length} 則提醒：`, "", ...digest.items.map((item) => `- ${item.title}：${item.body}\n  ${env.APP_BASE_URL}${item.link}`), "", `開啟專案進度大腦：${env.APP_BASE_URL}`].join("\n");
-    const result = await sendMail(env, digest.email, "[專案進度大腦] 今日提醒", text);
+  for (const digest of groupEmailNotifications(emailItems)) {
+    const text = [`今日共有 ${digest.items.length} 則提醒：`, "", ...digest.items.map((item) => `- ${item.title}：${item.body}\n  ${env.APP_BASE_URL}${item.link}`), "", `開啟艾爾水晶-專案進度：${env.APP_BASE_URL}`].join("\n");
+    const result = await sendMail(env, digest.email, "[艾爾水晶] 今日提醒", text);
     if (result.sent) sent += 1;
   }
   return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length };

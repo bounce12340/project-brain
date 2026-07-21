@@ -22,7 +22,7 @@ export const sessionAuth: MiddlewareHandler<AppContext> = async (c, next) => {
   const sessionId = await sha256(token);
   const user = await c.env.DB.prepare(`
     SELECT u.id, u.email, u.name, u.role, u.group_id, g.name AS group_name, g.type AS group_type,
-           u.must_change_password, u.email_notifications
+           u.must_change_password, u.email_notifications, u.onboarding_done
     FROM sessions s JOIN users u ON u.id = s.user_id JOIN groups g ON g.id = u.group_id
     WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1
   `).bind(sessionId).first<AuthUser>();

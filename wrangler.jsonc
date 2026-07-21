@@ -18,6 +18,7 @@
       "migrations_dir": "./migrations"
     }
   ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "project-brain-files" }],
   "ai": { "binding": "AI" },
   "triggers": { "crons": ["0 1 * * *", "30 0 * * 1"] },
   "routes": [{ "pattern": "projects.uic-ai.com", "custom_domain": true }],
@@ -26,7 +27,7 @@
     "LLM_BASE_URL": "https://ollama.com/v1",
     "LLM_MODEL": "deepseek-v4-pro",
     "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
-    "MAIL_FROM_NAME": "專案進度大腦"
+    "MAIL_FROM_NAME": "艾爾水晶-專案進度"
   },
   "observability": {
     "enabled": true,

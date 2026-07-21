@@ -3,6 +3,8 @@ import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { boundedNumber, integer, optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
+import { recomputeAutoProgress } from "../services/auto-progress";
+import { runAutomationRules, type AutomationEvent } from "../services/automation";
 
 export const resourcesRoutes = new Hono<AppContext>();
 
@@ -71,6 +73,8 @@ resourcesRoutes.post("/projects/:id/tasks", async (c) => {
   await c.env.DB.prepare("INSERT INTO tasks (id,project_id,stage_id,title,description,assignee_id,due_date,position) VALUES (?,?,?,?,?,?,?,?)")
     .bind(id, projectId, stageId, title, optionalString(body, "description") ?? "", optionalString(body, "assignee_id"), optionalString(body, "due_date"), position ?? 0).run();
   await touchProject(c.env.DB, projectId);
+  const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
+  if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
   return c.json({ id }, 201);
 });
 
@@ -81,14 +85,23 @@ resourcesRoutes.patch("/tasks/:id", async (c) => {
   const access = await getProjectAccess(c.env.DB, projectId);
   if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT * FROM tasks WHERE id=?").bind(id).first<{ title: string; description: string; stage_id: string; assignee_id: string | null; due_date: string | null; position: number }>();
+  const current = await c.env.DB.prepare("SELECT * FROM tasks WHERE id=?").bind(id).first<{ title: string; description: string; stage_id: string; assignee_id: string | null; start_date: string | null; due_date: string | null; position: number; done: number }>();
   if (!current) return c.json({ error: "找不到工作" }, 404);
   const stageId = optionalString(body, "stage_id") ?? current.stage_id;
   const stage = await c.env.DB.prepare("SELECT id FROM stages WHERE id=? AND project_id=?").bind(stageId, projectId).first();
   if (!stage) return c.json({ error: "階段不屬於此專案" }, 422);
-  await c.env.DB.prepare("UPDATE tasks SET title=?,description=?,stage_id=?,assignee_id=?,due_date=?,position=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(optionalString(body, "title") ?? current.title, optionalString(body, "description") ?? current.description, stageId, "assignee_id" in body ? optionalString(body, "assignee_id") : current.assignee_id, "due_date" in body ? optionalString(body, "due_date") : current.due_date, "position" in body ? integer(body, "position") : current.position, id).run();
+  const done = "done" in body ? (body.done ? 1 : 0) : current.done;
+  await c.env.DB.prepare("UPDATE tasks SET title=?,description=?,stage_id=?,assignee_id=?,start_date=?,due_date=?,position=?,done=?,done_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+    .bind(optionalString(body, "title") ?? current.title, optionalString(body, "description") ?? current.description, stageId, "assignee_id" in body ? optionalString(body, "assignee_id") : current.assignee_id, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "due_date" in body ? optionalString(body, "due_date") : current.due_date, "position" in body ? integer(body, "position") : current.position, done, done ? (current.done ? await c.env.DB.prepare("SELECT done_at FROM tasks WHERE id=?").bind(id).first<string>("done_at") : new Date().toISOString()) : null, id).run();
   await touchProject(c.env.DB, projectId);
+  const events: AutomationEvent[] = [];
+  if (!current.done && done) events.push({ type: "task_done", taskId: id });
+  if (stageId !== current.stage_id) events.push({ type: "task_moved_to_stage", taskId: id, stageId });
+  if (done !== current.done) {
+    const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id, !current.done && done ? `完成任務「${current.title}」` : undefined);
+    if (progress?.changed) events.push({ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress });
+  }
+  if (events.length) await runAutomationRules(c.env.DB, c.get("user").id, projectId, events);
   return c.json({ ok: true });
 });
 
@@ -100,6 +113,8 @@ resourcesRoutes.delete("/tasks/:id", async (c) => {
   if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM tasks WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
+  const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
+  if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
   return c.json({ ok: true });
 });
 
@@ -115,6 +130,8 @@ resourcesRoutes.post("/projects/:id/milestones", async (c) => {
   const id = createId("ms");
   await c.env.DB.prepare("INSERT INTO milestones (id,project_id,title,due_date,position) VALUES (?,?,?,?,?)").bind(id, projectId, title, optionalString(body, "due_date"), position ?? 0).run();
   await touchProject(c.env.DB, projectId);
+  const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
+  if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
   return c.json({ id }, 201);
 });
 
@@ -130,6 +147,13 @@ resourcesRoutes.patch("/milestones/:id", async (c) => {
   const done = "done" in body ? (body.done ? 1 : 0) : current.done;
   await c.env.DB.prepare("UPDATE milestones SET title=?,due_date=?,done=?,done_at=?,position=? WHERE id=?").bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, done, done ? new Date().toISOString() : null, "position" in body ? integer(body, "position") : current.position, id).run();
   await touchProject(c.env.DB, projectId);
+  const events: AutomationEvent[] = [];
+  if (!current.done && done) events.push({ type: "milestone_done" });
+  if (done !== current.done) {
+    const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id, !current.done && done ? `完成里程碑「${current.title}」` : undefined);
+    if (progress?.changed) events.push({ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress });
+  }
+  if (events.length) await runAutomationRules(c.env.DB, c.get("user").id, projectId, events);
   return c.json({ ok: true });
 });
 
@@ -141,6 +165,8 @@ resourcesRoutes.delete("/milestones/:id", async (c) => {
   if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM milestones WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
+  const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
+  if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
   return c.json({ ok: true });
 });
 

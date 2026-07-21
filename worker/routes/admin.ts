@@ -149,6 +149,6 @@ adminRoutes.post("/clear-demo", async (c) => {
 
 adminRoutes.post("/test-email", async (c) => {
   const user = c.get("user");
-  const result = await sendMail(c.env, user.email, "[專案進度大腦] 測試信", `您好 ${user.name}，這是專案進度大腦的寄信功能測試。\n\n${c.env.APP_BASE_URL}`);
+  const result = await sendMail(c.env, user.email, "[艾爾水晶] 測試信", `您好 ${user.name}，這是艾爾水晶-專案進度的寄信功能測試。\n\n${c.env.APP_BASE_URL}`);
   return c.json(result, result.sent ? 200 : 503);
 });
