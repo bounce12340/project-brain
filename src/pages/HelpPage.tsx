@@ -10,5 +10,5 @@ const sections = [
 ] as const;
 
 export function HelpPage() {
-  return <><PageHeader title="艾爾水晶功能說明" description="如同卡拉，快速理解每個入口與操作流程。" actions={<button className="btn" onClick={() => window.dispatchEvent(new Event("project-brain:start-tour"))}>重新播放導覽</button>} /><div className="grid gap-5 md:grid-cols-2">{sections.map(([title, items]) => <section className="card" key={title}><h2 className="mb-4 text-lg font-bold text-brand-800">{title}</h2><dl className="space-y-4">{items.map(([name, usage]) => <div key={name}><dt className="font-semibold">{name}是什麼</dt><dd className="mt-1 text-sm leading-6 text-slate-600">{usage}</dd></div>)}</dl></section>)}</div></>;
+  return <><PageHeader title="艾爾水晶功能說明" description="如同卡拉，快速理解每個入口與操作流程。" actions={<button className="btn" onClick={() => window.dispatchEvent(new Event("project-brain:start-tour"))}>重新播放導覽</button>} /><div className="grid gap-5 md:grid-cols-2">{sections.map(([title, items]) => <section className="panel" key={title}><h2 className="mb-4 text-lg font-bold text-gold-bright">{title}</h2><dl className="space-y-4">{items.map(([name, usage]) => <div key={name}><dt className="font-semibold">{name}是什麼</dt><dd className="mt-1 text-sm leading-6 text-star-dim">{usage}</dd></div>)}</dl></section>)}</div></>;
 }
