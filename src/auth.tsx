@@ -20,7 +20,7 @@ export function useAuth() { const value = useContext(AuthContext); if (!value) t
 
 export function Protected({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user, loading } = useAuth(); const location = useLocation();
-  if (loading) return <div className="grid min-h-screen place-items-center text-slate-500">載入中…</div>;
+  if (loading) return <div className="grid min-h-screen place-items-center text-star-dim">載入中…</div>;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (user.must_change_password && location.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;
