@@ -15,6 +15,10 @@ export default {
       },
       fontFamily: {
         sans: ["Noto Sans TC", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"]
+      },
+      fontSize: {
+        xs: ["13px", { lineHeight: "18px" }],
+        sm: ["15px", { lineHeight: "22px" }]
       }
     }
   },
