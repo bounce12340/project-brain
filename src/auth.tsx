@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { Navigate, useLocation } from "react-router-dom";
 import { api } from "./api";
 import type { User } from "./types";
+import { useT } from "./i18n/LangContext";
 
 interface AuthValue { user: User | null; loading: boolean; login(email: string, password: string): Promise<User>; logout(): Promise<void>; refresh(): Promise<void> }
 const AuthContext = createContext<AuthValue | null>(null);
@@ -20,7 +21,8 @@ export function useAuth() { const value = useContext(AuthContext); if (!value) t
 
 export function Protected({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user, loading } = useAuth(); const location = useLocation();
-  if (loading) return <div className="grid min-h-screen place-items-center text-star-dim">載入中…</div>;
+  const t = useT();
+  if (loading) return <div className="grid min-h-screen place-items-center text-star-dim">{t("common.loading")}</div>;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (user.must_change_password && location.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;

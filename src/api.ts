@@ -29,10 +29,11 @@ export async function apiDownload(path: string): Promise<Blob> {
 export const jsonBody = (value: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(value) });
 export const patchBody = (value: unknown): RequestInit => ({ method: "PATCH", body: JSON.stringify(value) });
 
-export function formatDate(value?: string | null, includeTime = false): string {
+export function formatDate(value?: string | null, includeTime = false, lang?: "zh" | "en"): string {
   if (!value) return "—";
   const date = value.length === 10 ? new Date(`${value}T00:00:00+08:00`) : new Date(value);
-  return new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}) }).format(date);
+  const activeLang = lang ?? (typeof document !== "undefined" && document.documentElement.lang === "en" ? "en" : "zh");
+  return new Intl.DateTimeFormat(activeLang === "en" ? "en-US" : "zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: activeLang === "en" ? "short" : "2-digit", day: "numeric", ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}) }).format(date);
 }
 
 export function today(): string {
