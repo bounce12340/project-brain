@@ -84,6 +84,14 @@ npx wrangler secret list
 
 結果：**PASS**。
 
+驗收完成後，以 admin API 將 `usr_admin` 重設為規格指定的初始密碼並恢復強制改密狀態；該操作同時撤銷驗收 session。只讀確認指令與結果：
+
+```powershell
+npx wrangler d1 execute project-brain-db --remote --command "SELECT email, must_change_password, failed_count, locked_until FROM users WHERE id='usr_admin'"
+```
+
+回傳 `must_change_password=1`、`failed_count=0`、`locked_until=null`，因此交付時的管理員仍會在首次實際登入後被要求更換密碼。
+
 ## 6. 真實 AgentMail 測試信
 
 執行：
