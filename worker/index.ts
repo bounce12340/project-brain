@@ -13,6 +13,7 @@ import { v2Routes } from "./routes/v2";
 import { registerRoutes } from "./routes/register";
 import { v6Routes } from "./routes/v6";
 import { importRoutes } from "./routes/import";
+import { v7Routes } from "./routes/v7";
 
 const app = new Hono<AppContext>();
 
@@ -30,6 +31,7 @@ app.route("/api/projects", projectsRoutes);
 app.route("/api", resourcesRoutes);
 app.route("/api", generalRoutes);
 app.route("/api", v2Routes);
+app.route("/api", v7Routes);
 app.route("/api", v6Routes);
 app.route("/api/reports", reportsRoutes);
 app.route("/api/ai", aiRoutes);

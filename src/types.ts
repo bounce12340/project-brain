@@ -28,7 +28,7 @@ export type CcrStatus = "申請" | "評估中" | "已核准" | "執行中" | "�
 export interface CcrRecord { id: string; project_id: string; ccr_no: string; title: string; target_type: string; description: string; reason: string; classification: "重大" | "次要"; impact_assessment: string | null; status: CcrStatus; requested_by: string; requested_by_name: string; approved_by_name: string | null; requested_at: string; approved_at: string | null; closed_at: string | null; note: string }
 export interface CcrEvent { id: string; ccr_id: string; event_type: string; from_status: string | null; to_status: string | null; description: string; created_by_name: string; created_at: string }
 export interface KeyResult { id: string; project_id: string; title: string; owner_id: string | null; owner_name: string | null; quarter: string; status: "未開始" | "進行中" | "完成" | "暫停"; note: string; position: number }
-export interface RegEntry { id: string; entry_date: string; entry_type: "announcement" | "meeting"; product_line: string; category: string | null; title: string; key_points: string | null; link: string | null; created_by_name: string; created_at: string }
+export interface RegEntry { id: string; entry_date: string; entry_type: "announcement" | "meeting"; product_line: string; category: string | null; title: string; key_points: string | null; link: string | null; file_id: string | null; created_by_name: string; created_at: string }
 
 export interface ProjectDetail {
   project: Project; permissions: { can_edit: boolean; can_manage: boolean; can_view_fees: boolean };

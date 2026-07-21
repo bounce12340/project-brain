@@ -352,9 +352,16 @@ v6Routes.patch("/regwatch/:id", async (c) => {
 v6Routes.delete("/regwatch/:id", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
-  const current = await c.env.DB.prepare("SELECT title FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string }>();
+  const current = await c.env.DB.prepare("SELECT title,file_id FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string; file_id: string | null }>();
   if (!current) return c.json({ error: "找不到法規動態" }, 404);
+  let orphan: { id: string; storage_key: string } | null = null;
+  if (current.file_id) {
+    const references = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM reg_entries WHERE file_id=? AND id!=?").bind(current.file_id, c.req.param("id")).first<number>("value");
+    if ((references ?? 0) === 0) orphan = await c.env.DB.prepare("SELECT id,storage_key FROM files WHERE id=? AND project_id IS NULL").bind(current.file_id).first<{ id: string; storage_key: string }>();
+  }
+  if (orphan) await c.env.FILES.delete(orphan.storage_key);
   await c.env.DB.prepare("DELETE FROM reg_entries WHERE id=?").bind(c.req.param("id")).run();
+  if (orphan) await c.env.DB.prepare("DELETE FROM files WHERE id=?").bind(orphan.id).run();
   await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${current.title}」`);
   return c.json({ ok: true });
 });

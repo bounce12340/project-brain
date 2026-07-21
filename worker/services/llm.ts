@@ -5,8 +5,11 @@ export interface ChatMessage {
 
 export function parseLooseJson<T>(text: string): T | null {
   const unfenced = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
-  const start = unfenced.indexOf("{");
-  const end = unfenced.lastIndexOf("}");
+  const objectStart = unfenced.indexOf("{");
+  const arrayStart = unfenced.indexOf("[");
+  const useArray = arrayStart >= 0 && (objectStart < 0 || arrayStart < objectStart);
+  const start = useArray ? arrayStart : objectStart;
+  const end = useArray ? unfenced.lastIndexOf("]") : unfenced.lastIndexOf("}");
   if (start < 0 || end < start) return null;
   try {
     return JSON.parse(unfenced.slice(start, end + 1)) as T;

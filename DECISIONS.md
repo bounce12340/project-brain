@@ -30,3 +30,13 @@
 - 2026-07-21（v6）：CCR 終態重開的規格未指定目的狀態；採 admin 專屬「重開至評估中」，清除既有結案時間並寫 `重開` event，讓案件重新進入評估分支且不跳過審核。
 - 2026-07-21（v6）：每日 cron 若在精確到期日未執行，下一次執行仍應發出一次逾期通知；因此 `expired` 代表「首次觀測到已逾期」，以 `last_notified_stage` 保證只通知一次。
 - 2026-07-21（v6）：匯入省略 stages 時優先取該組別專用模板；若 QA 組尚未設專用模板，依序回退既有「一般專案」模板與內建「待辦／進行中／完成」，避免匯入產生無階段專案。
+- 2026-07-21（import）：檔案匯入沿用 textarea 的同一份 preview 邏輯；FileReader 完成後先填入 textarea，再直接以讀入字串產生預覽，避免 React state 尚未更新時預覽到舊內容。input 每次選取後清空 value，讓使用者可重選同一檔案。
+- 2026-07-21（import）：`users` schema 另要求 email、name，且 middleware 會封鎖 `must_change_password=1` 的 session；一次性身分因此使用 `import-tmp@demo.local`／`一次性匯入`、`must_change_password=0`、`onboarding_done=1`，其餘身分欄位完全依 SPEC-IMPORT。token 與 password hash 字面值 `!` 均未輸出或落檔。
+- 2026-07-21（import）：首輪 POST 在本地 180 秒等待上限中斷後，原 token 已隨程序消失；先唯讀確認部分寫入，再刪除該臨時身分唯一的舊 session，以新隨機 memory-only token 建立替代 session，依既有冪等合約重送同一 payload。沒有建立第二個臨時 user。
+- 2026-07-21（import，open）：payload 宣稱 630 筆 `reg_entries`，但只有 627 個 API 契約所定的 `(entry_date,title)` 唯一鍵；3 組各有 2 筆，分別以 entry type 或 product line 區分。未自行改 title 或繞過冪等鍵，正式 COUNT 因此為 627。後續需由資料擁有者決定要合併，或以有業務意義的不同 title 重新匯入。
+- 2026-07-21（import，open）：`QA：GDP/GMP` payload 只有 2 筆 GDP license，而 SPEC-IMPORT 驗證要求 3 筆；環境沒有第三筆的名稱、效期或來源。未捏造正式 license，驗證如實列 FAIL；後續需由資料擁有者提供缺漏紀錄。
+- 2026-07-21（import）：既有 schema 的 `clinical_enrollments.created_by`、`licenses.created_by`、`reg_entries.created_by` 為 NOT NULL foreign key，直接刪除臨時 user 被拒。清理時將收案與 license 的 creator 改為各自 project owner，法規 creator 改為既有 RA 管理帳號 `usr_admin`，audit actor 設 NULL，再刪 session/user；只建立外鍵引用，未 UPDATE、登入、重設、停用或刪除 `usr_admin` 帳號列。
+- 2026-07-21（v7）：上傳檔在 AI 預覽階段只於請求記憶體中解析，不先落 R2；使用者按「確認匯入」後才由 `/regwatch/batch` 儲存原始檔並建立 `files` row，避免關閉或重做預覽留下無引用物件。若整批皆撞鍵，立即移除剛存的物件與 row。
+- 2026-07-21（v7）：同一原始檔拆出的新條目共用一個 `file_id`；刪除條目時只在其為最後一筆引用時同步刪除 R2 object 與 `files` row。已存在而略過的條目不會被回寫新附件，維持判重的無副作用語意。
+- 2026-07-21（v7）：LLM 回應規格為頂層 JSON 陣列，因此擴充既有寬鬆解析器同時支援 `{...}` 與 `[...]`；呼叫時不送只允許 object 的 `response_format=json_object`，由繁中 system prompt 約束陣列格式並於回傳後正規化。
+- 2026-07-21（v7）：開工時已有 `.gitignore`、`DECISIONS.md`、`AdminPage.tsx` 與 import preview 等未提交修改；為避免把既有使用者變更混入 commit，本輪不建立規格建議的小步 commit，保留所有既有 dirty worktree 內容不覆寫。

@@ -138,10 +138,12 @@ v2Routes.post("/projects/:id/files", async (c) => {
 });
 
 v2Routes.get("/files/:id/download", async (c) => {
-  const row = await c.env.DB.prepare("SELECT * FROM files WHERE id=?").bind(c.req.param("id")).first<{ project_id: string; storage_key: string; filename: string; content_type: string }>();
+  const row = await c.env.DB.prepare("SELECT * FROM files WHERE id=?").bind(c.req.param("id")).first<{ project_id: string | null; storage_key: string; filename: string; content_type: string }>();
   if (!row) return c.json({ error: "找不到檔案" }, 404);
-  const access = await getProjectAccess(c.env.DB, row.project_id);
-  if (!access || !canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
+  if (row.project_id !== null) {
+    const access = await getProjectAccess(c.env.DB, row.project_id);
+    if (!access || !canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
+  }
   const object = await r2FileStore(c.env.FILES).get(row.storage_key);
   if (!object) return c.json({ error: "檔案物件不存在" }, 404);
   return new Response(object.body, { headers: { "Content-Type": row.content_type, "Content-Length": String(object.size), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.filename)}`, ETag: object.httpEtag } });
