@@ -1,6 +1,6 @@
 export type Role = "admin" | "member" | "intern";
 export type Visibility = "all" | "group" | "private";
-export type GroupType = "clinical" | "bd" | "general";
+export type GroupType = "clinical" | "bd" | "general" | "qa";
 
 export interface AuthUser {
   id: string;
