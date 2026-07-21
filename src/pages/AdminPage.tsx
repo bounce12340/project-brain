@@ -4,6 +4,7 @@ import { api, formatDate, patchBody } from "../api";
 import { ErrorBox, PageHeader } from "../components/UI";
 import type { Metadata } from "../types";
 import { useAuth } from "../auth";
+import { createImportPreview, type ImportPreview } from "../import-preview";
 
 interface AdminUser {
   id: string; name: string; email: string; role: string; group_id: string; group_name: string;
@@ -34,7 +35,7 @@ export function AdminPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [importJson, setImportJson] = useState("");
-  const [importPreview, setImportPreview] = useState<{ projects: number; tasks: number; progress_updates: number; reg_entries: number } | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
 
   const load = async () => {
@@ -104,18 +105,23 @@ export function AdminPage() {
     if (transferMode === "full_transfer") setPendingTransfer(payload);
     else void executeTransfer(payload);
   };
-  const previewImport = () => {
+  const previewImport = (source = importJson) => {
     setError(""); setImportPreview(null); setImportReport(null);
     try {
-      const value: unknown = JSON.parse(importJson);
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("最外層必須是 JSON object");
-      const body = value as { projects?: unknown; reg_entries?: unknown };
-      if (body.projects !== undefined && !Array.isArray(body.projects)) throw new Error("projects 必須是陣列");
-      if (body.reg_entries !== undefined && !Array.isArray(body.reg_entries)) throw new Error("reg_entries 必須是陣列");
-      const projects = (body.projects ?? []) as Array<{ tasks?: unknown; progress_updates?: unknown }>;
-      const count = (value: unknown) => Array.isArray(value) ? value.length : 0;
-      setImportPreview({ projects: projects.length, tasks: projects.reduce((sum, item) => sum + count(item.tasks), 0), progress_updates: projects.reduce((sum, item) => sum + count(item.progress_updates), 0), reg_entries: count(body.reg_entries) });
+      setImportPreview(createImportPreview(source));
     } catch (cause) { setError(cause instanceof Error ? `JSON 預覽失敗：${cause.message}` : "JSON 預覽失敗"); }
+  };
+  const loadImportFile = (file: File | undefined) => {
+    if (!file) return;
+    setError(""); setImportPreview(null); setImportReport(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") { setError("JSON 檔案讀取失敗"); return; }
+      setImportJson(reader.result);
+      previewImport(reader.result);
+    };
+    reader.onerror = () => setError("JSON 檔案讀取失敗");
+    reader.readAsText(file);
   };
   const executeImport = async () => {
     if (!importPreview || !window.confirm("確認執行批次匯入？既有 external_key 專案會更新基本欄位。")) return;
@@ -138,7 +144,7 @@ export function AdminPage() {
 
     {tab === "groups" && <div className="grid gap-6 md:grid-cols-2"><form className="panel space-y-3" onSubmit={createGroup}><h2 className="font-bold">新增組別</h2><input className="w-full" name="name" placeholder="組別名稱" required /><select className="w-full" name="type"><option value="general">一般</option><option value="clinical">臨床</option><option value="bd">BD</option><option value="qa">QA</option></select><button className="btn">新增</button></form><section className="panel"><h2 className="mb-3 font-bold">目前組別</h2>{meta?.groups.map((group) => <div className="flex justify-between border-b py-3 text-sm" key={group.id}><span>{group.name}</span><span className="badge">{group.type}</span></div>)}</section></div>}
     {tab === "templates" && <div className="grid gap-6 md:grid-cols-2"><form className="panel space-y-3" onSubmit={createTemplate}><h2 className="font-bold">新增階段模板</h2><input className="w-full" name="name" placeholder="模板名稱" required /><select className="w-full" name="group_id"><option value="">所有組別</option>{meta?.groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select><input className="w-full" name="stages" placeholder="待辦 → 進行中 → 完成" required /><button className="btn">新增</button></form><section className="panel"><h2 className="mb-3 font-bold">目前模板</h2>{meta?.templates.map((template) => <div className="border-b py-3" key={template.id}><p className="font-medium">{template.name}</p><p className="mt-1 text-xs text-star-dim">{(JSON.parse(template.stages_json) as string[]).join(" → ")}</p></div>)}</section></div>}
-    {tab === "import" && <section className="panel space-y-5"><div><h2 className="font-bold">批次匯入 JSON</h2><p className="mt-1 text-sm text-star-dim">格式請見 repo 根目錄 IMPORT.md；請先預覽，再確認執行。</p></div><textarea className="min-h-80 w-full font-mono text-sm" value={importJson} onChange={(event) => { setImportJson(event.target.value); setImportPreview(null); setImportReport(null); }} placeholder={'{\n  "projects": [],\n  "reg_entries": []\n}'} /><div className="flex flex-wrap gap-3"><button className="btn-secondary" disabled={!importJson.trim()} onClick={previewImport}>解析並預覽</button><button className="btn" disabled={!importPreview} onClick={() => void executeImport()}>確認執行</button></div>{importPreview && <div className="border border-psi p-4 text-sm"><h3 className="font-bold">本地預覽</h3><p className="mt-2">專案 {importPreview.projects}、任務 {importPreview.tasks}、進度更新 {importPreview.progress_updates}、法規動態 {importPreview.reg_entries}</p></div>}{importReport && <div className="border border-ok p-4 text-sm"><h3 className="font-bold text-ok">匯入完成</h3><p className="mt-2">專案 created {importReport.projects.created} / updated {importReport.projects.updated}</p><p>任務 created {importReport.tasks.created} / skipped {importReport.tasks.skipped}</p><p>進度更新 created {importReport.progress_updates.created} / skipped {importReport.progress_updates.skipped}</p><p>法規動態 created {importReport.reg_entries.created} / skipped {importReport.reg_entries.skipped}</p>{importReport.warnings.length > 0 && <ul className="mt-3 list-disc pl-5 text-warn">{importReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}</div>}</section>}
+    {tab === "import" && <section className="panel space-y-5"><div><h2 className="font-bold">批次匯入 JSON</h2><p className="mt-1 text-sm text-star-dim">格式請見 repo 根目錄 IMPORT.md；請先預覽，再確認執行。</p></div><label className="btn-secondary inline-flex cursor-pointer"><span>選擇檔案</span><input className="sr-only" type="file" accept=".json" onChange={(event) => { loadImportFile(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label><textarea className="min-h-80 w-full font-mono text-sm" value={importJson} onChange={(event) => { setImportJson(event.target.value); setImportPreview(null); setImportReport(null); }} placeholder={'{\n  "projects": [],\n  "reg_entries": []\n}'} /><div className="flex flex-wrap gap-3"><button className="btn-secondary" disabled={!importJson.trim()} onClick={() => previewImport()}>解析並預覽</button><button className="btn" disabled={!importPreview} onClick={() => void executeImport()}>確認執行</button></div>{importPreview && <div className="border border-psi p-4 text-sm"><h3 className="font-bold">本地預覽</h3><p className="mt-2">專案 {importPreview.projects}、任務 {importPreview.tasks}、進度更新 {importPreview.progress_updates}、法規動態 {importPreview.reg_entries}</p></div>}{importReport && <div className="border border-ok p-4 text-sm"><h3 className="font-bold text-ok">匯入完成</h3><p className="mt-2">專案 created {importReport.projects.created} / updated {importReport.projects.updated}</p><p>任務 created {importReport.tasks.created} / skipped {importReport.tasks.skipped}</p><p>進度更新 created {importReport.progress_updates.created} / skipped {importReport.progress_updates.skipped}</p><p>法規動態 created {importReport.reg_entries.created} / skipped {importReport.reg_entries.skipped}</p>{importReport.warnings.length > 0 && <ul className="mt-3 list-disc pl-5 text-warn">{importReport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}</div>}</section>}
     {tab === "audit" && <section className="panel overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-nexus-line text-gold-bright"><th className="py-2">時間</th><th>人員</th><th>動作</th><th>摘要</th></tr></thead><tbody>{audits.map((item) => <tr className="border-b border-nexus-line" key={item.id}><td className="py-3">{item.created_at}</td><td>{item.user_name || "系統"}</td><td>{item.action} / {item.entity_type}</td><td>{item.summary}</td></tr>)}</tbody></table></section>}
     {pendingTransfer && <div className="fixed inset-0 z-50 grid place-items-center bg-void/80 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !transferBusy) setPendingTransfer(null); }}><section className="panel w-full max-w-md p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="transfer-confirm-title"><h2 className="text-xl font-bold" id="transfer-confirm-title">確認完全移轉管理權？</h2><p className="mt-3 leading-7 text-star-dim">接班人將先升為管理員，接著你會降為正職成員。<strong className="block text-danger">你將立即失去管理權。</strong></p><div className="mt-6 flex justify-end gap-3"><button className="btn-secondary" disabled={transferBusy} onClick={() => setPendingTransfer(null)}>取消</button><button className="btn-danger" disabled={transferBusy} onClick={() => void executeTransfer(pendingTransfer)}>{transferBusy ? "移轉中…" : "確認完全移轉"}</button></div></section></div>}
   </>;
