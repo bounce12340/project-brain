@@ -14,3 +14,4 @@
 - 2026-07-21（v2）：首次導覽跨頁尋找第一個可見專案與任務；若當下沒有可聚焦元素，仍顯示置中說明泡泡，使用者可完成或略過。
 - 2026-07-21（v2）：AI 三功能若外部 LLM 與 Workers AI 都失敗，回傳相同 JSON shape 的規則式 fallback 並標記 `fallback=true`，避免 UI 中斷。
 - 2026-07-21（v2）：驗收指定由 `bd1` 在 `prj_bd` 提及陳收案；因提及名單依法只含可見專案者，0003 將 demo 使用者 `usr_clinical2` 加入該 demo 專案成員，不調整任何權限函式或 admin 資料。
+- 2026-07-21（v2）：正式唯讀驗收發現 `usr_admin.must_change_password=0` 且已有既存 active session（`updated_at=2026-07-21 02:42:40 UTC`）；依「不得碰 admin」限制不修正、不撤銷 session，於 ACCEPTANCE-V2 如實標 FAIL。
