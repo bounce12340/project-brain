@@ -3,6 +3,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppContext, AuthUser } from "../types";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../services/crypto";
 import { approvalLoginError, type ApprovalStatus } from "../services/registration";
+import { nextCredentialFailure } from "../services/admin-transfer";
 
 export const authRoutes = new Hono<AppContext>();
 
@@ -16,10 +17,9 @@ authRoutes.post("/login", async (c) => {
   if (!account || account.is_active !== 1) return c.json({ error: "帳號或密碼錯誤" }, 401);
   if (account.locked_until && new Date(account.locked_until).getTime() > Date.now()) return c.json({ error: "登入失敗次數過多，請稍後再試" }, 423);
   if (!(await verifyPassword(body.password, account.password_hash))) {
-    const nextCount = account.failed_count + 1;
-    const lockedUntil = nextCount >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : null;
+    const failure = nextCredentialFailure(account.failed_count);
     await c.env.DB.prepare("UPDATE users SET failed_count = ?, locked_until = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind(nextCount >= 5 ? 0 : nextCount, lockedUntil, account.id).run();
+      .bind(failure.failedCount, failure.lockedUntil, account.id).run();
     return c.json({ error: "帳號或密碼錯誤" }, 401);
   }
   const approvalError = approvalLoginError(account.approval_status);

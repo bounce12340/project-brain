@@ -1,10 +1,20 @@
 import { Hono } from "hono";
 import type { AppContext, Role } from "../types";
 import { createId, writeAudit } from "../services/db";
-import { hashPassword, randomToken } from "../services/crypto";
+import { hashPassword, randomToken, verifyPassword } from "../services/crypto";
 import { optionalString, requiredString } from "../services/http";
 import { sendMail } from "../services/mailer";
 import { canManageRegistrations } from "../services/registration";
+import {
+  isActiveApprovedAdmin,
+  nextCredentialFailure,
+  removesActiveApprovedAdmin,
+  shouldBlockAdminMutation,
+  successorEligibilityError,
+  transferRoleSequence,
+  type TransferCandidateState,
+  type TransferMode,
+} from "../services/admin-transfer";
 
 export const adminRoutes = new Hono<AppContext>();
 
@@ -14,8 +24,77 @@ adminRoutes.use("*", async (c, next) => {
 });
 
 adminRoutes.get("/users", async (c) => {
-  const result = await c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.approval_status,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id ORDER BY CASE u.approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,u.is_active DESC,u.name").all();
-  return c.json({ users: result.results });
+  const [result, activeAdminCount] = await Promise.all([
+    c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.approval_status,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id ORDER BY CASE u.approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,u.is_active DESC,u.name").all(),
+    c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value"),
+  ]);
+  return c.json({ users: result.results, active_admin_count: activeAdminCount ?? 0 });
+});
+
+adminRoutes.get("/transfer/candidates", async (c) => {
+  const result = await c.env.DB.prepare(`
+    SELECT u.id,u.name,u.email,u.role,g.name AS group_name
+    FROM users u JOIN groups g ON g.id=u.group_id
+    WHERE u.is_active=1 AND u.approval_status='approved' AND u.role!='admin'
+    ORDER BY u.name,u.email
+  `).all();
+  return c.json({ candidates: result.results });
+});
+
+adminRoutes.post("/transfer", async (c) => {
+  const body: { successor_id?: unknown; mode?: unknown; password?: unknown } = await c.req.json().catch(() => ({}));
+  const successorId = typeof body.successor_id === "string" ? body.successor_id : "";
+  const mode = body.mode;
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!successorId || (mode !== "co_admin" && mode !== "full_transfer") || !password) return c.json({ error: "請選擇接班人、模式並輸入目前密碼" }, 422);
+
+  const currentUser = c.get("user");
+  const actor = await c.env.DB.prepare("SELECT id,email,name,password_hash,role,is_active,approval_status,failed_count,locked_until FROM users WHERE id=?")
+    .bind(currentUser.id).first<{ id: string; email: string; name: string; password_hash: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected"; failed_count: number; locked_until: string | null }>();
+  if (!actor || !isActiveApprovedAdmin(actor)) return c.json({ error: "僅限啟用且已核准的管理員" }, 403);
+  if (actor.locked_until && new Date(actor.locked_until).getTime() > Date.now()) return c.json({ error: "密碼驗證失敗次數過多，請稍後再試" }, 423);
+  if (!(await verifyPassword(password, actor.password_hash))) {
+    const failure = nextCredentialFailure(actor.failed_count);
+    await c.env.DB.prepare("UPDATE users SET failed_count=?,locked_until=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(failure.failedCount, failure.lockedUntil, actor.id).run();
+    return c.json({ error: "目前密碼不正確" }, 403);
+  }
+
+  const successor = await c.env.DB.prepare("SELECT id,email,name,role,is_active,approval_status FROM users WHERE id=?")
+    .bind(successorId).first<{ id: string; email: string; name: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
+  const eligibilityError = successorEligibilityError(successor as TransferCandidateState | null, actor.id);
+  if (eligibilityError || !successor) return c.json({ error: eligibilityError ?? "接班人不存在或不符合資格" }, 422);
+
+  const transferMode = mode as TransferMode;
+  const changes = transferRoleSequence(transferMode, actor.id, successor.id);
+  const auditId = createId("audit");
+  const successorNotificationId = createId("noti");
+  const actorNotificationId = createId("noti");
+  const auditSummary = `管理權移轉 mode=${transferMode} from=${actor.email} to=${successor.email}`;
+  const actorBody = transferMode === "full_transfer"
+    ? `管理權已完全移轉給 ${successor.name}，你的角色已調整為正職成員。`
+    : `${successor.name} 已升為共同管理員，你仍保有管理權。`;
+  const statements = changes.map((change) => c.env.DB.prepare("UPDATE users SET role=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(change.role, change.id));
+  statements.push(
+    c.env.DB.prepare("UPDATE users SET failed_count=0,locked_until=NULL WHERE id=?").bind(actor.id),
+    c.env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,'admin_transfer','你已成為管理員',?,'/admin')").bind(successorNotificationId, successor.id, `${actor.name} 已將管理權授予你。`),
+    c.env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,'admin_transfer','管理權已移轉',?,'/')").bind(actorNotificationId, actor.id, actorBody),
+    c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,'admin_transfer','user',?,?)").bind(auditId, actor.id, successor.id, auditSummary),
+  );
+  await c.env.DB.batch(statements);
+
+  const mailResults = { successor: false, current: false };
+  try {
+    mailResults.successor = (await sendMail(c.env, successor.email, "[艾爾水晶] 你已成為管理員", `您好 ${successor.name}，${actor.name} 已將管理權授予你。\n\n${c.env.APP_BASE_URL}/admin`)).sent;
+  } catch (error) {
+    console.error(JSON.stringify({ message: "successor transfer email failed", error: error instanceof Error ? error.message : "unknown" }));
+  }
+  try {
+    mailResults.current = (await sendMail(c.env, actor.email, "[艾爾水晶] 管理權已移轉", `您好 ${actor.name}，${actorBody}\n\n${c.env.APP_BASE_URL}`)).sent;
+  } catch (error) {
+    console.error(JSON.stringify({ message: "current admin transfer email failed", error: error instanceof Error ? error.message : "unknown" }));
+  }
+  return c.json({ ok: true, mode: transferMode, successor: { id: successor.id, name: successor.name, email: successor.email }, email_sent: mailResults });
 });
 
 adminRoutes.get("/registrations", async (c) => {
@@ -105,24 +184,38 @@ adminRoutes.post("/users", async (c) => {
 
 adminRoutes.patch("/users/:id", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT name,email,role,group_id,is_active,email_notifications FROM users WHERE id=?").bind(c.req.param("id")).first<{ name: string; email: string; role: string; group_id: string; is_active: number; email_notifications: number }>();
+  const current = await c.env.DB.prepare("SELECT name,email,role,group_id,is_active,email_notifications,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ name: string; email: string; role: Role; group_id: string; is_active: number; email_notifications: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!current) return c.json({ error: "找不到使用者" }, 404);
-  await c.env.DB.prepare("UPDATE users SET name=?,email=?,role=?,group_id=?,is_active=?,email_notifications=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, optionalString(body, "role") ?? current.role, optionalString(body, "group_id") ?? current.group_id, "is_active" in body ? (body.is_active ? 1 : 0) : current.is_active, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id")).run();
+  const nextRole = optionalString(body, "role") ?? current.role;
+  if (!["admin", "member", "intern"].includes(nextRole)) return c.json({ error: "角色不正確" }, 422);
+  const nextIsActive = "is_active" in body ? (body.is_active ? 1 : 0) : current.is_active;
+  const activeAdminCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value") ?? 0;
+  if (shouldBlockAdminMutation(current, nextRole as Role, nextIsActive, activeAdminCount)) return c.json({ error: "系統至少需要一名管理員" }, 422);
+  const removesAdmin = removesActiveApprovedAdmin(current, nextRole as Role, nextIsActive) ? 1 : 0;
+  const result = await c.env.DB.prepare(`
+    UPDATE users SET name=?,email=?,role=?,group_id=?,is_active=?,email_notifications=?,updated_at=CURRENT_TIMESTAMP
+    WHERE id=? AND (?=0 OR (SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved')>1)
+  `).bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, nextRole, optionalString(body, "group_id") ?? current.group_id, nextIsActive, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id"), removesAdmin).run();
+  if (removesAdmin && result.meta.changes === 0) return c.json({ error: "系統至少需要一名管理員" }, 422);
   await writeAudit(c.env.DB, c.get("user"), "update", "user", c.req.param("id"), "更新帳號資料");
   return c.json({ ok: true });
 });
 
 adminRoutes.delete("/users/:id", async (c) => {
   if (c.req.param("id") === c.get("user").id) return c.json({ error: "不可停用目前登入帳號" }, 422);
-  const target = await c.env.DB.prepare("SELECT email,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ email: string; approval_status: string }>();
+  const target = await c.env.DB.prepare("SELECT email,role,is_active,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ email: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!target) return c.json({ error: "找不到使用者" }, 404);
   if (target.approval_status === "pending" || target.approval_status === "rejected") {
     await c.env.DB.prepare("DELETE FROM users WHERE id=?").bind(c.req.param("id")).run();
     await writeAudit(c.env.DB, c.get("user"), "delete", "user", c.req.param("id"), `刪除未核准帳號 ${target.email}`);
     return c.json({ ok: true, deleted: true });
   }
-  await c.env.DB.prepare("UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(c.req.param("id")).run();
+  const activeAdminCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value") ?? 0;
+  if (shouldBlockAdminMutation(target, target.role, 0, activeAdminCount)) return c.json({ error: "系統至少需要一名管理員" }, 422);
+  const removesAdmin = isActiveApprovedAdmin(target) ? 1 : 0;
+  const result = await c.env.DB.prepare("UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (?=0 OR (SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved')>1)")
+    .bind(c.req.param("id"), removesAdmin).run();
+  if (removesAdmin && result.meta.changes === 0) return c.json({ error: "系統至少需要一名管理員" }, 422);
   await writeAudit(c.env.DB, c.get("user"), "deactivate", "user", c.req.param("id"), "停用帳號");
   return c.json({ ok: true });
 });
@@ -213,12 +306,20 @@ adminRoutes.get("/audit-log", async (c) => {
 adminRoutes.post("/clear-demo", async (c) => {
   const demoProjects = await c.env.DB.prepare("SELECT id FROM projects WHERE is_demo=1").all<{ id: string }>();
   const demoUsers = await c.env.DB.prepare("SELECT id FROM users WHERE is_demo=1").all<{ id: string }>();
-  await c.env.DB.batch([
+  const cleanup = await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM projects WHERE is_demo=1"),
-    c.env.DB.prepare("DELETE FROM users WHERE is_demo=1"),
+    c.env.DB.prepare(`
+      DELETE FROM users WHERE is_demo=1 AND (
+        role!='admin' OR is_active!=1 OR approval_status!='approved'
+        OR EXISTS (SELECT 1 FROM users AS keeper WHERE keeper.is_demo=0 AND keeper.role='admin' AND keeper.is_active=1 AND keeper.approval_status='approved')
+      )
+    `),
   ]);
-  await writeAudit(c.env.DB, c.get("user"), "clear_demo", "system", "demo", `清除 ${demoProjects.results.length} 個專案與 ${demoUsers.results.length} 個帳號`);
-  return c.json({ deleted_projects: demoProjects.results.length, deleted_users: demoUsers.results.length });
+  const deletedProjects = cleanup[0]?.meta.changes ?? 0;
+  const deletedUsers = cleanup[1]?.meta.changes ?? 0;
+  const preservedUsers = demoUsers.results.length - deletedUsers;
+  await writeAudit(c.env.DB, c.get("user"), "clear_demo", "system", "demo", `清除 ${deletedProjects} 個專案與 ${deletedUsers} 個帳號${preservedUsers ? `；為保留最後管理員而略過 ${preservedUsers} 個帳號` : ""}`);
+  return c.json({ deleted_projects: deletedProjects, deleted_users: deletedUsers, preserved_users: preservedUsers });
 });
 
 adminRoutes.post("/test-email", async (c) => {
