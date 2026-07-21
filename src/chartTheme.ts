@@ -1,0 +1,16 @@
+export const CHART = {
+  void: "#070B14",
+  nexus: "#0D1526",
+  raised: "#131E36",
+  line: "#1C2A47",
+  gold: "#C8A24A",
+  goldBright: "#E8C878",
+  psi: "#35C8FF",
+  psiDeep: "#1A6FA8",
+  psiGlow: "rgba(53,200,255,.35)",
+  star: "#E6EDF7",
+  starDim: "#93A4C0",
+  ok: "#46E0A0",
+  warn: "#F0B44C",
+  danger: "#FF5A6A",
+} as const;

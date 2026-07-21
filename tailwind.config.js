@@ -4,16 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          900: "#312e81"
-        }
+        void: "#070B14",
+        nexus: { DEFAULT: "#0D1526", raised: "#131E36", line: "#1C2A47" },
+        gold: { DEFAULT: "#C8A24A", bright: "#E8C878", dim: "#8A7133" },
+        psi: { DEFAULT: "#35C8FF", deep: "#1A6FA8", glow: "rgba(53,200,255,.35)" },
+        star: { DEFAULT: "#E6EDF7", dim: "#93A4C0" },
+        ok: "#46E0A0",
+        warn: "#F0B44C",
+        danger: "#FF5A6A"
+      },
+      fontFamily: {
+        sans: ["Noto Sans TC", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"]
       }
     }
   },

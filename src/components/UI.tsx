@@ -1,22 +1,22 @@
 import type { ReactNode } from "react";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-slate-900">{title}</h1>{description && <p className="mt-1 text-sm text-slate-500">{description}</p>}</div>{actions}</div>;
+  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-gold-bright">{title}</h1>{description && <p className="mt-1 text-sm text-star-dim">{description}</p>}</div>{actions}</div>;
 }
 
 export function ProgressBar({ value }: { value: number }) {
-  return <div className="flex items-center gap-3"><div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-600" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div><span className="w-10 text-right text-sm font-semibold">{value}%</span></div>;
+  return <div className="flex items-center gap-3"><div className="energy-track"><div className={`energy-fill ${value >= 100 ? "is-complete" : ""}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div><span className="w-10 text-right text-sm font-semibold text-star">{value}%</span></div>;
 }
 
-export function Empty({ children }: { children: ReactNode }) { return <div className="rounded-xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-500">{children}</div>; }
-export function ErrorBox({ message }: { message: string }) { return <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</div>; }
-export function Loading() { return <div className="py-20 text-center text-slate-500">載入中…</div>; }
+export function Empty({ children }: { children: ReactNode }) { return <div className="empty-state">{children}</div>; }
+export function ErrorBox({ message }: { message: string }) { return <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger">{message}</div>; }
+export function Loading() { return <div className="py-20 text-center text-star-dim">載入中…</div>; }
 
 export function RiskBadge({ level }: { level?: string | null }) {
   if (!level) return <span className="badge">未分析</span>;
-  const style = level === "high" ? "bg-red-100 text-red-700" : level === "medium" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+  const style = level === "high" ? "risk-high" : level === "medium" ? "risk-medium" : "risk-low";
   const label = level === "high" ? "高風險" : level === "medium" ? "中風險" : "低風險";
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}>{label}</span>;
+  return <span className={`inline-flex px-2.5 py-1 text-xs font-semibold ${style}`}>{label}</span>;
 }
 
 export function Markdown({ content }: { content: string }) {
