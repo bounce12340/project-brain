@@ -3,7 +3,8 @@
 執行日期：2026-07-21（Asia/Taipei）  
 正式網址：<https://projects.uic-ai.com>  
 Cloudflare Worker：`project-brain`  
-首次正式部署 Version ID：`fb803de0-b1e8-45a9-994c-e541a735a080`
+首次正式部署 Version ID：`fb803de0-b1e8-45a9-994c-e541a735a080`  
+最終正式部署 Version ID：`dd9face1-e5ae-4e5f-9246-8a3d7b75cdb1`
 
 > 本檔只記錄指令、狀態與非機密摘要。Cookie、密碼 hash、LLM key、AgentMail key 均未寫入。
 
@@ -49,6 +50,7 @@ npx wrangler deploy
 - dry-run：讀取 4 個 static asset files，Worker bundle 148.29 KiB（gzip 32.72 KiB）。
 - startup check：Worker built 並完成分析；此指令本身標示 alpha。
 - deploy：3 個新／更新 assets 上傳成功，Worker startup 6 ms，D1／AI／ASSETS bindings 與兩個 cron 均註冊成功。
+- Markdown renderer 最終調整後再次部署：2 個更新 assets 上傳成功，Worker startup 7 ms，最終 Version ID 如本檔頂端。
 - custom domain 首次即成功，無需 fallback；實際網址為 `https://projects.uic-ai.com`。
 
 ## 4. 正式環境 secrets
