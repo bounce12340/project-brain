@@ -200,6 +200,7 @@ LLM 失敗時報告仍保存純數據版；預生成報告一律排除保密專�
 | — | 六份 Excel 真實資料搬遷（32 專案／110 進度／627 法規，跨檔重複合併） | [IMPORT.md](IMPORT.md) / [IMPORT-RUN.md](IMPORT-RUN.md) |
 | v7 / v7.1 | 法規 AI 匯入（文字／PDF）＋拆分粒度修正（單則＝一筆） | [SPEC](SPEC-V7.md)·[7.1](SPEC-V7-1.md) / [驗收](ACCEPTANCE-V7.md)·[7.1](ACCEPTANCE-V7-1.md) |
 | v8 | 組別週報月報＋月報 cron、時間軸泳道＋任務條、全站字級、加粗 | [SPEC](SPEC-V8.md) / [驗收](ACCEPTANCE-V8.md) |
+| v9 | 繁中／English 雙語（含 AI 輸出跟隨）＋暗色／亮色主題切換（CSS 變數 token 化） | [SPEC](SPEC-V9.md) / [驗收](ACCEPTANCE-V9.md) |
 
 ## 🧭 開發模式
 
