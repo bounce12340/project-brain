@@ -11,6 +11,8 @@ import {
   ensureRegwatchTextLimit,
   extractRegwatchEntries,
   markRegwatchDuplicates,
+  normalizeRegwatchExtractMode,
+  type RegwatchExtractMode,
   type RegwatchExtractedEntry,
 } from "../services/regwatch-ai";
 
@@ -23,6 +25,7 @@ interface ExtractInput {
   text: string;
   sourceLink: string | null;
   file: File | null;
+  mode: RegwatchExtractMode;
 }
 
 function safeFilename(name: string): string {
@@ -37,16 +40,17 @@ async function readExtractInput(request: Request): Promise<ExtractInput> {
     const file = fileValue instanceof File && fileValue.size > 0 ? fileValue : null;
     const pastedText = typeof form.get("text") === "string" ? String(form.get("text")) : "";
     const sourceLink = typeof form.get("source_link") === "string" && String(form.get("source_link")).trim() ? String(form.get("source_link")).trim() : null;
+    const mode = normalizeRegwatchExtractMode(form.get("mode"));
     if (file && pastedText.trim()) throw new Error("MULTIPLE_INPUTS");
-    if (!file) return { text: pastedText, sourceLink, file: null };
+    if (!file) return { text: pastedText, sourceLink, file: null, mode };
     if (file.size > maxFileBytes) throw new Error("FILE_TOO_LARGE");
     const extension = file.name.toLocaleLowerCase().endsWith(".pdf") ? "pdf" : file.name.toLocaleLowerCase().endsWith(".txt") ? "txt" : "";
     if (!extension) throw new Error("INVALID_FILE_TYPE");
-    if (extension === "txt") return { text: await file.text(), sourceLink, file };
+    if (extension === "txt") return { text: await file.text(), sourceLink, file, mode };
     try {
       const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
       const result = await extractText(pdf, { mergePages: false });
-      return { text: ensurePdfText(result.text.join("\f")), sourceLink, file };
+      return { text: ensurePdfText(result.text.join("\f")), sourceLink, file, mode };
     } catch (error) {
       if (error instanceof Error && error.message === "PDF_NO_TEXT") throw error;
       throw new Error("INVALID_PDF");
@@ -57,6 +61,7 @@ async function readExtractInput(request: Request): Promise<ExtractInput> {
     text: typeof body.text === "string" ? body.text : "",
     sourceLink: typeof body.source_link === "string" && body.source_link.trim() ? body.source_link.trim() : null,
     file: null,
+    mode: normalizeRegwatchExtractMode(body.mode),
   };
 }
 
@@ -107,7 +112,7 @@ v7Routes.post("/regwatch/ai-extract", async (c) => {
   if (!text) return c.json({ error: "請貼上公告文字或上傳檔案" }, 422);
   try { ensureRegwatchTextLimit(text); } catch { return c.json({ error: "文字內容不可超過 120,000 字元" }, 422); }
   try {
-    const extracted = await extractRegwatchEntries(c.env, text);
+    const extracted = await extractRegwatchEntries(c.env, text, input.mode);
     if (!extracted.length) return c.json({ error: "AI 服務暫時無法使用，可改用手動新增" }, 502);
     const entries = markRegwatchDuplicates(extracted.map((entry) => ({ ...entry, link: input.sourceLink ?? undefined })), await existingRegwatchKeys(c.env.DB, extracted));
     return c.json({ entries });

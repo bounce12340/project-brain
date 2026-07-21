@@ -3,7 +3,9 @@ import { parseLooseJson } from "../worker/services/llm";
 import {
   REGWATCH_TEXT_TOTAL_LIMIT,
   batchDuplicateStats,
+  buildRegwatchSystemPrompt,
   canDownloadFileForRegwatch,
+  consolidateSingleAnnouncement,
   ensurePdfText,
   ensureRegwatchTextLimit,
   markRegwatchDuplicates,
@@ -11,6 +13,7 @@ import {
   normalizeExtractedEntries,
   normalizeProductLine,
   normalizeRegwatchDate,
+  normalizeRegwatchExtractMode,
   regwatchExtractionErrorStatus,
   splitRegwatchText,
   type RegwatchExtractedEntry,
@@ -31,7 +34,7 @@ describe("SPEC-V7 法規 AI 匯入純函式", () => {
   it("切塊合併依 title 去重", () => expect(mergeExtractedEntries([[entry("同名")], [entry("同名"), entry("另一筆")]]).map((item) => item.title)).toEqual(["同名", "另一筆"]));
   it("正規化欄位並補條列符號與 fallback", () => {
     const result = normalizeExtractedEntries([{ entry_date: "115/07/21", entry_type: "unknown", product_line: "未知", category: "超過十個字的分類標籤", title: "公告", key_points: "第一點\n- 第二點" }]);
-    expect(result[0]).toMatchObject({ entry_date: "2026-07-21", entry_type: "announcement", product_line: "其他", key_points: "• 第一點\n• 第二點" });
+    expect(result[0]).toMatchObject({ entry_date: "2026-07-21", entry_type: "announcement", product_line: "其他", key_points: "第一點\n• 第二點" });
     expect(result[0].category.length).toBeLessThanOrEqual(10);
   });
   it("撞鍵判定使用 entry_date 與 title", () => expect(markRegwatchDuplicates([entry("A")], ["2026-07-21\u0000A"])[0].duplicate).toBe(true));
@@ -42,5 +45,36 @@ describe("SPEC-V7 法規 AI 匯入純函式", () => {
     expect(canDownloadFileForRegwatch(null, true)).toBe(true);
     expect(canDownloadFileForRegwatch(null, false)).toBe(false);
     expect(canDownloadFileForRegwatch("prj", true)).toBe(false);
+  });
+});
+
+describe("SPEC-V7-1 公告拆分粒度", () => {
+  it("mode 未提供時預設 single，僅明確 multi 才切換", () => {
+    expect(normalizeRegwatchExtractMode(undefined)).toBe("single");
+    expect(normalizeRegwatchExtractMode("single")).toBe("single");
+    expect(normalizeRegwatchExtractMode("multi")).toBe("multi");
+  });
+
+  it("single 模式把多筆結果歸一並取最早日期與第一個標題", () => {
+    const result = consolidateSingleAnnouncement([
+      { ...entry("第一個標題"), entry_date: "2026-07-22", key_points: "第一段摘要。\n• 修正甲" },
+      { ...entry("第二個標題"), entry_date: "2026-07-21", key_points: "第二段摘要。\n• 修正乙" },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ entry_date: "2026-07-21", title: "第一個標題" });
+    expect(result[0].key_points).toBe("第一段摘要。\n• 修正甲\n• 第二段摘要。\n• 修正乙");
+  });
+
+  it("key_points 第一行保留無符號摘要，後續行正規化為條列", () => {
+    const result = normalizeExtractedEntries([{ entry_date: "2026-07-21", title: "公告", key_points: "公告修正三項要求。\n修正甲\n- 修正乙\n• 修正丙" }]);
+    expect(result[0].key_points).toBe("公告修正三項要求。\n• 修正甲\n• 修正乙\n• 修正丙");
+  });
+
+  it("multi prompt 只以不同日期或不同公告標題為邊界，且含單公告三項 few-shot", () => {
+    const prompt = buildRegwatchSystemPrompt("multi");
+    expect(prompt).toContain("不同發文日期或不同公告標題");
+    expect(prompt).toContain("同一公告內的多個修正條文、品項、附表、子項目");
+    expect(prompt).toContain('"title":"醫療器材標示規定修正公告"');
+    expect(prompt.match(/• 修正/g)).toHaveLength(3);
   });
 });
