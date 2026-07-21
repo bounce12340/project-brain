@@ -47,7 +47,8 @@ export function RegwatchPage() {
 }
 
 function AiImportDrawer({ onClose, onImported }: { onClose(): void; onImported(): Promise<void> | void }) {
-  const [mode, setMode] = useState<"text" | "file">("text");
+  const [sourceMode, setSourceMode] = useState<"text" | "file">("text");
+  const [extractMode, setExtractMode] = useState<"single" | "multi">("single");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [sourceLink, setSourceLink] = useState("");
@@ -59,10 +60,10 @@ function AiImportDrawer({ onClose, onImported }: { onClose(): void; onImported()
     event.preventDefault(); setBusy(true); setError(""); setResult(null);
     try {
       const options: RequestInit = { method: "POST" };
-      if (mode === "file") {
+      if (sourceMode === "file") {
         if (!file) throw new Error("請選擇 .txt 或 .pdf 檔案");
-        const form = new FormData(); form.set("file", file); if (sourceLink.trim()) form.set("source_link", sourceLink.trim()); options.body = form;
-      } else options.body = JSON.stringify({ text, source_link: sourceLink.trim() || undefined });
+        const form = new FormData(); form.set("file", file); form.set("mode", extractMode); if (sourceLink.trim()) form.set("source_link", sourceLink.trim()); options.body = form;
+      } else options.body = JSON.stringify({ text, source_link: sourceLink.trim() || undefined, mode: extractMode });
       const response = await api<{ entries: Omit<ExtractedEntry, "included">[] }>("/regwatch/ai-extract", options);
       setEntries(response.entries.map((entry) => ({ ...entry, included: true })));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "AI 解析失敗"); }
@@ -75,7 +76,7 @@ function AiImportDrawer({ onClose, onImported }: { onClose(): void; onImported()
     setBusy(true); setError("");
     try {
       const options: RequestInit = { method: "POST" };
-      if (mode === "file" && file) { const form = new FormData(); form.set("entries", JSON.stringify(selected)); form.set("file", file); options.body = form; }
+      if (sourceMode === "file" && file) { const form = new FormData(); form.set("entries", JSON.stringify(selected)); form.set("file", file); options.body = form; }
       else options.body = JSON.stringify({ entries: selected });
       const response = await api<{ created: number; skipped: number }>("/regwatch/batch", options);
       setResult(response); await onImported();
@@ -83,7 +84,7 @@ function AiImportDrawer({ onClose, onImported }: { onClose(): void; onImported()
     finally { setBusy(false); }
   };
   return <div className="fixed inset-0 z-50 flex justify-end bg-void/80"><aside className="panel h-full w-full max-w-6xl overflow-y-auto p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="ai-import-title"><header className="mb-5 flex items-center justify-between"><div><h2 className="text-xl font-bold" id="ai-import-title">法規動態 AI 匯入</h2><p className="mt-1 text-sm text-star-dim">貼上公告，或上傳單一 .txt／含文字層的 .pdf（上限 10 MB）。</p></div><button className="btn-secondary" onClick={onClose}>關閉</button></header>
-    {!entries.length && <form className="space-y-4" onSubmit={(event) => void extract(event)}><div className="flex gap-3"><button type="button" className={mode === "text" ? "btn" : "btn-secondary"} onClick={() => setMode("text")}>貼上文字</button><button type="button" className={mode === "file" ? "btn" : "btn-secondary"} onClick={() => setMode("file")}>上傳檔案</button></div>{mode === "text" ? <textarea className="min-h-72 w-full" value={text} onChange={(event) => setText(event.target.value)} placeholder="貼上完整公告文字；月彙整可一次包含多則。" required /> : <input className="w-full" type="file" accept=".txt,.pdf,text/plain,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />}<div><label className="label">來源連結（選填）</label><input className="w-full" type="url" value={sourceLink} onChange={(event) => setSourceLink(event.target.value)} placeholder="https://..." /></div><button className="btn" disabled={busy}>{busy ? "AI 解析中…" : "開始解析"}</button></form>}
+    {!entries.length && <form className="space-y-4" onSubmit={(event) => void extract(event)}><fieldset><legend className="label">公告模式</legend><div className="grid gap-3 sm:grid-cols-2"><label className="panel flex cursor-pointer items-start gap-3 p-4"><input type="radio" name="extract-mode" value="single" checked={extractMode === "single"} onChange={() => setExtractMode("single")} /><span><strong className="block">單則公告（預設）</strong><span className="mt-1 block text-xs text-star-dim">整份內容匯成一筆，公告內項目整理在重點條列。</span></span></label><label className="panel flex cursor-pointer items-start gap-3 p-4"><input type="radio" name="extract-mode" value="multi" checked={extractMode === "multi"} onChange={() => setExtractMode("multi")} /><span><strong className="block">多則彙整</strong><span className="mt-1 block text-xs text-star-dim">只有不同日期或不同公告標題才拆成多筆。</span></span></label></div></fieldset><div className="flex gap-3"><button type="button" className={sourceMode === "text" ? "btn" : "btn-secondary"} onClick={() => setSourceMode("text")}>貼上文字</button><button type="button" className={sourceMode === "file" ? "btn" : "btn-secondary"} onClick={() => setSourceMode("file")}>上傳檔案</button></div>{sourceMode === "text" ? <textarea className="min-h-72 w-full" value={text} onChange={(event) => setText(event.target.value)} placeholder="貼上完整公告文字；多則彙整模式可一次包含多則公告。" required /> : <input className="w-full" type="file" accept=".txt,.pdf,text/plain,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />}<div><label className="label">來源連結（選填）</label><input className="w-full" type="url" value={sourceLink} onChange={(event) => setSourceLink(event.target.value)} placeholder="https://..." /></div><button className="btn" disabled={busy}>{busy ? "AI 解析中…" : "開始解析"}</button></form>}
     {entries.length > 0 && !result && <><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-star-dim">共 {entries.length} 筆；取消勾選可排除。標示撞鍵的資料送出後會略過。</p><button className="btn-secondary" onClick={() => setEntries([])}>重新輸入</button></div><div className="overflow-x-auto"><table className="min-w-[1100px] text-sm"><thead><tr><th>匯入</th><th>日期</th><th>類型</th><th>產品線</th><th>類別</th><th>標題</th><th>重點</th></tr></thead><tbody>{entries.map((entry, index) => <tr className={entry.duplicate ? "border-danger/60" : ""} key={`${entry.entry_date}-${index}`}><td><input type="checkbox" checked={entry.included} onChange={(event) => update(index, "included", event.target.checked)} />{entry.duplicate && <span className="mt-1 block text-xs text-danger">已存在，將略過</span>}</td><td><input className="w-36" type="date" value={entry.entry_date} onChange={(event) => update(index, "entry_date", event.target.value)} /></td><td><select value={entry.entry_type} onChange={(event) => update(index, "entry_type", event.target.value)}><option value="announcement">法規公告</option><option value="meeting">外部會議</option></select></td><td><select value={entry.product_line} onChange={(event) => update(index, "product_line", event.target.value)}>{productLines.map((value) => <option key={value}>{value}</option>)}</select></td><td><input className="w-28" maxLength={10} value={entry.category} onChange={(event) => update(index, "category", event.target.value)} /></td><td><textarea className="min-h-24 w-64" maxLength={100} value={entry.title} onChange={(event) => update(index, "title", event.target.value)} /></td><td><textarea className="min-h-24 w-80" value={entry.key_points} onChange={(event) => update(index, "key_points", event.target.value)} /></td></tr>)}</tbody></table></div><button className="btn mt-5" disabled={busy} onClick={() => void submit()}>{busy ? "匯入中…" : "確認匯入"}</button></>}
     {result && <div className="panel border-ok"><h3 className="font-bold text-ok">匯入完成</h3><p className="mt-2">建立 {result.created} 筆，略過 {result.skipped} 筆。</p><button className="btn mt-4" onClick={onClose}>返回列表</button></div>}{error && <div className="mt-4"><ErrorBox message={error} /></div>}
   </aside></div>;

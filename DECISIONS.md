@@ -40,3 +40,5 @@
 - 2026-07-21（v7）：同一原始檔拆出的新條目共用一個 `file_id`；刪除條目時只在其為最後一筆引用時同步刪除 R2 object 與 `files` row。已存在而略過的條目不會被回寫新附件，維持判重的無副作用語意。
 - 2026-07-21（v7）：LLM 回應規格為頂層 JSON 陣列，因此擴充既有寬鬆解析器同時支援 `{...}` 與 `[...]`；呼叫時不送只允許 object 的 `response_format=json_object`，由繁中 system prompt 約束陣列格式並於回傳後正規化。
 - 2026-07-21（v7）：開工時已有 `.gitignore`、`DECISIONS.md`、`AdminPage.tsx` 與 import preview 等未提交修改；為避免把既有使用者變更混入 commit，本輪不建立規格建議的小步 commit，保留所有既有 dirty worktree 內容不覆寫。
+- 2026-07-21（v7.1）：`ai-extract` 未提供 mode 或收到非 `multi` 值時一律採安全的 `single` 預設；只有明確的 `mode: "multi"` 才允許多公告拆分，避免舊客戶端或未知值重現過度拆分。
+- 2026-07-21（v7.1）：single 模式若 LLM／切塊仍產生多筆，依規格取最早日期與第一筆標題、串接全部 key_points；規格未指定的 entry type、產品線與類別沿用第一筆，避免臆測跨項目合成值。
