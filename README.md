@@ -1,104 +1,66 @@
-# 艾爾水晶-專案進度
+# 🔷 艾爾水晶-專案進度
 
-給台灣醫藥代理商內部團隊使用的共享專案管理工具。正式網址：<https://projects.uic-ai.com>。
+> 如同卡拉，讓團隊在水晶中共同感知每個專案的脈動。
 
-## 登入與帳號管理
+**正式站**：<https://projects.uic-ai.com>｜**版本**：v8｜**測試**：150/150 ✅｜**平台**：Cloudflare Workers
 
-員工可在登入頁點「申請帳號」，填寫姓名、公司 Email、至少 8 碼的自訂密碼與組別。系統寄出 6 位數驗證碼（15 分鐘有效），驗證成功後申請進入待核准狀態；管理員核准前無法登入或讀取任何專案資料。核准或拒絕結果會寄到申請人的 Email。
+給台灣醫藥代理商（UIC）內部團隊的共享專案進度平台。取代原先分散在六份 Excel 的追蹤方式（BD／RA／QA／臨床各自為政、同一專案被多人重複記錄），把專案、進度、OKR、法規動態、證照效期、變更管制收進同一顆水晶：全員即時共感、權限分級、AI 輔助、自動提醒。
 
-管理員在「管理 → 註冊申請」可開關自助註冊、查看待核清單、調整申請人的角色（正職成員／實習生）與組別，再核准或拒絕。`pending` 與 `rejected` 帳號也會出現在「使用者」頁並可刪除。管理員仍可直接在「使用者」建立帳號；這類帳號預設已核准，初次登入須變更密碼。
+## ✨ 功能總覽
 
-初始管理員：
+- **專案管理**：組別劃分（BD／臨床／QA／RA-PV）、可見性三級（全公司／同組／保密）、同組互相支援填寫、實習生受限視野、自動／手動進度、里程碑、階段模板
+- **任務四視圖**：看板（拖拉）｜清單｜日曆｜甘特（依賴箭頭＋today 線）；任務抽屜含留言 `@提及`、附件、依賴、AI 摘要
+- **OKR**：季度目標＋Key Results（負責人／狀態／排序），完成度計入自動進度
+- **專屬模組**：臨床收案（目標 vs 累計、逐日登錄）｜BD 查驗登記（案件狀態機、歷程、費用）｜QA 證照效期（到期分級警示＋自動通知）與 CCR 變更管制（`CCR-YYYY-NNN` 狀態機＋歷程）
+- **法規動態**：2018 年起 600+ 筆 TFDA 法規知識庫，產品線／類別／關鍵字篩選；**AI 匯入**——貼公告文字或上傳 PDF，自動解析成結構化條目（單則／多則模式）
+- **AI 智慧**（Ollama Cloud，deepseek-v4-pro）：進度快寫、任務摘要、專案風險預測、排程建議、週報／月報自動生成
+- **自動化**：規則引擎「當…就…」；每日提醒、AI 週報（週一）、AI 月報（每月 1 日）三條 cron
+- **報表**：組別週報／月報一鍵產生＋列印、CSV 匯出、時間軸組別泳道
+- **帳號**：自助註冊＋Email 驗證碼＋管理員核准；管理權移轉（共同管理員／完全移轉）＋最後管理員防呆
+- **介面**：星海爭霸神族主題（金＝結構、藍＝能量、切角面板、護盾進度條）、首次登入導覽、字級切換、繁體中文
 
-- Email：`bounceto12340@gmail.com`
-- 初始密碼：`Brain-2026!`
-- 首次登入必須變更密碼。
+## 🏗 系統架構
 
-示範帳號的初始密碼同為 `Brain-2026!`：
+```mermaid
+flowchart LR
+  U[瀏覽器 SPA<br/>React + Protoss 主題] -->|HTTPS<br/>projects.uic-ai.com| W[Cloudflare Worker<br/>Hono API + 靜態資產]
+  W --> D1[(D1 資料庫<br/>27 張表)]
+  W --> R2[(R2 檔案<br/>附件/公告原始檔)]
+  W -->|OpenAI 相容| LLM[Ollama Cloud<br/>deepseek-v4-pro]
+  W -.->|無 key fallback| WAI[Workers AI<br/>Llama 3.3]
+  CRON[Cron ×3<br/>每日/每週/每月] --> W
+  W -->|提醒·報告·邀請| MAIL[AgentMail<br/>uic_ai@agentmail.to]
+```
 
-| 角色 | Email | 姓名 |
-|---|---|---|
-| 臨床組 member | `clinical1@demo.local` | 林曉臨 |
-| 臨床組 member | `clinical2@demo.local` | 陳收案 |
-| BD 組 member | `bd1@demo.local` | 王必達 |
-| 臨床組 intern | `intern1@demo.local` | 李實習 |
+## 🧰 技術棧
 
-管理員可停用已核准帳號、調整角色與組別、重設臨時密碼。重設密碼會撤銷該使用者既有 session。正式上線後，建議在完成示範與權限驗證後使用「清除示範資料」。
+| 層 | 技術 |
+|---|---|
+| 前端 | React 18 · Vite · TypeScript · Tailwind CSS · @dnd-kit（拖拉）· Recharts（圖表）· 自製日曆／甘特 SVG |
+| 後端 | Cloudflare Workers · Hono · Workers Static Assets |
+| 資料 | D1（SQLite，raw SQL migrations）· R2（檔案）· unpdf（PDF 文字層抽取） |
+| AI | OpenAI 相容層（Ollama Cloud `deepseek-v4-pro`）＋ Workers AI fallback |
+| 郵件 | AgentMail REST API |
+| 認證 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
+| 測試 | Vitest 150 tests（權限矩陣、狀態機、演算法、匯入冪等） |
 
-「管理 → 管理權移轉」可把啟用且已核准的 member／intern 升為共同管理員，或完全移轉後把自己降為 member。兩種模式都要重新輸入目前密碼；完全移轉另有二次確認。系統會在 API 與介面阻止降級或停用最後一名 active approved admin。
+## 📁 專案結構
 
-註冊防濫用包含同 Email 60 秒寄碼冷卻、每組驗證碼最多嘗試 5 次，以及同 IP 每日 send-code 10 次／submit 20 次。驗證碼只以 SHA-256 雜湊保存；寄信服務未設定或寄送失敗時不會建立帳號或略過驗證。
+```
+worker/            # Hono API：routes、middleware、services（permissions/llm/mailer/crypto…）
+src/               # React SPA：pages、components、Protoss design tokens
+migrations/        # D1 migrations 0001–0007
+tests/             # Vitest（＋fixtures）
+scripts/           # 各版正式站 E2E 驗收腳本
+SPEC*.md           # 各版規格書（開發都由規格驅動）
+ACCEPTANCE*.md     # 各版驗收證據（指令與結果原文）
+IMPORT.md          # 批次匯入 JSON 合約
+BACKUP.md          # 備份與還原手冊
+backup.ps1         # 每週自動備份（D1 dump + R2 → OneDrive）
+DECISIONS.md       # 實作決策紀錄
+```
 
-## 權限規則速查
-
-| 行為 | admin | owner | 同組 member | project member | intern |
-|---|---|---|---|---|---|
-| 檢視 `all` | 全部 | 是 | 是 | 是 | 僅被加入的專案 |
-| 檢視 `group` | 全部 | 是 | 是 | 是 | 僅被加入的專案 |
-| 檢視 `private` | 全部 | 是 | 否 | 是 | 僅被加入的專案 |
-| 填寫進度、任務、看板、收案、BD 事件 | 全部 | 是 | 是 | 是 | 僅被加入的專案 |
-| 修改可見性、成員、歸檔、刪除 | 全部 | 是 | 否 | 否 | 否 |
-| 檢視與填寫 BD 費用 | 全部 | 是 | 同組正職可 | 跨組不可 | 不可 |
-
-intern 的專案清單、儀表板與時間軸只彙整他被加入的專案。後端 API 會再次檢查權限；前端隱藏按鈕不是唯一防線。V8 起預先生成的組別週報／月報預設排除保密專案，開放該組 member 與 intern 讀取；全公司報告與 admin 明確勾選「含保密專案」的版本仍只有 admin 可讀。
-
-## 日常操作與 v2 協作
-
-### 專案、任務多視圖與自動進度
-
-1. 在「專案」選擇「新增專案」，設定組別、可見性、目標日與階段模板。
-2. 專案「總覽」可切換手動／自動進度。自動模式依任務、里程碑、關聯待辦與 Key Results 的完成比例計算；既有專案維持手動，新建專案預設自動。
-3. 「任務」可切換看板、清單、日曆與甘特。看板保留拖拉與階段管理；清單支援排序篩選；日曆以到期日呈現；甘特顯示任務、里程碑與依賴箭頭。
-4. 點任務開啟右側抽屜，可編輯內容、負責人、起訖日、完成狀態與依賴，並使用留言、`@提及`、附件及 AI 摘要。
-5. 「進度紀錄」可貼入雜記，以「AI 快寫」整理成三段式草稿；草稿可編輯，按「發布進度」後才會存入資料庫。
-
-### 檔案、自動化與 AI
-
-- 專案「檔案」與任務抽屜附件都使用 R2 bucket `project-brain-files`。單檔上限 25 MB；下載一定經 Worker 檢查專案檢視權限，只有上傳者、owner 或 admin 可刪除。
-- 專案「自動化」以「當…就…」建立規則，支援任務完成／移入階段、里程碑完成、進度跨越門檻，並通知、指派、建立待辦或寫入進度紀錄。
-- 專案總覽的 AI 風險預測會保存風險等級、摘要與建議；任務頁可預覽 AI 排程建議，後端確認日期在專案範圍且不違反依賴後才可套用。
-- 導覽列「時間軸」依組別泳道比較所有可見進行中專案；可篩選組別並展開專案查看任務起訖、完成狀態與負責人，展開狀態會保存在瀏覽器。「？」開啟常駐說明頁並可重新播放首次登入導覽。
-
-### 臨床與 BD
-
-- `clinical` 組專案會顯示臨床分頁，可設定收案目標、登錄逐日／中心收案，並查看累計折線與中心小計。
-- `bd` 組專案會顯示 BD 分頁，可管理查驗登記案件、狀態、案件歷程與費用。費用 API 會依權限移除整個金額資料集。
-
-### QA、OKR 與法規動態
-
-- `qa` 組專案會顯示 QA 分頁，提供證照／系統效期登記簿及 CCR 變更管制。效期倒數會分級顯示，90／60／30／7 天與首次逾期由每日 cron 通知 owner 及 QA 組全員。
-- 所有專案總覽都有季度 OKR 區塊，可設定 objective、負責人與 KR 狀態並拖拉排序；儀表板彙整使用者可見專案的當季完成數。
-- 導覽列「法規動態」全員可讀，支援產品線、類型、年份與關鍵字篩選；`grp_general` 的 member（RA/PV）與 admin 可維護資料。
-- 法規動態的「AI 匯入」可貼上公告文字，或上傳 10 MB 內的 `.txt`／含文字層 `.pdf`；預設「單則公告」會把整份內容整理成一筆摘要與項目條列，「多則彙整」只在不同日期或不同公告標題時拆成多筆。預覽列可編輯或排除，確認時以 `(entry_date,title)` 判重。上傳原始檔會存入 R2，登入者可從條目下載；掃描 PDF 不做 OCR，請改貼文字或提供文字版。
-- 管理員可在「管理 → 批次匯入」預覽並匯入 JSON；完整欄位、冪等規則與 fallback 見 [IMPORT.md](IMPORT.md)。
-
-### 報表、待辦與通知
-
-- 報表摘要可選本週、上週、本月或自訂期間，並依組別篩選；支援摘要與費用 CSV、瀏覽器列印。「產生報告」可建立本週／上週週報或本月／上月月報：member 與 intern 只能產生自己組別，admin 可選任一組或全公司，並可產生僅 admin 可讀的含保密專案版本。
-- 待辦分成今日、逾期、未排程、之後與已完成；只可關聯有進度編輯權限的專案，完成後會顯示自動進度回饋。
-- 導覽列通知數來自站內通知。每日 Email 是加值功能，即使寄信服務未設定或失敗，站內通知仍會建立。
-- 個人設定可切換標準 17px 或大 18.5px 字級，偏好只存在目前瀏覽器。
-
-## 建立組別與階段模板
-
-管理員前往「管理」：
-
-- 「組別」新增名稱並選擇 `clinical`、`bd`、`qa` 或 `general`。型別決定專案詳情顯示哪個專屬模組。仍被使用者、專案或模板引用的組別不能刪除。
-- 「階段模板」輸入模板名稱、適用組別（可留空表示通用），階段以 `→` 分隔。新建專案時套用模板會複製階段，後續修改模板不會改動既有專案。
-
-## 排程
-
-Wrangler 設定使用 UTC cron，對應台北時間如下：
-
-| Cron | 台北時間 | 工作 |
-|---|---|---|
-| `0 1 * * *` | 每日 09:00 | 里程碑、待辦、BD 核准／補件停滯、QA 效期、專案停滯、自動歸檔、提及與自動化通知、每人一封 Email 彙整 |
-| `30 0 * * 1` | 每週一 08:30 | 產生上週全公司與各組 AI 週報、建立全員站內通知 |
-| `30 0 1 * *` | 每月 1 日 08:30 | 產生上月全公司與各組 AI 月報 |
-
-LLM 失敗時，週報與月報仍會保存純數據版；所有預生成報告預設排除保密專案並在文末註記。AgentMail secret 未設定時只略過 Email，不影響站內通知。
-
-## 本機開發
+## 🚀 本機開發
 
 ```powershell
 npm install
@@ -107,7 +69,7 @@ npx wrangler d1 migrations apply project-brain-db --local
 npm run dev
 ```
 
-本機 Worker 整合測試可用：
+本機 Worker 整合測試：
 
 ```powershell
 npm run build
@@ -124,7 +86,7 @@ npm run build
 
 `.dev.vars` 僅放 `LLM_API_KEY` 與 `AGENTMAIL_API_KEY`，已被 Git 忽略。不可把值放進 `wrangler.jsonc`、README、log 或 commit。
 
-## 部署與設定
+## ☁️ 部署
 
 ```powershell
 npx wrangler d1 migrations apply project-brain-db --remote
@@ -133,18 +95,105 @@ npx wrangler deploy
 
 Secrets 必須從 `.dev.vars` 讀取並透過 stdin 傳給 Wrangler，不要放在命令參數或輸出中。部署後可用 `npx wrangler secret list` 確認只有名稱。
 
-### 更換 LLM 模型
+**更換 LLM 模型**：改 `wrangler.jsonc` 的 `vars.LLM_MODEL`（換端點另改 `vars.LLM_BASE_URL`）→ `typecheck`＋`build`＋`deploy`。系統優先呼叫 OpenAI 相容端點；`LLM_API_KEY` 不存在時 fallback 到 Workers AI。
 
-編輯 `wrangler.jsonc` 的 `vars.LLM_MODEL`，如需更換相容端點也調整 `vars.LLM_BASE_URL`，再執行：
+**補綁自訂網域**：目前 `projects.uic-ai.com` 已綁定。若未來重建 Worker 且 custom domain 失敗，先移除 `routes` 部署到 workers.dev，再到 Dashboard → Workers → project-brain → Settings → Domains & Routes 手動新增，最後把 `APP_BASE_URL` 改回並重新部署。
 
-```powershell
-npm run typecheck
-npm run build
-npx wrangler deploy
-```
+## ⏰ 排程（UTC cron ↔ 台北時間）
 
-系統優先呼叫 OpenAI-compatible 端點；`LLM_API_KEY` 不存在時才使用 Workers AI binding 的 Llama fallback。
+| Cron | 台北時間 | 工作 |
+|---|---|---|
+| `0 1 * * *` | 每日 09:00 | 里程碑／待辦／BD 停滯／QA 證照效期／專案停滯／自動歸檔／提及與自動化通知，每人一封 Email 彙整 |
+| `30 0 * * 1` | 每週一 08:30 | 上週全公司與各組 AI 週報 |
+| `30 0 1 * *` | 每月 1 日 08:30 | 上月全公司與各組 AI 月報 |
 
-### 補綁自訂網域
+LLM 失敗時報告仍保存純數據版；預生成報告一律排除保密專案並於文末註記。AgentMail 未設定時僅略過 Email，站內通知不受影響。
 
-目前 `projects.uic-ai.com` 已成功綁定。如未來重建 Worker 且 custom domain 失敗，可先移除 `wrangler.jsonc` 的 `routes` 部署至 workers.dev，之後在 Cloudflare Dashboard 的 Workers & Pages → project-brain → Settings → Domains & Routes 新增 Custom Domain `projects.uic-ai.com`，並把 `APP_BASE_URL` 改回正式網址後重新部署。
+## 🔐 帳號與權限
+
+### 註冊與核准
+
+員工在登入頁「申請帳號」：姓名＋公司 Email＋密碼＋組別 → 6 位數 Email 驗證碼（15 分鐘）→ 進入待核准。管理員於「管理 → 註冊申請」核准（可調角色／組別）或拒絕，結果寄信通知；核准前無法登入。防濫用：同 Email 60 秒寄碼冷卻、驗證碼最多試 5 次、同 IP 每日上限。管理員也可直接建帳號（首登強制改密）。
+
+### 管理權移轉
+
+「管理 → 管理權移轉」：**共同管理員**（對方升 admin、自己不變）或**完全移轉**（原子先升後降）。兩種都須重輸自己的密碼；系統在 API 層阻止降級／停用最後一名 active admin。
+
+### 權限速查
+
+| 行為 | admin | owner | 同組 member | project member | intern |
+|---|---|---|---|---|---|
+| 檢視 `all` | 全部 | ✔ | ✔ | ✔ | 僅被加入的專案 |
+| 檢視 `group` | 全部 | ✔ | ✔ | ✔ | 僅被加入的專案 |
+| 檢視 `private` | 全部 | ✔ | ✘ | ✔ | 僅被加入的專案 |
+| 填寫進度／任務／看板／收案／BD 事件 | 全部 | ✔ | ✔ | ✔ | 僅被加入的專案 |
+| 修改可見性／成員／歸檔／刪除 | 全部 | ✔ | ✘ | ✘ | ✘ |
+| BD 費用檢視與填寫 | 全部 | ✔ | 同組正職 | 跨組不可 | ✘ |
+
+後端 API 逐一覆核權限（集中於 `worker/services/permissions.ts`，27 組矩陣測試）；前端隱藏按鈕不是唯一防線。intern 的清單、儀表板、時間軸、報表只彙整其可見專案。
+
+### 示範帳號（驗證權限用，密碼 `Brain-2026!`；正式上線後用「管理 → 清除示範資料」移除）
+
+| 角色 | Email | 姓名 |
+|---|---|---|
+| 臨床組 member | `clinical1@demo.local` | 林曉臨 |
+| 臨床組 member | `clinical2@demo.local` | 陳收案 |
+| BD 組 member | `bd1@demo.local` | 王必達 |
+| 臨床組 intern | `intern1@demo.local` | 李實習 |
+
+## 📖 日常操作指南
+
+### 專案、任務與自動進度
+
+1. 「專案 → 新增專案」設定組別、可見性、目標日與階段模板。
+2. 「總覽」可切換手動／自動進度；自動模式＝任務＋里程碑＋關聯待辦＋KR 的完成比例（新專案預設自動）。
+3. 「任務」四視圖自由切換；看板支援階段與卡片拖拉；點任務開抽屜編輯內容、負責人、起訖日、依賴，並使用留言 `@提及`、附件與 AI 摘要。
+4. 「進度紀錄」貼雜記後用「AI 快寫」整理成三段式草稿，確認後發布。
+
+### 檔案、自動化與 AI
+
+- 檔案存 R2（單檔 25 MB），下載經權限檢查；上傳者／owner／admin 可刪。
+- 「自動化」規則：任務完成／移入階段／里程碑完成／進度跨門檻 → 通知／改指派／建待辦／寫紀錄。
+- 專案總覽「AI 風險預測」存等級＋建議並顯示於儀表板；「AI 排程建議」經後端驗證（日期在專案內、不違反依賴）才可套用。
+
+### 法規動態 AI 匯入
+
+貼上公告文字或上傳 `.txt`／文字層 `.pdf`（10 MB 內）。**單則公告**（預設）：整份內容 → 1 筆（摘要＋「•」條列項目）；**多則彙整**：僅在不同發文日期或不同公告標題時拆分。預覽可逐格編輯／排除，確認時以 `(entry_date, title)` 判重；原始檔存 R2 可回查。掃描 PDF 無文字層者請改貼文字（刻意不做 OCR）。
+
+### 報表與時間軸
+
+- 「報表 → 產生報告」：選組別＋（本週／上週／本月／上月）一鍵產生，支援列印；member 限本組，admin 可全公司或含保密版。
+- 「時間軸」：組別泳道總覽全部可見專案，展開列可見任務時間條（負責人 tooltip）。
+
+### 組別與階段模板（管理員）
+
+「管理 → 組別」型別（`clinical`／`bd`／`qa`／`general`）決定專屬模組；被引用的組別不可刪。「階段模板」以 `→` 分隔階段，套用時複製、後續改模板不影響既有專案。
+
+## 💾 備份與還原
+
+| 層 | 機制 |
+|---|---|
+| 程式碼 | 本 GitHub 私有 repo（每次改版 push） |
+| 資料庫＋檔案 | 每週一 07:30 排程「AiurCrystalBackup」跑 `backup.ps1` → D1 完整 dump＋R2 檔案 → OneDrive，保留 8 份 |
+| 雲端內建 | D1 Time Travel：過去 30 天任一時間點可整庫回溯 |
+| Secrets | `.dev.vars` 本機保存＋密碼管理器備份 |
+
+誤刪資料、機器重建、帳號級災難的完整還原步驟見 **[BACKUP.md](BACKUP.md)**；建議每季演練一次。
+
+## 🕰 版本歷程
+
+| 版本 | 內容 | 規格 / 驗收 |
+|---|---|---|
+| v1 | 平台核心：認證、權限、專案、看板、臨床／BD 模組、儀表板、cron、AI 快寫／週報 | [SPEC](SPEC.md) / [驗收](ACCEPTANCE.md) |
+| v2 | 改名艾爾水晶、自動進度、導覽、多視圖、甘特、時間軸、留言提及、R2 檔案、自動化、AI 三件套 | [SPEC](SPEC-V2.md) / [驗收](ACCEPTANCE-V2.md) |
+| v3 | 自助註冊＋Email OTP＋管理員核准 | [SPEC](SPEC-V3.md) / [驗收](ACCEPTANCE-V3.md) |
+| v4 | 管理權移轉＋最後管理員防呆 | [SPEC](SPEC-V4.md) / [驗收](ACCEPTANCE-V4.md) |
+| v5 | Protoss 主題重塑（金結構／藍能量／切角面板／護盾進度條） | [SPEC](SPEC-V5.md) / [驗收](ACCEPTANCE-V5.md) |
+| v6 | 團隊帳號、QA 證照效期、CCR 變更管制、OKR、法規動態、批次匯入 | [SPEC](SPEC-V6.md) / [驗收](ACCEPTANCE-V6.md) |
+| — | 六份 Excel 真實資料搬遷（32 專案／110 進度／627 法規，跨檔重複合併） | [IMPORT.md](IMPORT.md) / [IMPORT-RUN.md](IMPORT-RUN.md) |
+| v7 / v7.1 | 法規 AI 匯入（文字／PDF）＋拆分粒度修正（單則＝一筆） | [SPEC](SPEC-V7.md)·[7.1](SPEC-V7-1.md) / [驗收](ACCEPTANCE-V7.md)·[7.1](ACCEPTANCE-V7-1.md) |
+| v8 | 組別週報月報＋月報 cron、時間軸泳道＋任務條、全站字級、加粗 | [SPEC](SPEC-V8.md) / [驗收](ACCEPTANCE-V8.md) |
+
+## 🧭 開發模式
+
+本專案採**規格驅動＋雙 agent 流水線**：Claude（規格撰寫、派工、獨立驗收）＋ OpenAI Codex（實作、部署、E2E 自驗）。每一版都有書面規格（`SPEC*.md`）與如實記錄指令輸出的驗收檔（`ACCEPTANCE*.md`），失敗與未達成項一律留痕，不粉飾。實作決策集中在 [DECISIONS.md](DECISIONS.md)。
