@@ -4,7 +4,8 @@ import { getProjectAccess } from "../services/db";
 import { requiredString } from "../services/http";
 import { llmChat, parseLooseJson } from "../services/llm";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
-import { regenerateWeeklyReports } from "../services/reports";
+import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
+import { reportPeriod, type ReportPeriodPreset } from "../services/time";
 import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
 
@@ -37,9 +38,41 @@ reportsRoutes.get("/summary", async (c) => {
 });
 
 reportsRoutes.get("/ai", async (c) => {
-  if (c.get("user").role !== "admin") return c.json({ reports: [] });
-  const result = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope ORDER BY ar.created_at DESC LIMIT 50").all();
+  const user = c.get("user");
+  const statement = user.role === "admin"
+    ? c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope ORDER BY ar.created_at DESC LIMIT 50")
+    : c.env.DB.prepare("SELECT ar.*,g.name AS scope_name FROM ai_reports ar JOIN groups g ON g.id=ar.scope WHERE ar.scope=? AND ar.include_private=0 ORDER BY ar.created_at DESC LIMIT 50").bind(user.group_id);
+  const result = await statement.all();
   return c.json({ reports: result.results });
+});
+
+reportsRoutes.get("/ai/:id", async (c) => {
+  const report = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.id=?")
+    .bind(c.req.param("id")).first<Record<string, unknown> & { scope: string; include_private: number }>();
+  if (!report) return c.json({ error: "找不到報告" }, 404);
+  if (!canReadReport(c.get("user"), report)) return c.json({ error: "沒有報告讀取權限" }, 403);
+  return c.json({ report });
+});
+
+const reportPresets = new Set<ReportPeriodPreset>(["this-week", "last-week", "this-month", "last-month"]);
+
+reportsRoutes.post("/ai/generate", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const scope = requiredString(body, "scope");
+  const preset = requiredString(body, "period") as ReportPeriodPreset | undefined;
+  const includePrivate = body.include_private === true;
+  if (!scope || !preset || !reportPresets.has(preset)) return c.json({ error: "請選擇組別與報告期間" }, 422);
+  const user = c.get("user");
+  if (!canGenerateReport(user, scope, includePrivate)) return c.json({ error: "沒有此範圍的報告產生權限" }, 403);
+  if (scope !== "all") {
+    const group = await c.env.DB.prepare("SELECT id FROM groups WHERE id=?").bind(scope).first();
+    if (!group) return c.json({ error: "找不到組別" }, 404);
+  }
+  const period = reportPeriod(preset);
+  const generated = await generateReport(c.env, { start: period.start, end: period.end, scope, periodType: period.periodType, includePrivate });
+  const report = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.id=?")
+    .bind(generated.id).first();
+  return c.json({ report, fallback: generated.fallback }, 201);
 });
 
 reportsRoutes.post("/ai/regenerate", async (c) => {
