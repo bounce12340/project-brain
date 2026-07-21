@@ -1,6 +1,7 @@
 PRAGMA foreign_keys = ON;
 
 INSERT OR IGNORE INTO groups (id, name, type) VALUES ('grp_qa', 'QA組', 'general');
+INSERT OR IGNORE INTO project_members (project_id, user_id, added_by) VALUES ('prj_bd', 'usr_clinical2', 'usr_bd1');
 
 ALTER TABLE projects ADD COLUMN progress_mode TEXT NOT NULL DEFAULT 'manual' CHECK (progress_mode IN ('manual', 'auto'));
 ALTER TABLE projects ADD COLUMN risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high'));
@@ -61,4 +62,3 @@ CREATE INDEX idx_task_dependencies_parent ON task_dependencies(depends_on_task_i
 CREATE INDEX idx_task_comments_task_created ON task_comments(task_id, created_at);
 CREATE INDEX idx_files_project_task ON files(project_id, task_id, created_at);
 CREATE INDEX idx_automation_project_enabled ON automation_rules(project_id, enabled);
-
