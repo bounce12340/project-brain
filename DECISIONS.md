@@ -23,3 +23,5 @@
 - 2026-07-21（v4）：`full_transfer` 的角色變更、雙方站內通知與 audit log 放在同一個 D1 batch，且角色 SQL 固定先升接班人、再降現任管理員；Email 於交易成功後個別嘗試，寄送失敗不回滾已完成的管理權移轉。
 - 2026-07-21（v4）：最後管理員防呆除規格點名的使用者 PATCH／停用外，也套用到「清除示範資料」；若沒有非 demo 的 active approved admin，清理會保留符合條件的 demo admin，避免任何 API 路徑產生零管理員。
 - 2026-07-21（v4）：`usr_admin.updated_at` 的本輪唯讀基線為 `2026-07-21 04:56:56` UTC；不登入、不修改、不重設、不停用、不刪除該帳號，結案再唯讀比對。
+- 2026-07-21（v5）：SPEC 同時要求切角面板雙線工法與禁止調整 DOM 層級，因此 `.panel` 以單一元素的雙層 background（nexus padding-box＋gold gradient border-box）搭配 inset nexus-line 實作；不新增 outer／inner wrapper，維持所有元件結構不變。
+- 2026-07-21（v5）：Recharts 與原生 SVG 無法直接引用 Tailwind class 作為屬性色值，因此集中以 `src/chartTheme.ts` 保存同一組 SPEC token；列印時只將背景與文字還原白底黑字，保留資料系列辨識色。
