@@ -15,10 +15,14 @@ export function Loading() { return <div className="py-20 text-center text-slate-
 export function Markdown({ content }: { content: string }) {
   const lines = content.split("\n");
   return <div className="space-y-2 text-sm leading-6">{lines.map((line, index) => {
-    if (line.startsWith("### ")) return <h4 className="pt-2 font-semibold" key={index}>{line.slice(4)}</h4>;
-    if (line.startsWith("## ")) return <h3 className="pt-3 text-base font-bold" key={index}>{line.slice(3)}</h3>;
-    if (line.startsWith("# ")) return <h2 className="pt-3 text-lg font-bold" key={index}>{line.slice(2)}</h2>;
-    if (/^[-*] /.test(line)) return <div className="flex gap-2 pl-2" key={index}><span>•</span><span>{line.slice(2)}</span></div>;
-    return line ? <p key={index}>{line}</p> : <div className="h-1" key={index} />;
+    if (line.startsWith("### ")) return <h4 className="pt-2 font-semibold" key={index}>{inlineMarkdown(line.slice(4))}</h4>;
+    if (line.startsWith("## ")) return <h3 className="pt-3 text-base font-bold" key={index}>{inlineMarkdown(line.slice(3))}</h3>;
+    if (line.startsWith("# ")) return <h2 className="pt-3 text-lg font-bold" key={index}>{inlineMarkdown(line.slice(2))}</h2>;
+    if (/^[-*] /.test(line)) return <div className="flex gap-2 pl-2" key={index}><span>•</span><span>{inlineMarkdown(line.slice(2))}</span></div>;
+    return line ? <p key={index}>{inlineMarkdown(line)}</p> : <div className="h-1" key={index} />;
   })}</div>;
+}
+
+function inlineMarkdown(value: string): ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <strong key={index}>{part.slice(2, -2)}</strong> : <span key={index}>{part}</span>);
 }
