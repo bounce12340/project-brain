@@ -25,3 +25,8 @@
 - 2026-07-21（v4）：`usr_admin.updated_at` 的本輪唯讀基線為 `2026-07-21 04:56:56` UTC；不登入、不修改、不重設、不停用、不刪除該帳號，結案再唯讀比對。
 - 2026-07-21（v5）：SPEC 同時要求切角面板雙線工法與禁止調整 DOM 層級，因此 `.panel` 以單一元素的雙層 background（nexus padding-box＋gold gradient border-box）搭配 inset nexus-line 實作；不新增 outer／inner wrapper，維持所有元件結構不變。
 - 2026-07-21（v5）：Recharts 與原生 SVG 無法直接引用 Tailwind class 作為屬性色值，因此集中以 `src/chartTheme.ts` 保存同一組 SPEC token；列印時只將背景與文字還原白底黑字，保留資料系列辨識色。
+- 2026-07-21（v6）：正式 D1 已有 `elvis@uicgroup.com.tw` 的 active、approved、已完成 onboarding 正式帳號，但 id／姓名與規格的 `usr_elvia`／Elvia 不同；為避免覆寫既有人員的密碼、主鍵與個資，V6 §0 對此筆維持 `INSERT OR IGNORE` 的不覆寫語意，不寄送無效臨時密碼，列為待資料擁有者確認的未完成決策。其餘三位依規格建立並寄邀請。
+- 2026-07-21（v6）：D1 migration 對被 `users`／`projects`／`stage_templates` 參照的 `groups` 執行 drop/recreate 時，即使 `defer_foreign_keys` 也會因 parent drop 的 deferred violation counter 在 commit 失敗；改採 rename 舊 `type` 欄→新增含 `qa` CHECK 的新 `type` 欄→搬值→drop 舊欄，得到相同最終 schema 且不移除 parent table identity。
+- 2026-07-21（v6）：CCR 終態重開的規格未指定目的狀態；採 admin 專屬「重開至評估中」，清除既有結案時間並寫 `重開` event，讓案件重新進入評估分支且不跳過審核。
+- 2026-07-21（v6）：每日 cron 若在精確到期日未執行，下一次執行仍應發出一次逾期通知；因此 `expired` 代表「首次觀測到已逾期」，以 `last_notified_stage` 保證只通知一次。
+- 2026-07-21（v6）：匯入省略 stages 時優先取該組別專用模板；若 QA 組尚未設專用模板，依序回退既有「一般專案」模板與內建「待辦／進行中／完成」，避免匯入產生無階段專案。
