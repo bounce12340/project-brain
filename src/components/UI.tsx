@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { translateBackendError } from "../i18n/errors";
+import { useT } from "../i18n/LangContext";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-gold-bright">{title}</h1>{description && <p className="mt-1 text-sm text-star-dim">{description}</p>}</div>{actions}</div>;
@@ -9,13 +11,14 @@ export function ProgressBar({ value }: { value: number }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty-state">{children}</div>; }
-export function ErrorBox({ message }: { message: string }) { return <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger">{message}</div>; }
-export function Loading() { return <div className="py-20 text-center text-star-dim">載入中…</div>; }
+export function ErrorBox({ message }: { message: string }) { const t = useT(); return <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger">{translateBackendError(message, t)}</div>; }
+export function Loading() { const t = useT(); return <div className="py-20 text-center text-star-dim">{t("common.loading")}</div>; }
 
 export function RiskBadge({ level }: { level?: string | null }) {
-  if (!level) return <span className="badge">未分析</span>;
+  const t = useT();
+  if (!level) return <span className="badge">{t("risk.unanalyzed")}</span>;
   const style = level === "high" ? "risk-high" : level === "medium" ? "risk-medium" : "risk-low";
-  const label = level === "high" ? "高風險" : level === "medium" ? "中風險" : "低風險";
+  const label = level === "high" ? t("risk.high") : level === "medium" ? t("risk.medium") : t("risk.low");
   return <span className={`inline-flex px-2.5 py-1 text-xs font-semibold ${style}`}>{label}</span>;
 }
 

@@ -4,6 +4,7 @@ import { api, today } from "../api";
 import { CHART } from "../chartTheme";
 import { PageHeader, RiskBadge } from "../components/UI";
 import { addDays, daysBetween, ganttPosition } from "../utils/dates";
+import { useT } from "../i18n/LangContext";
 
 interface TimelineTask { id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }
 interface TimelineProject { id: string; name: string; start_date: string | null; target_date: string | null; progress: number; risk_level: string | null; group_id: string; group_name: string; tasks: TimelineTask[] }
@@ -24,6 +25,7 @@ function initialExpanded(): string[] {
 }
 
 export function TimelinePage() {
+  const t = useT();
   const [groups, setGroups] = useState<TimelineGroup[]>([]);
   const [groupFilter, setGroupFilter] = useState("");
   const [expanded, setExpanded] = useState<string[]>(initialExpanded);
@@ -55,20 +57,20 @@ export function TimelinePage() {
   };
 
   return <>
-    <PageHeader title="全域時間軸" description="依組別泳道比較可見專案，展開專案可查看任務起訖與負責人。" />
-    <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">組別篩選</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">全部組別</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
-    <section className="panel overflow-x-auto"><svg className="chart-surface" width={label + width} height={height} role="img" aria-label="依組別分區的進行中專案與任務時間軸"><rect width="100%" height="100%" fill={CHART.nexus} />
+    <PageHeader title={t("timeline.title")} description={t("timeline.description")} />
+    <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
+    <section className="panel overflow-x-auto"><svg className="chart-surface" width={label + width} height={height} role="img" aria-label={t("timeline.aria")}><rect width="100%" height="100%" fill={CHART.nexus} />
       {weeks.map((date) => { const x = label + ganttPosition(date, start, end, width); return <g key={date}><line x1={x} x2={x} y1="30" y2={height} stroke={CHART.line} /><text x={x + 3} y="20" fontSize="11" fill={CHART.starDim}>{date.slice(5)}</text></g>; })}
       {rows.map((row) => {
         if (row.kind === "group") return <g key={`group-${row.group.id}`}><rect x="0" y={row.y} width={label + width} height={GROUP_HEIGHT} fill={CHART.raised} opacity="0.92" /><text x="12" y={row.y + 27} fontSize="15" fontWeight="700" fill={CHART.goldBright}>{row.group.name}</text></g>;
         if (row.kind === "project") {
           const projectStart = row.project.start_date ?? start; const projectEnd = row.project.target_date ?? projectStart;
           const x = label + ganttPosition(projectStart, start, end, width); const barWidth = Math.max(8, ganttPosition(projectEnd, start, end, width) - ganttPosition(projectStart, start, end, width)); const y = row.y + 16;
-          return <g key={`project-${row.project.id}`}><foreignObject x="4" y={row.y + 4} width={label - 12} height={PROJECT_HEIGHT - 4}><div className="flex items-start gap-2"><button className="no-print mt-0.5 text-sm text-psi" aria-label={`${expanded.includes(row.project.id) ? "收合" : "展開"}${row.project.name}任務`} onClick={() => toggle(row.project.id)}>{expanded.includes(row.project.id) ? "▼" : "▶"}</button><Link to={`/projects/${row.project.id}`} className="block min-w-0 text-sm font-semibold text-star hover:text-psi">{row.project.name}<span className="mt-0.5 block text-xs font-normal text-star-dim">{riskLabel(row.project.risk_level)} · {row.project.tasks.length} 項任務</span></Link></div></foreignObject><Link to={`/projects/${row.project.id}`}><rect x={x} y={y} width={barWidth} height="16" rx="8" fill={CHART.raised}><title>{row.project.name}：{projectStart} ～ {projectEnd}</title></rect><rect x={x} y={y} width={barWidth * row.project.progress / 100} height="16" rx="8" fill={row.project.progress >= 100 ? CHART.gold : CHART.psi} style={{ filter: `drop-shadow(0 0 6px ${CHART.psiGlow})` }} /><text x={x + 6} y={y + 12} fill={CHART.star} fontSize="11">{row.project.progress}%</text></Link></g>;
+          return <g key={`project-${row.project.id}`}><foreignObject x="4" y={row.y + 4} width={label - 12} height={PROJECT_HEIGHT - 4}><div className="flex items-start gap-2"><button className="no-print mt-0.5 text-sm text-psi" aria-label={t("timeline.expandTasks", { action: t(expanded.includes(row.project.id) ? "common.collapse" : "common.expand"), project: row.project.name })} onClick={() => toggle(row.project.id)}>{expanded.includes(row.project.id) ? "▼" : "▶"}</button><Link to={`/projects/${row.project.id}`} className="block min-w-0 text-sm font-semibold text-star hover:text-psi">{row.project.name}<span className="mt-0.5 block text-xs font-normal text-star-dim">{t("timeline.taskCount", { risk: riskLabel(row.project.risk_level, t), count: row.project.tasks.length })}</span></Link></div></foreignObject><Link to={`/projects/${row.project.id}`}><rect x={x} y={y} width={barWidth} height="16" rx="8" fill={CHART.raised}><title>{row.project.name}：{projectStart} ～ {projectEnd}</title></rect><rect x={x} y={y} width={barWidth * row.project.progress / 100} height="16" rx="8" fill={row.project.progress >= 100 ? CHART.gold : CHART.psi} style={{ filter: `drop-shadow(0 0 6px ${CHART.psiGlow})` }} /><text x={x + 6} y={y + 12} fill={CHART.star} fontSize="11">{row.project.progress}%</text></Link></g>;
         }
         const taskStart = row.task.start_date ?? row.task.created_at.slice(0, 10); const taskEnd = row.task.due_date ?? taskStart;
         const x = label + ganttPosition(taskStart, start, end, width); const barWidth = Math.max(8, ganttPosition(taskEnd, start, end, width) - ganttPosition(taskStart, start, end, width)); const y = row.y + 9;
-        return <g key={`task-${row.task.id}`} opacity={row.task.done ? 0.55 : 1}><text x="38" y={row.y + 21} fontSize="12" fill={CHART.starDim}>{row.task.done ? "✓ " : ""}{row.task.title.slice(0, 28)}</text><rect x={x} y={y} width={barWidth} height="14" rx="7" fill={row.task.done ? CHART.gold : CHART.psi}><title>{row.task.title}｜{taskStart} ～ {taskEnd}｜負責人：{row.task.assignee_name || "未指派"}</title></rect>{row.task.done && <text x={x + 3} y={y + 11} fill={CHART.void} fontSize="11">✓</text>}</g>;
+        return <g key={`task-${row.task.id}`} opacity={row.task.done ? 0.55 : 1}><text x="38" y={row.y + 21} fontSize="12" fill={CHART.starDim}>{row.task.done ? "✓ " : ""}{row.task.title.slice(0, 28)}</text><rect x={x} y={y} width={barWidth} height="14" rx="7" fill={row.task.done ? CHART.gold : CHART.psi}><title>{row.task.title}｜{taskStart} ～ {taskEnd}｜{t("timeline.assignee", { name: row.task.assignee_name || t("common.notAssigned") })}</title></rect>{row.task.done && <text x={x + 3} y={y + 11} fill={CHART.void} fontSize="11">✓</text>}</g>;
       })}
       <line x1={label + ganttPosition(today(), start, end, width)} x2={label + ganttPosition(today(), start, end, width)} y1="30" y2={height} stroke={CHART.psi} strokeWidth="3" />
     </svg></section>
@@ -76,4 +78,4 @@ export function TimelinePage() {
   </>;
 }
 
-function riskLabel(level: string | null): string { return level === "high" ? "高風險" : level === "medium" ? "中風險" : level === "low" ? "低風險" : "未分析"; }
+function riskLabel(level: string | null, t: ReturnType<typeof useT>): string { return level === "high" ? t("risk.high") : level === "medium" ? t("risk.medium") : level === "low" ? t("risk.low") : t("risk.unanalyzed"); }
