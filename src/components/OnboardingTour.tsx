@@ -14,6 +14,7 @@ const steps = [
   { selector: "[data-tour='automation']", path: "automation", text: "自動化以「當…就…」執行固定流程。" },
   { selector: "[data-tour='timeline-nav']", path: "/timeline", text: "時間軸比較所有進行中專案。" },
   { selector: "[data-tour='notification-nav']", path: "/notifications", text: "通知鈴鐺收納提及、提醒與規則通知。" },
+  { selector: "[data-tour='help-nav']", path: "/help", text: "新同仁先申請帳號，管理員核准後登入。" },
   { selector: "[data-tour='help-nav']", path: "/help", text: "問號頁永久保留完整功能說明。" },
 ] as const;
 
