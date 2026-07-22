@@ -53,3 +53,5 @@
 - 2026-07-22（v9）：本版不改 schema、沒有 migration。production E2E 只建立隨機密碼的 V9 專用 demo fixture，結束後刪除；既有 demo 帳號當時為 inactive，未啟用或修改，且全程不登入、不修改、不重設、不停用、不刪除 `usr_admin`，也不讀取或輸出任何 secret 值。
 - 2026-07-22（v9，open）：正式站 V9 E2E 的 `reg_entries` 前後皆為 628，資料不變但仍不符合 SPEC-V9 的 627 字面值；未刪除來源不明資料來迎合驗收。需由資料擁有者決定更新基線或處置多出的 1 筆。
 - 2026-07-22（v9，open）：SPEC-V9 §4.5 指定由派工者 Claude 執行逐頁雙主題×雙語瀏覽器抽查。Codex 已嘗試啟動 in-app browser，但執行環境沒有可用 browser backend；靜態、DOM 邏輯與 production API 可自驗部分均已驗證，Claude 的逐頁視覺簽核仍需在有瀏覽器的派工環境完成。
+- 2026-07-22（v9.1）：登入與註冊共用 `AuthCrystal`；外框採 SPEC-V9-1 原始六頂點，不做額外加寬，包圍盒寬高比 0.326。光暈直接放在同一 SVG 的 facet 後方，只有 halo opacity 做 4 秒呼吸，使水晶外層維持正常文流；light 主題以較低的 opacity custom properties 調淡。
+- 2026-07-22（v9.1，open）：SPEC-V9-1 §3.5 的 Browser runtime 初始化與 troubleshooting 已執行，但 browser selection 回傳 `No browser is available`，browser list 為空；因此 dark／light 的登入與註冊實際視覺簽核及 375px screenshot／bounding-box 檢查仍需由有瀏覽器的派工者完成。已通過的 source、Vitest、built asset 與正式 HTTP 驗證不冒充此視覺簽核。
