@@ -223,5 +223,5 @@ v7Routes.post("/regwatch/batch", async (c) => {
     await cleanupSourceFiles(c.env, savedFiles);
   }
   await writeAudit(c.env.DB, user, "regwatch_ai_import", "reg_entry", created > 0 && fileId ? fileId : "batch", `AI 匯入法規動態：created=${created}, skipped=${skipped}, files=${created > 0 ? savedFiles.length : 0}`);
-  return c.json({ created, skipped, file_id: created > 0 ? fileId : null, file_ids: created > 0 ? savedFiles.map((file) => file.id) : [] });
+  return c.json({ created, skipped, entry_ids: createdEntryIds, file_id: created > 0 ? fileId : null, file_ids: created > 0 ? savedFiles.map((file) => file.id) : [] });
 });
