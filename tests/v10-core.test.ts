@@ -28,6 +28,7 @@ describe("SPEC-V10 公告日期與多檔分析", () => {
     const today = new Date("2026-07-23T12:00:00Z");
     expect(isRegwatchDateSuspect("2026-10-21", today)).toBe(false);
     expect(isRegwatchDateSuspect("2026-10-22", today)).toBe(true);
+    expect(isRegwatchDateSuspect("2026-10-22", new Date("2026-07-23T16:30:00Z"))).toBe(false);
   });
 
   it("多檔文字以檔名標頭分隔後串接", () => {

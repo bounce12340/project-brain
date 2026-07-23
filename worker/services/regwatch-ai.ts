@@ -65,7 +65,13 @@ function normalizeKeyPoints(value: unknown): string {
 export function isRegwatchDateSuspect(entryDate: string, today = new Date()): boolean {
   const normalized = normalizeRegwatchDate(entryDate);
   if (!normalized) return false;
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(today).split("-").map(Number);
+  const todayUtc = Date.UTC(year, month - 1, day);
   const threshold = new Date(todayUtc);
   threshold.setUTCDate(threshold.getUTCDate() + 90);
   return Date.parse(`${normalized}T00:00:00Z`) > threshold.getTime();
@@ -212,7 +218,7 @@ export async function extractRegwatchEntries(env: Env, text: string, mode: Regwa
     groups.push(normalized);
   }
   const entries = mode === "single" ? consolidateSingleAnnouncement(groups.flat()) : mergeExtractedEntries(groups);
-  if (comparisonDetected && entries.some((entry) => !entry.key_points.includes("修正重點（前後對照）"))) throw new Error("INVALID_AI_RESPONSE");
+  if (comparisonDetected && !entries.some((entry) => entry.key_points.includes("修正重點（前後對照）"))) throw new Error("INVALID_AI_RESPONSE");
   return entries.map((entry) => ({ ...entry, date_suspect: isRegwatchDateSuspect(entry.entry_date) }));
 }
 
