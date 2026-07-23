@@ -8,6 +8,7 @@ import {
   normalizeExtractedEntries,
   normalizeRegwatchDate,
 } from "../worker/services/regwatch-ai";
+import { mergeRegwatchAttachments, orphanRegwatchFileIds } from "../worker/services/regwatch";
 
 describe("SPEC-V10 公告日期與多檔分析", () => {
   it("prompt 強制公告日而非施行日，並把施行日放在第一個條列", () => {
@@ -57,5 +58,21 @@ describe("SPEC-V10 公告日期與多檔分析", () => {
     expect(migration).toContain("UNIQUE(entry_id, file_id)");
     expect(migration).toContain("SELECT id, file_id, 0");
     expect(migration).toContain("WHERE file_id IS NOT NULL");
+  });
+
+  it("列表合併 junction 與 legacy file_id 時依 entry/file 去重", () => {
+    const shared = { entry_id: "reg-1", id: "file-1", filename: "主文.txt", size: 10, content_type: "text/plain" };
+    const merged = mergeRegwatchAttachments(
+      [{ ...shared, position: 2 }, { ...shared, id: "file-2", filename: "對照表.txt", position: 1 }],
+      [{ ...shared, position: 0 }],
+    );
+    expect(merged.get("reg-1")?.map(({ id, position }) => ({ id, position }))).toEqual([
+      { id: "file-1", position: 0 },
+      { id: "file-2", position: 1 },
+    ]);
+  });
+
+  it("刪除條目時只把無 junction 與 legacy 引用的候選檔判為孤兒", () => {
+    expect(orphanRegwatchFileIds(["file-1", "file-2", "file-1"], ["file-2"])).toEqual(["file-1"]);
   });
 });

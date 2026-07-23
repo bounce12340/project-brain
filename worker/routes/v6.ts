@@ -4,7 +4,7 @@ import { createId, getProjectAccess, touchProject, writeAudit } from "../service
 import { optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
 import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
-import { canManageRegwatch } from "../services/regwatch";
+import { canManageRegwatch, mergeRegwatchAttachments, orphanRegwatchFileIds, type RegwatchAttachment } from "../services/regwatch";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
@@ -304,7 +304,18 @@ v6Routes.get("/regwatch", async (c) => {
     c.env.DB.prepare(`SELECT r.*,u.name AS created_by_name FROM reg_entries r JOIN users u ON u.id=r.created_by ${where} ORDER BY entry_date DESC,created_at DESC LIMIT 50 OFFSET ?`).bind(...values, (page - 1) * 50).all(),
     c.env.DB.prepare(`SELECT COUNT(*) AS value FROM reg_entries ${where}`).bind(...values).first<number>("value"),
   ]);
-  return c.json({ entries: rows.results, page, total: total ?? 0, total_pages: Math.ceil((total ?? 0) / 50), can_manage: canManageRegwatch(c.get("user")) });
+  const entryIds = (rows.results as Array<{ id: string }>).map((entry) => entry.id);
+  let attachments = new Map<string, RegwatchAttachment[]>();
+  if (entryIds.length) {
+    const placeholders = entryIds.map(() => "?").join(",");
+    const [junction, legacy] = await Promise.all([
+      c.env.DB.prepare(`SELECT rf.entry_id,f.id,f.filename,f.size,f.content_type,rf.position FROM reg_entry_files rf JOIN files f ON f.id=rf.file_id WHERE rf.entry_id IN (${placeholders})`).bind(...entryIds).all<RegwatchAttachment>(),
+      c.env.DB.prepare(`SELECT r.id AS entry_id,f.id,f.filename,f.size,f.content_type,0 AS position FROM reg_entries r JOIN files f ON f.id=r.file_id WHERE r.id IN (${placeholders})`).bind(...entryIds).all<RegwatchAttachment>(),
+    ]);
+    attachments = mergeRegwatchAttachments(junction.results, legacy.results);
+  }
+  const entries = (rows.results as Array<Record<string, unknown>>).map((entry) => ({ ...entry, files: attachments.get(String(entry.id)) ?? [] }));
+  return c.json({ entries, page, total: total ?? 0, total_pages: Math.ceil((total ?? 0) / 50), can_manage: canManageRegwatch(c.get("user")) });
 });
 
 v6Routes.post("/regwatch", async (c) => {
@@ -354,14 +365,23 @@ v6Routes.delete("/regwatch/:id", async (c) => {
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
   const current = await c.env.DB.prepare("SELECT title,file_id FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string; file_id: string | null }>();
   if (!current) return c.json({ error: "找不到法規動態" }, 404);
-  let orphan: { id: string; storage_key: string } | null = null;
-  if (current.file_id) {
-    const references = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM reg_entries WHERE file_id=? AND id!=?").bind(current.file_id, c.req.param("id")).first<number>("value");
-    if ((references ?? 0) === 0) orphan = await c.env.DB.prepare("SELECT id,storage_key FROM files WHERE id=? AND project_id IS NULL").bind(current.file_id).first<{ id: string; storage_key: string }>();
-  }
-  if (orphan) await c.env.FILES.delete(orphan.storage_key);
+  const linked = await c.env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(c.req.param("id")).all<{ file_id: string }>();
+  const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
   await c.env.DB.prepare("DELETE FROM reg_entries WHERE id=?").bind(c.req.param("id")).run();
-  if (orphan) await c.env.DB.prepare("DELETE FROM files WHERE id=?").bind(orphan.id).run();
+  const referencedIds: string[] = [];
+  for (const fileId of new Set(candidateIds)) {
+    const references = await c.env.DB.prepare("SELECT (SELECT COUNT(*) FROM reg_entry_files WHERE file_id=?) + (SELECT COUNT(*) FROM reg_entries WHERE file_id=?) AS value").bind(fileId, fileId).first<number>("value");
+    if ((references ?? 0) > 0) referencedIds.push(fileId);
+  }
+  const orphanIds = orphanRegwatchFileIds(candidateIds, referencedIds);
+  let deletedFiles = 0;
+  for (const fileId of orphanIds) {
+    const file = await c.env.DB.prepare("SELECT storage_key FROM files WHERE id=? AND project_id IS NULL").bind(fileId).first<{ storage_key: string }>();
+    if (!file) continue;
+    await c.env.FILES.delete(file.storage_key);
+    await c.env.DB.prepare("DELETE FROM files WHERE id=?").bind(fileId).run();
+    deletedFiles += 1;
+  }
   await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${current.title}」`);
-  return c.json({ ok: true });
+  return c.json({ ok: true, deleted_files: deletedFiles });
 });
