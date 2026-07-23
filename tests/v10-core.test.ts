@@ -9,6 +9,7 @@ import {
   normalizeRegwatchDate,
 } from "../worker/services/regwatch-ai";
 import { mergeRegwatchAttachments, orphanRegwatchFileIds } from "../worker/services/regwatch";
+import { en, zh } from "../src/i18n/translations";
 
 describe("SPEC-V10 公告日期與多檔分析", () => {
   it("prompt 強制公告日而非施行日，並把施行日放在第一個條列", () => {
@@ -74,5 +75,11 @@ describe("SPEC-V10 公告日期與多檔分析", () => {
 
   it("刪除條目時只把無 junction 與 legacy 引用的候選檔判為孤兒", () => {
     expect(orphanRegwatchFileIds(["file-1", "file-2", "file-1"], ["file-2"])).toEqual(["file-1"]);
+  });
+
+  it("i18n 新增字串維持 key parity 且英文日期標題為 Announced", () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+    expect(zh["regwatch.announcedDate"]).toBe("公告日期");
+    expect(en["regwatch.announcedDate"]).toBe("Announced");
   });
 });
