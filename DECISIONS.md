@@ -60,3 +60,4 @@
 - 2026-07-23（v10）：對照表訊號存在但 LLM 沒有產出「修正重點（前後對照）」時，後端視為不合規 AI 回應並回既有 502；不以規則式字串拼接臆造具法規意義的舊→新內容。總說明與立法目的維持一般摘要，前後對照最多 10 條由 prompt 約束。
 - 2026-07-23（v10）：batch 回應新增 `entry_ids`／`file_ids` 供匯入後精確 read-back；既有 `created`／`skipped`／`file_id` 保留。若整批撞鍵會清除本次所有新檔；若 junction 寫入失敗則補償刪除本批新條目與 R2／D1 檔案，避免留下半套關聯。
 - 2026-07-23（v10，open）：正式站 V10 E2E 前後皆為 631 筆 `reg_entries`，不是 SPEC-V10 指定的 628；V10 唯一測試條目、2 個附件與 demo fixture 已全部清除並 read-back 0，因此 3 筆差異不是本輪遺留。未刪除或修改來源不明的正式法規資料來迎合驗收；需由資料擁有者決定更新基線為 631，或提供多出 3 筆的業務處置。
+- 2026-07-23（v10.1，open）：SPEC-V10-1 §2.4 要求派工者以瀏覽器確認列層級刪除 icon 的視覺與點擊行為；本輪已初始化 Browser runtime、執行 bootstrap troubleshooting 並列出 browser backends，但結果為空陣列，沒有可操作的瀏覽器。source／Vitest／built asset／production asset 可自驗部分均已通過，但 dark/light 實際畫面、點 icon 不展開及直接顯示確認框仍列「無法驗證」，不得視為瀏覽器簽核。
