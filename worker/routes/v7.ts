@@ -4,7 +4,7 @@ import type { AppContext } from "../types";
 import { createId, writeAudit } from "../services/db";
 import { r2FileStore } from "../services/filestore";
 import { isIsoDate } from "../services/importer";
-import { canManageRegwatch } from "../services/regwatch";
+import { canManageRegwatch, parseRegwatchDraftBatchInput, processRegwatchDraftBatch } from "../services/regwatch";
 import { fetchTfdaDrafts } from "../services/tfda";
 import {
   REGWATCH_PRODUCT_LINES,
@@ -132,6 +132,23 @@ v7Routes.post("/regwatch/approve-all", async (c) => {
   const approved = result.meta.changes ?? 0;
   await writeAudit(c.env.DB, user, "approve_all", "reg_entry", "drafts", `批次核准 TFDA 草稿：approved=${approved}`);
   return c.json({ approved });
+});
+
+v7Routes.post("/regwatch/drafts/batch", async (c) => {
+  const user = c.get("user");
+  if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可批次處理草稿" }, 403);
+  const input = parseRegwatchDraftBatchInput(await c.req.json().catch(() => null));
+  if (!input) return c.json({ error: "批次操作須指定 approve 或 delete，並提供 1 至 100 個 id" }, 422);
+  const result = await processRegwatchDraftBatch(c.env, input);
+  await writeAudit(
+    c.env.DB,
+    user,
+    "regwatch_draft_batch",
+    "reg_entry",
+    "drafts",
+    `批次草稿操作：action=${input.action}, requested=${input.ids.length}, processed=${result.processed}, skipped=${result.skipped}`,
+  );
+  return c.json(result);
 });
 
 v7Routes.post("/regwatch/:id/approve", async (c) => {

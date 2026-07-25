@@ -4,7 +4,7 @@ import { createId, getProjectAccess, touchProject, writeAudit } from "../service
 import { optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
 import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
-import { canManageRegwatch, mergeRegwatchAttachments, orphanRegwatchFileIds, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
+import { canManageRegwatch, deleteRegwatchEntry, mergeRegwatchAttachments, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
@@ -377,25 +377,8 @@ v6Routes.patch("/regwatch/:id", async (c) => {
 v6Routes.delete("/regwatch/:id", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
-  const current = await c.env.DB.prepare("SELECT title,file_id FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string; file_id: string | null }>();
-  if (!current) return c.json({ error: "找不到法規動態" }, 404);
-  const linked = await c.env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(c.req.param("id")).all<{ file_id: string }>();
-  const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
-  await c.env.DB.prepare("DELETE FROM reg_entries WHERE id=?").bind(c.req.param("id")).run();
-  const referencedIds: string[] = [];
-  for (const fileId of new Set(candidateIds)) {
-    const references = await c.env.DB.prepare("SELECT (SELECT COUNT(*) FROM reg_entry_files WHERE file_id=?) + (SELECT COUNT(*) FROM reg_entries WHERE file_id=?) AS value").bind(fileId, fileId).first<number>("value");
-    if ((references ?? 0) > 0) referencedIds.push(fileId);
-  }
-  const orphanIds = orphanRegwatchFileIds(candidateIds, referencedIds);
-  let deletedFiles = 0;
-  for (const fileId of orphanIds) {
-    const file = await c.env.DB.prepare("SELECT storage_key FROM files WHERE id=? AND project_id IS NULL").bind(fileId).first<{ storage_key: string }>();
-    if (!file) continue;
-    await c.env.FILES.delete(file.storage_key);
-    await c.env.DB.prepare("DELETE FROM files WHERE id=?").bind(fileId).run();
-    deletedFiles += 1;
-  }
-  await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${current.title}」`);
-  return c.json({ ok: true, deleted_files: deletedFiles });
+  const result = await deleteRegwatchEntry(c.env, c.req.param("id"));
+  if (!result) return c.json({ error: "找不到法規動態" }, 404);
+  await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${result.title}」`);
+  return c.json({ ok: true, deleted_files: result.deletedFiles });
 });

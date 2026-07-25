@@ -38,3 +38,73 @@ export function orphanRegwatchFileIds(candidateIds: Iterable<string>, referenced
   const referenced = new Set(referencedIds);
   return [...new Set(candidateIds)].filter((id) => !referenced.has(id));
 }
+
+export type RegwatchDraftBatchAction = "approve" | "delete";
+
+export interface RegwatchDraftBatchInput {
+  action: RegwatchDraftBatchAction;
+  ids: string[];
+}
+
+export interface RegwatchDraftBatchResult {
+  processed: number;
+  skipped: number;
+}
+
+export function parseRegwatchDraftBatchInput(value: unknown): RegwatchDraftBatchInput | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  if (body.action !== "approve" && body.action !== "delete") return null;
+  if (!Array.isArray(body.ids) || body.ids.length === 0 || body.ids.length > 100) return null;
+  if (!body.ids.every((id) => typeof id === "string" && id.length > 0)) return null;
+  return { action: body.action, ids: body.ids };
+}
+
+export async function deleteRegwatchEntry(
+  env: Pick<Env, "DB" | "FILES">,
+  id: string,
+  draftOnly = false,
+): Promise<{ title: string; deletedFiles: number } | null> {
+  const current = await env.DB.prepare(`SELECT title,file_id FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`)
+    .bind(id).first<{ title: string; file_id: string | null }>();
+  if (!current) return null;
+  const linked = await env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(id).all<{ file_id: string }>();
+  const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
+  const result = await env.DB.prepare(`DELETE FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id).run();
+  if ((result.meta.changes ?? 0) === 0) return null;
+  const referencedIds: string[] = [];
+  for (const fileId of new Set(candidateIds)) {
+    const references = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM reg_entry_files WHERE file_id=?) + (SELECT COUNT(*) FROM reg_entries WHERE file_id=?) AS value")
+      .bind(fileId, fileId).first<number>("value");
+    if ((references ?? 0) > 0) referencedIds.push(fileId);
+  }
+  const orphanIds = orphanRegwatchFileIds(candidateIds, referencedIds);
+  let deletedFiles = 0;
+  for (const fileId of orphanIds) {
+    const file = await env.DB.prepare("SELECT storage_key FROM files WHERE id=? AND project_id IS NULL").bind(fileId).first<{ storage_key: string }>();
+    if (!file) continue;
+    await env.FILES.delete(file.storage_key);
+    await env.DB.prepare("DELETE FROM files WHERE id=?").bind(fileId).run();
+    deletedFiles += 1;
+  }
+  return { title: current.title, deletedFiles };
+}
+
+export async function processRegwatchDraftBatch(
+  env: Pick<Env, "DB" | "FILES">,
+  input: RegwatchDraftBatchInput,
+): Promise<RegwatchDraftBatchResult> {
+  const uniqueIds = [...new Set(input.ids)];
+  let processed = 0;
+  if (input.action === "approve") {
+    const placeholders = uniqueIds.map(() => "?").join(",");
+    const result = await env.DB.prepare(`UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft' AND id IN (${placeholders})`)
+      .bind(...uniqueIds).run();
+    processed = result.meta.changes ?? 0;
+  } else {
+    for (const id of uniqueIds) {
+      if (await deleteRegwatchEntry(env, id, true)) processed += 1;
+    }
+  }
+  return { processed, skipped: input.ids.length - processed };
+}
