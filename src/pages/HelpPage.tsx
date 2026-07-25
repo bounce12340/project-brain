@@ -7,7 +7,7 @@ const sections: Array<[TransKey, Array<[TransKey, TransKey]>]> = [
   ["help.security", [["help.transfer", "help.transferText"], ["help.coAdmin", "help.coAdminText"], ["help.fullTransfer", "help.fullTransferText"]]],
   ["help.dashboard", [["help.kpi", "help.kpiText"], ["help.license", "help.licenseText"], ["help.risk", "help.riskText"]]],
   ["help.projects", [["help.newProject", "help.newProjectText"], ["help.okr", "help.okrText"], ["help.views", "help.viewsText"], ["help.drawer", "help.drawerText"], ["help.schedule", "help.scheduleText"]]],
-  ["help.qa", [["help.registry", "help.registryText"], ["help.ccr", "help.ccrText"], ["help.regwatch", "help.regwatchText"], ["help.regAi", "help.regAiText"]]],
+  ["help.qa", [["help.registry", "help.registryText"], ["help.ccr", "help.ccrText"], ["help.regwatch", "help.regwatchText"], ["help.regAi", "help.regAiText"], ["help.tfdaReview", "help.tfdaReviewText"]]],
   ["help.collaboration", [["help.mention", "help.mentionText"], ["help.files", "help.filesText"], ["help.automation", "help.automationText"]]],
   ["help.personal", [["help.todos", "help.todosText"], ["help.notifications", "help.notificationsText"], ["help.timeline", "help.timelineText"], ["help.reports", "help.reportsText"], ["help.font", "help.fontText"], ["help.languageTheme", "help.languageThemeText"]]],
   ["help.admin", [["help.import", "help.importText"]]],

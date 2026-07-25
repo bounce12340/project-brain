@@ -29,7 +29,7 @@ export interface CcrRecord { id: string; project_id: string; ccr_no: string; tit
 export interface CcrEvent { id: string; ccr_id: string; event_type: string; from_status: string | null; to_status: string | null; description: string; created_by_name: string; created_at: string }
 export interface KeyResult { id: string; project_id: string; title: string; owner_id: string | null; owner_name: string | null; quarter: string; status: "未開始" | "進行中" | "完成" | "暫停"; note: string; position: number }
 export interface RegEntryFile { entry_id: string; id: string; filename: string; size: number; content_type: string; position: number }
-export interface RegEntry { id: string; entry_date: string; entry_type: "announcement" | "meeting"; product_line: string; category: string | null; title: string; key_points: string | null; link: string | null; file_id: string | null; files: RegEntryFile[]; created_by_name: string; created_at: string }
+export interface RegEntry { id: string; entry_date: string; entry_type: "announcement" | "meeting"; product_line: string; category: string | null; title: string; key_points: string | null; link: string | null; file_id: string | null; files: RegEntryFile[]; created_by_name: string; created_at: string; status: "published" | "draft"; source: "manual" | "tfda_rss"; source_ref: string | null }
 
 export interface ProjectDetail {
   project: Project; permissions: { can_edit: boolean; can_manage: boolean; can_view_fees: boolean };

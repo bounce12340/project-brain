@@ -61,3 +61,7 @@
 - 2026-07-23（v10）：batch 回應新增 `entry_ids`／`file_ids` 供匯入後精確 read-back；既有 `created`／`skipped`／`file_id` 保留。若整批撞鍵會清除本次所有新檔；若 junction 寫入失敗則補償刪除本批新條目與 R2／D1 檔案，避免留下半套關聯。
 - 2026-07-23（v10，open）：正式站 V10 E2E 前後皆為 631 筆 `reg_entries`，不是 SPEC-V10 指定的 628；V10 唯一測試條目、2 個附件與 demo fixture 已全部清除並 read-back 0，因此 3 筆差異不是本輪遺留。未刪除或修改來源不明的正式法規資料來迎合驗收；需由資料擁有者決定更新基線為 631，或提供多出 3 筆的業務處置。
 - 2026-07-23（v10.1，open）：SPEC-V10-1 §2.4 要求派工者以瀏覽器確認列層級刪除 icon 的視覺與點擊行為；本輪已初始化 Browser runtime、執行 bootstrap troubleshooting 並列出 browser backends，但結果為空陣列，沒有可操作的瀏覽器。source／Vitest／built asset／production asset 可自驗部分均已通過，但 dark/light 實際畫面、點 icon 不展開及直接顯示確認框仍列「無法驗證」，不得視為瀏覽器簽核。
+- 2026-07-25（v11）：TFDA 自動條目的 `created_by` 採 SPEC-V11 允許的 `NULL` system 語意。Migration 0009 保留全部既有 creator 值但把欄位改為 nullable；列表依 `source='tfda_rss'` 顯示「TFDA 自動抓取」，不建立可登入的假 system user，也不借用或修改任何既有帳號。
+- 2026-07-25（v11）：真實 TFDA fixture 的 `<description>` 把 CDATA 標記與 HTML 再包一層 XML entity，parser 同時接受此實測格式與標準 CDATA。RSS body 以串流讀取並限制 2 MB，公告純文字限制 24k；表格逐列以全形 `｜` 串接儲存，其餘 HTML 剝除後才交給既有 single AI 管線。
+- 2026-07-25（v11）：草稿通知對象與 `can_manage` 對齊：所有 active approved admin，以及 RA/PV 組 active approved member；不通知無法開啟草稿的 intern。站內通知類型 `tfda_draft` 併入既有每日 Email digest，manual fetch 不另寄即時信。
+- 2026-07-25（v11）：daily cron 先以獨立 try/catch 執行 TFDA fetch，再執行 reminders/digest；即使 fetch 非預期拋錯，提醒仍照常執行。正常 fetch 內部則逐 item 隔離錯誤並回傳 `errors[]`，避免單則壞資料中止整批。
