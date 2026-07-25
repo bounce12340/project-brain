@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { v7Routes } from "../worker/routes/v7";
 import { parseRegwatchDraftBatchInput } from "../worker/services/regwatch";
 import type { AppContext, AuthUser } from "../worker/types";
+import { en, zh } from "../src/i18n/translations";
+import { readFileSync } from "node:fs";
 
 const manager: AuthUser = {
   id: "usr_manager", email: "manager@example.com", name: "Manager", role: "member", group_id: "grp_general",
@@ -163,5 +165,17 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("regwatch_draft_batch");
     expect(rows[0].summary).toContain("action=approve, requested=2, processed=1, skipped=1");
+  });
+
+  it("草稿選取 UI 具備 stopPropagation、danger 動作與中英 key parity", () => {
+    const page = readFileSync(new URL("../src/pages/RegwatchPage.tsx", import.meta.url), "utf8");
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+    expect(page).toContain('type="checkbox" checked={selectedIds.has(item.id)}');
+    expect(page).toContain("onClick={(event) => event.stopPropagation()}");
+    expect(page).toContain('t("regwatch.batchApprove", { count: selectedIds.size })');
+    expect(page).toContain('className="btn-danger"');
+    expect(page).toContain('void runDraftBatch("delete")');
+    expect(zh["regwatch.batchDeleteConfirm"]).toContain("不可復原");
+    expect(en["regwatch.batchDeleteConfirm"]).toContain("cannot be undone");
   });
 });

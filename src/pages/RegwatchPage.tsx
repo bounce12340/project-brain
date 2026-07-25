@@ -38,6 +38,8 @@ interface TfdaFetchResult {
   errors: string[];
 }
 
+type DraftBatchAction = "approve" | "delete";
+
 const maxFileBytes = 10 * 1024 * 1024;
 const maxTotalFileBytes = 25 * 1024 * 1024;
 const maxFiles = 5;
@@ -58,15 +60,17 @@ export function RegwatchPage() {
   const [editing, setEditing] = useState<RegEntry | "new" | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [fetchingTfda, setFetchingTfda] = useState(false);
+  const [batchAction, setBatchAction] = useState<DraftBatchAction | null>(null);
   const query = useMemo(() => new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value)), page: String(page), ...(draftMode ? { view: "drafts" } : {}) }).toString(), [draftMode, filters, page]);
   const load = () => api<RegwatchResponse>(`/regwatch?${query}`).then((response) => {
     setData(response);
     if (draftMode && response.view !== "drafts") setDraftMode(false);
   }).catch((cause) => setError(cause instanceof Error ? cause.message : t("regwatch.loadFailed")));
-  useEffect(() => { void load(); }, [query]);
+  useEffect(() => { setSelectedIds(new Set()); void load(); }, [query]);
   const changeFilter = (key: keyof typeof filters, value: string) => { setFilters((current) => ({ ...current, [key]: value })); setPage(1); };
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const body = Object.fromEntries(new FormData(event.currentTarget));
@@ -82,6 +86,26 @@ export function RegwatchPage() {
     setToast(t("regwatch.approveAllResult", result));
     await load();
   };
+  const visibleDraftIds = useMemo(() => data?.entries.filter((entry) => entry.status === "draft").map((entry) => entry.id) ?? [], [data]);
+  const allVisibleSelected = visibleDraftIds.length > 0 && visibleDraftIds.every((id) => selectedIds.has(id));
+  const toggleSelection = (id: string, checked: boolean) => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (checked) next.add(id); else next.delete(id);
+    return next;
+  });
+  const toggleAll = () => setSelectedIds(allVisibleSelected ? new Set() : new Set(visibleDraftIds));
+  const runDraftBatch = async (action: DraftBatchAction) => {
+    const ids = [...selectedIds];
+    if (!ids.length || !window.confirm(t(action === "approve" ? "regwatch.batchApproveConfirm" : "regwatch.batchDeleteConfirm", { count: ids.length }))) return;
+    setBatchAction(action); setError("");
+    try {
+      const result = await api<{ processed: number; skipped: number }>("/regwatch/drafts/batch", { method: "POST", body: JSON.stringify({ action, ids }) });
+      setSelectedIds(new Set());
+      setToast(t(action === "approve" ? "regwatch.batchApproveResult" : "regwatch.batchDeleteResult", result));
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("regwatch.batchActionFailed")); }
+    finally { setBatchAction(null); }
+  };
   const fetchTfda = async () => {
     setFetchingTfda(true); setError("");
     try {
@@ -95,10 +119,12 @@ export function RegwatchPage() {
   return <><PageHeader title={t("nav.regwatch")} description={t(draftMode ? "regwatch.draftDescription" : "regwatch.description")} actions={data.can_manage && <div className="flex flex-wrap gap-2">{(draftMode || data.pending_count > 0) && <button className="badge border-warn text-warn" onClick={() => { setDraftMode(!draftMode); setPage(1); }}>{draftMode ? t("regwatch.backPublished") : t("regwatch.pending", { count: data.pending_count })}</button>}{draftMode && <button className="btn" onClick={() => void approveAll()}>{t("regwatch.approveAll")}</button>}<button className="btn-secondary" disabled={fetchingTfda} onClick={() => void fetchTfda()}>{t(fetchingTfda ? "regwatch.tfdaFetching" : "regwatch.tfdaFetch")}</button><button className="btn-secondary" onClick={() => setAiOpen(true)}>{t("regwatch.aiImport")}</button><button className="btn" onClick={() => setEditing("new")}>{t("regwatch.new")}</button></div>} />
     {toast && <div className="fixed right-5 top-20 z-50 max-w-lg rounded-lg bg-ok px-4 py-3 text-sm text-white shadow-lg" role="status">{toast}</div>}
     <section data-tour="regwatch" className="panel mb-5 flex flex-wrap gap-3"><select value={filters.product_line} onChange={(event) => changeFilter("product_line", event.target.value)}><option value="">{t("regwatch.allProducts")}</option>{productLines.map((value) => <option key={value}>{value}</option>)}</select><select value={filters.entry_type} onChange={(event) => changeFilter("entry_type", event.target.value)}><option value="">{t("regwatch.allTypes")}</option><option value="announcement">{t("regwatch.announcement")}</option><option value="meeting">{t("regwatch.meeting")}</option></select><input className="w-28" inputMode="numeric" placeholder={t("regwatch.year")} value={filters.year} onChange={(event) => changeFilter("year", event.target.value)} /><input className="min-w-52 flex-1" placeholder={t("regwatch.search")} value={filters.keyword} onChange={(event) => changeFilter("keyword", event.target.value)} /></section>
-    <section className="space-y-3">{data.entries.map((item) => { const open = expanded.has(item.id); return <article className={`panel ${item.status === "draft" ? "border-warn" : ""}`} key={item.id}><div className="flex items-start gap-2"><button className="min-w-0 flex-1 text-left" onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-star-dim">{t("regwatch.announcedDate")}：{item.entry_date} · {t(item.entry_type === "announcement" ? "regwatch.announcement" : "regwatch.meeting")}</p><h2 className="mt-1 font-bold">{item.title}</h2><div className="mt-2 flex flex-wrap gap-2">{item.status === "draft" && <span className="badge border-warn text-warn">{t("regwatch.tfdaDraft")}</span>}<span className="badge">{item.product_line}</span>{item.category && <span className="badge">{item.category}</span>}{item.files.length > 0 && <span className="badge">{t("regwatch.attachmentCount", { count: item.files.length })}</span>}</div></div><span className="text-psi">{t(open ? "common.collapse" : "common.expand")}</span></div></button>{data.can_manage && <button type="button" className="regwatch-row-delete" data-regwatch-row-delete aria-label={t("common.delete")} title={t("common.delete")} onClick={(event) => { event.stopPropagation(); void remove(item); }}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg></button>}</div>{open && <div className="mt-4 border-t border-nexus-line pt-4"><p className="whitespace-pre-wrap text-sm leading-7 text-star-dim">{item.key_points || t("regwatch.noPoints")}</p><div className="mt-3 flex flex-wrap gap-4">{item.link && <a className="text-sm text-psi underline" href={item.link} target="_blank" rel="noreferrer">{t("regwatch.openSource")}</a>}{item.files.map((file) => <a className="text-sm text-psi underline" href={`/api/files/${file.id}/download`} key={file.id}>{t("regwatch.downloadNamedSource", { name: file.filename })}</a>)}</div><p className="mt-3 text-xs text-star-dim">{t("common.createdBy", { name: item.created_by_name })}</p>{data.can_manage && <div className="mt-4 flex gap-3">{item.status === "draft" && <button className="btn" onClick={() => void approve(item)}>{t("regwatch.approve")}</button>}<button className="btn-secondary" onClick={() => setEditing(item)}>{t("common.edit")}</button><button className="btn-danger" onClick={() => void remove(item)}>{t("common.delete")}</button></div>}</div>}</article>; })}{data.entries.length === 0 && <Empty>{t(draftMode ? "regwatch.noDrafts" : "regwatch.empty")}</Empty>}</section>
+    {draftMode && data.can_manage && <section className="mb-3 flex flex-wrap items-center gap-3" aria-label={t("regwatch.selectionTools")}><button className="btn-secondary" type="button" onClick={toggleAll}>{t(allVisibleSelected ? "regwatch.clearSelection" : "regwatch.selectAll")}</button><span className="text-sm text-star-dim" role="status">{t("regwatch.selectedCount", { count: selectedIds.size })}</span></section>}
+    <section className="space-y-3">{data.entries.map((item) => { const open = expanded.has(item.id); return <article className={`panel ${item.status === "draft" ? "border-warn" : ""}`} key={item.id}><div className="flex items-start gap-3">{draftMode && data.can_manage && item.status === "draft" && <input className="mt-1 h-5 w-5 shrink-0" type="checkbox" checked={selectedIds.has(item.id)} aria-label={t("regwatch.selectDraft", { title: item.title })} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleSelection(item.id, event.target.checked)} />}<button className="min-w-0 flex-1 text-left" onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-star-dim">{t("regwatch.announcedDate")}：{item.entry_date} · {t(item.entry_type === "announcement" ? "regwatch.announcement" : "regwatch.meeting")}</p><h2 className="mt-1 font-bold">{item.title}</h2><div className="mt-2 flex flex-wrap gap-2">{item.status === "draft" && <span className="badge border-warn text-warn">{t("regwatch.tfdaDraft")}</span>}<span className="badge">{item.product_line}</span>{item.category && <span className="badge">{item.category}</span>}{item.files.length > 0 && <span className="badge">{t("regwatch.attachmentCount", { count: item.files.length })}</span>}</div></div><span className="text-psi">{t(open ? "common.collapse" : "common.expand")}</span></div></button>{data.can_manage && <button type="button" className="regwatch-row-delete" data-regwatch-row-delete aria-label={t("common.delete")} title={t("common.delete")} onClick={(event) => { event.stopPropagation(); void remove(item); }}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg></button>}</div>{open && <div className="mt-4 border-t border-nexus-line pt-4"><p className="whitespace-pre-wrap text-sm leading-7 text-star-dim">{item.key_points || t("regwatch.noPoints")}</p><div className="mt-3 flex flex-wrap gap-4">{item.link && <a className="text-sm text-psi underline" href={item.link} target="_blank" rel="noreferrer">{t("regwatch.openSource")}</a>}{item.files.map((file) => <a className="text-sm text-psi underline" href={`/api/files/${file.id}/download`} key={file.id}>{t("regwatch.downloadNamedSource", { name: file.filename })}</a>)}</div><p className="mt-3 text-xs text-star-dim">{t("common.createdBy", { name: item.created_by_name })}</p>{data.can_manage && <div className="mt-4 flex gap-3">{item.status === "draft" && <button className="btn" onClick={() => void approve(item)}>{t("regwatch.approve")}</button>}<button className="btn-secondary" onClick={() => setEditing(item)}>{t("common.edit")}</button><button className="btn-danger" onClick={() => void remove(item)}>{t("common.delete")}</button></div>}</div>}</article>; })}{data.entries.length === 0 && <Empty>{t(draftMode ? "regwatch.noDrafts" : "regwatch.empty")}</Empty>}</section>
     {data.total_pages > 1 && <div className="mt-5 flex items-center justify-center gap-3"><button className="btn-secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span className="text-sm text-star-dim">{t("common.pageSummary", { page: data.page, pages: data.total_pages, total: data.total })}</span><button className="btn-secondary" disabled={page >= data.total_pages} onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>}
     {editing && <div className="fixed inset-0 z-50 flex justify-end bg-void/80" onMouseDown={() => setEditing(null)}><aside className="panel h-full w-full max-w-xl overflow-y-auto p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="regwatch-drawer-title" onMouseDown={(event) => event.stopPropagation()}><header className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold" id="regwatch-drawer-title">{t(editing === "new" ? "regwatch.newTitle" : "regwatch.editTitle")}</h2><button className="btn-secondary" onClick={() => setEditing(null)}>{t("common.close")}</button></header><RegwatchForm item={editing === "new" ? null : editing} onSubmit={save} /></aside></div>}
     {aiOpen && <AiImportDrawer onClose={() => setAiOpen(false)} onImported={load} />}
+    {selectedIds.size > 0 && <div className="fixed inset-x-4 bottom-5 z-40 mx-auto flex max-w-xl flex-wrap items-center justify-center gap-3 border border-gold bg-nexus-raised p-4 shadow-2xl" role="region" aria-label={t("regwatch.batchActions")}><span className="text-sm font-semibold">{t("regwatch.selectedCount", { count: selectedIds.size })}</span><button className="btn" type="button" disabled={batchAction !== null} onClick={() => void runDraftBatch("approve")}>{t("regwatch.batchApprove", { count: selectedIds.size })}</button><button className="btn-danger" type="button" disabled={batchAction !== null} onClick={() => void runDraftBatch("delete")}>{t("regwatch.batchDelete", { count: selectedIds.size })}</button></div>}
   </>;
 }
 
