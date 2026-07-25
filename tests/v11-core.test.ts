@@ -28,6 +28,8 @@ describe("SPEC-V11 TFDA RSS parser", () => {
   it("解開 fixture 中 entity 包裝的 CDATA 與 HTML", () => {
     expect(items[0].descriptionHtml).toContain("<h1>");
     expect(items[0].descriptionHtml).not.toContain("<![CDATA[");
+    const [standard] = parseTfdaRss("<rss><item><title>A</title><link>https://example.com?id=1</link><pubDate>Fri, 24 Jul 2026 00:00:00 GMT</pubDate><description><![CDATA[<p>A&amp;B</p>]]></description></item></rss>");
+    expect(standard.descriptionHtml).toBe("<p>A&B</p>");
   });
 
   it("正確解碼 named、decimal 與 hex entity", () => {
@@ -131,6 +133,7 @@ describe("SPEC-V11 TFDA RSS parser", () => {
   it("審核 UI、Help 與新字串維持中英 parity", () => {
     const page = readFileSync(new URL("../src/pages/RegwatchPage.tsx", import.meta.url), "utf8");
     const help = readFileSync(new URL("../src/pages/HelpPage.tsx", import.meta.url), "utf8");
+    const cron = readFileSync(new URL("../worker/services/cron.ts", import.meta.url), "utf8");
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
     expect(page).toContain('t("regwatch.pending", { count: data.pending_count })');
     expect(page).toContain('t("regwatch.tfdaDraft")');
@@ -138,5 +141,6 @@ describe("SPEC-V11 TFDA RSS parser", () => {
     expect(page).toContain('void approveAll()');
     expect(page).toContain('void fetchTfda()');
     expect(help).toContain('"help.tfdaReviewText"');
+    expect(cron).toContain("'mention','automation','tfda_draft'");
   });
 });
