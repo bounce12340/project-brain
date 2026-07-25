@@ -7,7 +7,7 @@ import { resourcesRoutes } from "./routes/resources";
 import { generalRoutes } from "./routes/general";
 import { adminRoutes } from "./routes/admin";
 import { aiRoutes, reportsRoutes } from "./routes/reports";
-import { runDailyReminders } from "./services/cron";
+import { runDailyWorkflow } from "./services/cron";
 import { regenerateMonthlyReports, regenerateWeeklyReports } from "./services/reports";
 import { scheduledJobForCron } from "./services/schedule";
 import { v2Routes } from "./routes/v2";
@@ -44,7 +44,7 @@ export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const job = scheduledJobForCron(controller.cron);
-    if (job === "daily-reminders") ctx.waitUntil(runDailyReminders(env).then((result) => console.log(JSON.stringify({ message: "每日提醒完成", ...result }))));
+    if (job === "daily-reminders") ctx.waitUntil(runDailyWorkflow(env).then((result) => console.log(JSON.stringify({ message: "每日工作完成", ...result }))));
     else if (job === "weekly-reports") ctx.waitUntil(regenerateWeeklyReports(env).then((result) => console.log(JSON.stringify({ message: "AI 週報完成", ...result }))));
     else if (job === "monthly-reports") ctx.waitUntil(regenerateMonthlyReports(env).then((result) => console.log(JSON.stringify({ message: "AI 月報完成", ...result }))));
     else console.log(JSON.stringify({ message: "未知排程", cron: controller.cron }));

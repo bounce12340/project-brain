@@ -4,6 +4,7 @@ import { sendMail } from "./mailer";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
 import { licenseNotificationStage } from "./licenses";
+import { fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
 
 interface Recipient { id: string; email: string; email_notifications: number }
 interface ReminderSource { project_id: string; project_name: string; owner_id: string; group_id: string }
@@ -74,7 +75,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const notificationStatements = notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link));
   if (notificationStatements.length || licenseUpdates.length) await env.DB.batch([...notificationStatements, ...licenseUpdates]);
   const recentMentions = await env.DB.prepare(`SELECT n.user_id,u.email,n.title,n.body,n.link FROM notifications n JOIN users u ON u.id=n.user_id
-    WHERE n.type IN ('mention','automation') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
+    WHERE n.type IN ('mention','automation','tfda_draft') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
   const emailItems = [...notifications.filter((item) => item.email), ...recentMentions.results];
   let sent = 0;
   for (const digest of groupEmailNotifications(emailItems)) {
@@ -83,4 +84,27 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
     if (result.sent) sent += 1;
   }
   return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length, license_notifications: licenseNotificationCount };
+}
+
+export interface DailyWorkflowResult {
+  tfda: TfdaFetchStats;
+  reminders: Awaited<ReturnType<typeof runDailyReminders>>;
+}
+
+interface DailyWorkflowDependencies {
+  tfdaFetch?: (env: Env) => Promise<TfdaFetchStats>;
+  reminders?: (env: Env) => ReturnType<typeof runDailyReminders>;
+}
+
+export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDependencies = {}): Promise<DailyWorkflowResult> {
+  let tfda: TfdaFetchStats;
+  try {
+    tfda = await (dependencies.tfdaFetch ?? fetchTfdaDrafts)(env);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    tfda = { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_dup: 0, ai_fallback: 0, errors: [`cron: ${message}`] };
+    console.error(JSON.stringify({ message: "TFDA cron pre-step failed", error: message }));
+  }
+  const reminders = await (dependencies.reminders ?? runDailyReminders)(env);
+  return { tfda, reminders };
 }

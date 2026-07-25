@@ -4,6 +4,13 @@ export function canManageRegwatch(user: Pick<AuthUser, "role" | "group_id">): bo
   return user.role === "admin" || (user.role === "member" && user.group_id === "grp_general");
 }
 
+export function regwatchListStatus(
+  user: Pick<AuthUser, "role" | "group_id">,
+  requestedView: string | undefined,
+): "published" | "draft" {
+  return requestedView === "drafts" && canManageRegwatch(user) ? "draft" : "published";
+}
+
 export interface RegwatchAttachment {
   entry_id: string;
   id: string;

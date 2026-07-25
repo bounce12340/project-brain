@@ -4,7 +4,7 @@ import { createId, getProjectAccess, touchProject, writeAudit } from "../service
 import { optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
 import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
-import { canManageRegwatch, mergeRegwatchAttachments, orphanRegwatchFileIds, type RegwatchAttachment } from "../services/regwatch";
+import { canManageRegwatch, mergeRegwatchAttachments, orphanRegwatchFileIds, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
@@ -288,21 +288,27 @@ v6Routes.post("/projects/:id/key-results/reorder", async (c) => {
 });
 
 v6Routes.get("/regwatch", async (c) => {
-  const conditions: string[] = [];
-  const values: unknown[] = [];
+  const user = c.get("user");
+  const canManage = canManageRegwatch(user);
+  const status = regwatchListStatus(user, c.req.query("view"));
+  const conditions: string[] = ["r.status=?"];
+  const values: unknown[] = [status];
   const productLine = c.req.query("product_line");
   const entryType = c.req.query("entry_type");
   const year = c.req.query("year");
   const keyword = c.req.query("keyword")?.trim();
-  if (productLine) { conditions.push("product_line=?"); values.push(productLine); }
-  if (entryType) { conditions.push("entry_type=?"); values.push(entryType); }
-  if (year) { conditions.push("substr(entry_date,1,4)=?"); values.push(year); }
-  if (keyword) { conditions.push("(title LIKE ? OR COALESCE(key_points,'') LIKE ?)"); values.push(`%${keyword}%`, `%${keyword}%`); }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  if (productLine) { conditions.push("r.product_line=?"); values.push(productLine); }
+  if (entryType) { conditions.push("r.entry_type=?"); values.push(entryType); }
+  if (year) { conditions.push("substr(r.entry_date,1,4)=?"); values.push(year); }
+  if (keyword) { conditions.push("(r.title LIKE ? OR COALESCE(r.key_points,'') LIKE ?)"); values.push(`%${keyword}%`, `%${keyword}%`); }
+  const where = `WHERE ${conditions.join(" AND ")}`;
   const page = Math.max(1, Number(c.req.query("page")) || 1);
-  const [rows, total] = await Promise.all([
-    c.env.DB.prepare(`SELECT r.*,u.name AS created_by_name FROM reg_entries r JOIN users u ON u.id=r.created_by ${where} ORDER BY entry_date DESC,created_at DESC LIMIT 50 OFFSET ?`).bind(...values, (page - 1) * 50).all(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS value FROM reg_entries ${where}`).bind(...values).first<number>("value"),
+  const [rows, total, pendingCount] = await Promise.all([
+    c.env.DB.prepare(`SELECT r.*,CASE WHEN r.source='tfda_rss' THEN 'TFDA 自動抓取' ELSE COALESCE(u.name,'系統') END AS created_by_name
+      FROM reg_entries r LEFT JOIN users u ON u.id=r.created_by ${where}
+      ORDER BY r.entry_date DESC,r.created_at DESC LIMIT 50 OFFSET ?`).bind(...values, (page - 1) * 50).all(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS value FROM reg_entries r ${where}`).bind(...values).first<number>("value"),
+    canManage ? c.env.DB.prepare("SELECT COUNT(*) AS value FROM reg_entries WHERE status='draft'").first<number>("value") : Promise.resolve(0),
   ]);
   const entryIds = (rows.results as Array<{ id: string }>).map((entry) => entry.id);
   let attachments = new Map<string, RegwatchAttachment[]>();
@@ -315,7 +321,15 @@ v6Routes.get("/regwatch", async (c) => {
     attachments = mergeRegwatchAttachments(junction.results, legacy.results);
   }
   const entries = (rows.results as Array<Record<string, unknown>>).map((entry) => ({ ...entry, files: attachments.get(String(entry.id)) ?? [] }));
-  return c.json({ entries, page, total: total ?? 0, total_pages: Math.ceil((total ?? 0) / 50), can_manage: canManageRegwatch(c.get("user")) });
+  return c.json({
+    entries,
+    page,
+    total: total ?? 0,
+    total_pages: Math.ceil((total ?? 0) / 50),
+    can_manage: canManage,
+    pending_count: canManage ? pendingCount ?? 0 : 0,
+    view: status === "draft" ? "drafts" : "published",
+  });
 });
 
 v6Routes.post("/regwatch", async (c) => {

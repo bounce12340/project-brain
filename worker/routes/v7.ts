@@ -5,6 +5,7 @@ import { createId, writeAudit } from "../services/db";
 import { r2FileStore } from "../services/filestore";
 import { isIsoDate } from "../services/importer";
 import { canManageRegwatch } from "../services/regwatch";
+import { fetchTfdaDrafts } from "../services/tfda";
 import {
   REGWATCH_PRODUCT_LINES,
   combineRegwatchFileTexts,
@@ -115,6 +116,34 @@ async function cleanupSourceFiles(env: Env, files: Array<{ id: string; storageKe
     await env.DB.prepare("DELETE FROM files WHERE id=?").bind(file.id).run();
   }
 }
+
+v7Routes.post("/regwatch/tfda-fetch", async (c) => {
+  const user = c.get("user");
+  if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取 TFDA" }, 403);
+  const stats = await fetchTfdaDrafts(c.env);
+  await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}`);
+  return c.json(stats);
+});
+
+v7Routes.post("/regwatch/approve-all", async (c) => {
+  const user = c.get("user");
+  if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可核准草稿" }, 403);
+  const result = await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft'").run();
+  const approved = result.meta.changes ?? 0;
+  await writeAudit(c.env.DB, user, "approve_all", "reg_entry", "drafts", `批次核准 TFDA 草稿：approved=${approved}`);
+  return c.json({ approved });
+});
+
+v7Routes.post("/regwatch/:id/approve", async (c) => {
+  const user = c.get("user");
+  if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可核准草稿" }, 403);
+  const entry = await c.env.DB.prepare("SELECT title,status FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string; status: string }>();
+  if (!entry) return c.json({ error: "找不到法規動態" }, 404);
+  if (entry.status !== "draft") return c.json({ error: "此法規動態不是待審草稿" }, 422);
+  await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='draft'").bind(c.req.param("id")).run();
+  await writeAudit(c.env.DB, user, "approve", "reg_entry", c.req.param("id"), `核准 TFDA 草稿「${entry.title}」`);
+  return c.json({ ok: true });
+});
 
 v7Routes.post("/regwatch/ai-extract", async (c) => {
   const user = c.get("user");
