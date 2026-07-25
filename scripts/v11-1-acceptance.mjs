@@ -234,6 +234,9 @@ try {
   }
 }
 
+if (!failure && report.baseline.expected_real_tfda_drafts_match === false) {
+  failure = new Error(`SPEC-V11-1 expected 20 real TFDA drafts, production baseline was ${report.baseline.real_tfda_drafts}`);
+}
 if (failure) report.error = failure.message;
 console.log(JSON.stringify(report, null, 2));
 if (failure) process.exitCode = 1;
