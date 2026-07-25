@@ -67,3 +67,6 @@
 - 2026-07-25（v11）：daily cron 先以獨立 try/catch 執行 TFDA fetch，再執行 reminders/digest；即使 fetch 非預期拋錯，提醒仍照常執行。正常 fetch 內部則逐 item 隔離錯誤並回傳 `errors[]`，避免單則壞資料中止整批。
 - 2026-07-25（v11）：第一次正式 manual fetch 逐則串行沿用 LLM 的 60 秒×2 重試，約 5 分鐘後 client `fetch failed`，但先完成的 4 則真實草稿已保留。為讓 20 則 feed 可在單次 cron/API 內可靠完成，TFDA 專用加值改為最多 4 則並行、每則 15 秒且不重試；逾時立即採規格 fallback。一般手動 AI 匯入與其他 LLM 功能仍維持既有 60 秒×2，不受此 operational timeout 影響。
 - 2026-07-25（v11，open）：正式驗收最終留下 20 則 `source='tfda_rss', status='draft'` 真實業務資料，20 個 `source_ref` 皆唯一且全文欄位完整；實作者沒有核准或刪除任何一則。這 20 則需由 RA/PV 或 admin 在 `/regwatch` 的待審核檢視逐則做業務判斷，驗收不代替此決策。
+- 2026-07-26（v11.1）：草稿選取限定目前篩選／分頁可見的最多 50 筆；切換分頁、篩選或離開草稿檢視時清空選取，避免使用者批次處理已不在畫面上的舊選取。這也自然低於 API 的 100 ids 上限。
+- 2026-07-26（v11.1）：同一 id 在批次 payload 重複出現時只執行一次，其餘重複項計入 `skipped`，使 `processed + skipped` 永遠等於請求 ids 筆數。published 與不存在 id 同樣只計 skipped；資料庫 UPDATE／DELETE 本身仍帶 `status='draft'` 條件。
+- 2026-07-26（v11.1）：沒有 schema 變更或 migration。批次 delete 與既有逐列 delete 共用同一個條目／孤兒附件清理函式；正式驗收只允許固定 `*_e2e_v11_1_*` 合成 ids，並以前後完整 fingerprint 保護既有 20 則真實 TFDA drafts。
