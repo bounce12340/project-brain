@@ -18,9 +18,15 @@ export function parseLooseJson<T>(text: string): T | null {
   }
 }
 
-async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+export interface LlmChatOptions {
+  json?: boolean;
+  timeoutMs?: number;
+  attempts?: number;
+}
+
+async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await operation(controller.signal);
   } finally {
@@ -28,9 +34,11 @@ async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>): P
   }
 }
 
-export async function llmChat(env: Env, messages: ChatMessage[], options: { json?: boolean } = {}): Promise<string> {
+export async function llmChat(env: Env, messages: ChatMessage[], options: LlmChatOptions = {}): Promise<string> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const attempts = Math.max(1, Math.floor(options.attempts ?? 2));
+  const timeoutMs = Math.max(1_000, Math.floor(options.timeoutMs ?? 60_000));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       if (env.LLM_API_KEY) {
         const response = await withTimeout((signal) => fetch(`${env.LLM_BASE_URL}/chat/completions`, {
@@ -38,7 +46,7 @@ export async function llmChat(env: Env, messages: ChatMessage[], options: { json
           signal,
           headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: env.LLM_MODEL, messages, response_format: options.json ? { type: "json_object" } : undefined }),
-        }));
+        }), timeoutMs);
         if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
         const body = await response.json<{ choices?: Array<{ message?: { content?: string } }> }>();
         const content = body.choices?.[0]?.message?.content;

@@ -65,3 +65,4 @@
 - 2026-07-25（v11）：真實 TFDA fixture 的 `<description>` 把 CDATA 標記與 HTML 再包一層 XML entity，parser 同時接受此實測格式與標準 CDATA。RSS body 以串流讀取並限制 2 MB，公告純文字限制 24k；表格逐列以全形 `｜` 串接儲存，其餘 HTML 剝除後才交給既有 single AI 管線。
 - 2026-07-25（v11）：草稿通知對象與 `can_manage` 對齊：所有 active approved admin，以及 RA/PV 組 active approved member；不通知無法開啟草稿的 intern。站內通知類型 `tfda_draft` 併入既有每日 Email digest，manual fetch 不另寄即時信。
 - 2026-07-25（v11）：daily cron 先以獨立 try/catch 執行 TFDA fetch，再執行 reminders/digest；即使 fetch 非預期拋錯，提醒仍照常執行。正常 fetch 內部則逐 item 隔離錯誤並回傳 `errors[]`，避免單則壞資料中止整批。
+- 2026-07-25（v11）：第一次正式 manual fetch 逐則串行沿用 LLM 的 60 秒×2 重試，約 5 分鐘後 client `fetch failed`，但先完成的 4 則真實草稿已保留。為讓 20 則 feed 可在單次 cron/API 內可靠完成，TFDA 專用加值改為最多 4 則並行、每則 15 秒且不重試；逾時立即採規格 fallback。一般手動 AI 匯入與其他 LLM 功能仍維持既有 60 秒×2，不受此 operational timeout 影響。

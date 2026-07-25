@@ -4,6 +4,10 @@ export const REGWATCH_PRODUCT_LINES = ["藥品", "醫療器材", "化粧品", "�
 export const REGWATCH_TEXT_CHUNK_LIMIT = 24_000;
 export const REGWATCH_TEXT_TOTAL_LIMIT = 120_000;
 export type RegwatchExtractMode = "single" | "multi";
+export interface RegwatchExtractionOptions {
+  llmTimeoutMs?: number;
+  llmAttempts?: number;
+}
 
 const productLineSet = new Set<string>(REGWATCH_PRODUCT_LINES);
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -204,14 +208,23 @@ entry_date 一律取公告日期或發文日期，包含民國年時換算為西
 [{"entry_date":"2026-07-20","entry_type":"announcement","product_line":"醫療器材","category":"修法","title":"管理辦法修正公告","key_points":"本次修法旨在強化追溯並更新申報與保存要求。\\n修正重點（前後對照）\\n• 第3條：紙本申報→線上申報\\n• 第5條：保存三年→保存五年"}]`;
 }
 
-export async function extractRegwatchEntries(env: Env, text: string, mode: RegwatchExtractMode = "single"): Promise<RegwatchExtractedEntry[]> {
+export async function extractRegwatchEntries(
+  env: Env,
+  text: string,
+  mode: RegwatchExtractMode = "single",
+  options: RegwatchExtractionOptions = {},
+): Promise<RegwatchExtractedEntry[]> {
   ensureRegwatchTextLimit(text);
   const chunks = splitRegwatchText(text);
   if (!chunks.length) return [];
   const comparisonDetected = hasRegwatchComparisonSignals(text);
   const groups: RegwatchExtractedEntry[][] = [];
   for (const chunk of chunks) {
-    const response = await llmChat(env, [{ role: "system", content: buildRegwatchSystemPrompt(mode, comparisonDetected) }, { role: "user", content: chunk }]);
+    const response = await llmChat(
+      env,
+      [{ role: "system", content: buildRegwatchSystemPrompt(mode, comparisonDetected) }, { role: "user", content: chunk }],
+      { timeoutMs: options.llmTimeoutMs, attempts: options.llmAttempts },
+    );
     const parsed = parseLooseJson<unknown>(response);
     const normalized = normalizeExtractedEntries(parsed);
     if (!normalized.length) throw new Error("INVALID_AI_RESPONSE");

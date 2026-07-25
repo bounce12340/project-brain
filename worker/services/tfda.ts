@@ -233,29 +233,34 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
     console.error(JSON.stringify({ message: "TFDA RSS parse failed", error: "no RSS items" }));
     return stats;
   }
-  for (const item of items) {
+  const processItem = async (item: TfdaRssItem): Promise<void> => {
     const sourceRef = extractTfdaSourceRef(item.link);
     const entryDate = tfdaPubDateToTaipeiDate(item.pubDate);
     if (!sourceRef || !entryDate || !item.title) {
       stats.errors.push(`item: invalid metadata (${item.link || item.title || "unknown"})`);
-      continue;
+      return;
     }
     try {
       const existingRef = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE source_ref=? LIMIT 1").bind(sourceRef).first();
       if (existingRef) {
         stats.skipped_ref += 1;
-        continue;
+        return;
       }
       const existingEntry = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE entry_date=? AND title=? LIMIT 1").bind(entryDate, item.title).first();
       if (existingEntry) {
         stats.skipped_dup += 1;
-        continue;
+        return;
       }
 
       const plainText = tfdaHtmlToText(item.descriptionHtml);
       let extracted: RegwatchExtractedEntry | undefined;
       try {
-        extracted = (await (dependencies.extract ?? ((activeEnv, text) => extractRegwatchEntries(activeEnv, text, "single")))(env, plainText))[0];
+        extracted = (await (dependencies.extract ?? ((activeEnv, text) => extractRegwatchEntries(
+          activeEnv,
+          text,
+          "single",
+          { llmTimeoutMs: 15_000, llmAttempts: 1 },
+        )))(env, plainText))[0];
       } catch (error) {
         console.error(JSON.stringify({
           message: "TFDA RSS AI enrichment failed",
@@ -282,7 +287,16 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
       stats.errors.push(`item ${sourceRef}: ${message}`);
       console.error(JSON.stringify({ message: "TFDA RSS item failed", source_ref: sourceRef, error: message }));
     }
-  }
+  };
+  let nextItem = 0;
+  const processNext = async (): Promise<void> => {
+    while (nextItem < items.length) {
+      const item = items[nextItem];
+      nextItem += 1;
+      await processItem(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, items.length) }, () => processNext()));
   try {
     await notifyTfdaDrafts(env.DB, stats.new_drafts);
   } catch (error) {
