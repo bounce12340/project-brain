@@ -133,9 +133,14 @@ try {
   cleanupFixtures();
   beforeReal = realDraftSnapshot();
   const beforeCounts = counts();
-  assert(beforeReal.count === 20, `expected 20 real TFDA drafts before E2E, got ${beforeReal.count}`);
   assert(beforeCounts.published === 631, `expected 631 published entries before E2E, got ${beforeCounts.published}`);
-  report.baseline = { real_tfda_drafts: beforeReal.count, real_tfda_fingerprint: beforeReal.fingerprint, ...beforeCounts };
+  report.baseline = {
+    expected_real_tfda_drafts: 20,
+    real_tfda_drafts: beforeReal.count,
+    expected_real_tfda_drafts_match: beforeReal.count === 20,
+    real_tfda_fingerprint: beforeReal.fingerprint,
+    ...beforeCounts,
+  };
 
   const password = randomBytes(18).toString("base64url");
   const hash = await passwordHash(password);
@@ -155,7 +160,7 @@ try {
   const cookie = await login(password);
 
   const draftView = await request("/api/regwatch?view=drafts", auth(cookie), 200);
-  assert(draftView.body.pending_count === 23, `expected pending_count 23 with fixtures, got ${draftView.body.pending_count}`);
+  assert(draftView.body.pending_count === beforeReal.count + 3, `expected pending_count ${beforeReal.count + 3} with fixtures, got ${draftView.body.pending_count}`);
   assert(fixtureIds.every((id) => draftView.body.entries.some((entry) => entry.id === id && entry.status === "draft")), "draft view did not contain all three synthetic fixtures");
 
   const deleted = await request("/api/regwatch/drafts/batch", auth(cookie, "POST", {
@@ -213,13 +218,14 @@ try {
       (SELECT COUNT(*) FROM reg_entries WHERE id IN (${fixtureIds.map(sqlValue).join(",")})) AS entries,
       (SELECT COUNT(*) FROM files WHERE id=${sqlValue(fileFixture.id)}) AS files`)[0];
     assert(Object.values(remaining).every((value) => value === 0), `fixture cleanup read-back mismatch: ${JSON.stringify(remaining)}`);
-    assert(afterReal.count === 20, `expected 20 real TFDA drafts after cleanup, got ${afterReal.count}`);
+    if (beforeReal) assert(afterReal.count === beforeReal.count, `real TFDA draft count changed from ${beforeReal.count} to ${afterReal.count}`);
     if (beforeReal) assert(afterReal.fingerprint === beforeReal.fingerprint, "real TFDA draft fingerprint changed after cleanup");
-    assert(afterCounts.published === 631 && afterCounts.drafts === 20, `final counts mismatch: ${JSON.stringify(afterCounts)}`);
+    if (beforeReal) assert(afterCounts.published === 631 && afterCounts.drafts === beforeReal.count, `final counts mismatch: ${JSON.stringify(afterCounts)}`);
     report.regression = {
       ...report.regression,
       published_after_cleanup: afterCounts.published,
       drafts_after_cleanup: afterCounts.drafts,
+      expected_real_tfda_drafts_match_after: afterReal.count === 20,
       real_tfda_fingerprint_unchanged_after: beforeReal ? afterReal.fingerprint === beforeReal.fingerprint : null,
     };
     report.cleanup = true;

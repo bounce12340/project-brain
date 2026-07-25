@@ -70,3 +70,4 @@
 - 2026-07-26（v11.1）：草稿選取限定目前篩選／分頁可見的最多 50 筆；切換分頁、篩選或離開草稿檢視時清空選取，避免使用者批次處理已不在畫面上的舊選取。這也自然低於 API 的 100 ids 上限。
 - 2026-07-26（v11.1）：同一 id 在批次 payload 重複出現時只執行一次，其餘重複項計入 `skipped`，使 `processed + skipped` 永遠等於請求 ids 筆數。published 與不存在 id 同樣只計 skipped；資料庫 UPDATE／DELETE 本身仍帶 `status='draft'` 條件。
 - 2026-07-26（v11.1）：沒有 schema 變更或 migration。批次 delete 與既有逐列 delete 共用同一個條目／孤兒附件清理函式；正式驗收只允許固定 `*_e2e_v11_1_*` 合成 ids，並以前後完整 fingerprint 保護既有 20 則真實 TFDA drafts。
+- 2026-07-26（v11.1，open）：本輪第一次 production E2E 在建立任何合成資料前先做保護斷言，發現 `source='tfda_rss', status='draft'` 已只剩 9 則；唯讀 aggregate 同時顯示 631 則 published manual，沒有 published TFDA，表示 V11 驗收後的 20 則中已有 11 則在本輪開始前被刪除，而非核准。本輪固定前綴 fixture、user、session、file read-back 均為 0，沒有碰這 9 則或嘗試重建已消失的 11 則。SPEC-V11-1 §4.3 的「現有 20 則前後不變」字面基線已無法成立；後續 production E2E 改以前置當下 9 則的完整 fingerprint 驗證本輪前後不變，最終 ACCEPTANCE 會把 20 則字面要求標 FAIL，需資料擁有者另行判定先前 11 則刪除是否符合業務預期。
