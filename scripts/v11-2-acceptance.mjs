@@ -187,7 +187,8 @@ try {
       (SELECT COUNT(*) FROM users WHERE id=${sqlValue(demoUser.id)}) AS users,
       (SELECT COUNT(*) FROM sessions WHERE user_id=${sqlValue(demoUser.id)}) AS sessions,
       (SELECT COUNT(*) FROM reg_entries WHERE id=${sqlValue(fixture.id)}) AS entries,
-      (SELECT COUNT(*) FROM tfda_rejected WHERE source_ref=${sqlValue(fixture.sourceRef)}) AS tombstones`)[0];
+      (SELECT COUNT(*) FROM tfda_rejected WHERE source_ref=${sqlValue(fixture.sourceRef)}) AS tombstones,
+      (SELECT COUNT(*) FROM audit_log WHERE user_id=${sqlValue(demoUser.id)}) AS audits`)[0];
     assert(Object.values(remaining).every((value) => value === 0), `fixture cleanup mismatch: ${JSON.stringify(remaining)}`);
     if (before) {
       assert(after.drafts.count === 20, `final real TFDA draft count is ${after.drafts.count}`);
