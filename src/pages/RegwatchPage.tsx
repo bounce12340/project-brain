@@ -33,6 +33,7 @@ interface TfdaFetchResult {
   fetched: number;
   new_drafts: number;
   skipped_ref: number;
+  skipped_rejected: number;
   skipped_dup: number;
   ai_fallback: number;
   errors: string[];

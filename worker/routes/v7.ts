@@ -121,7 +121,7 @@ v7Routes.post("/regwatch/tfda-fetch", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取 TFDA" }, 403);
   const stats = await fetchTfdaDrafts(c.env);
-  await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}`);
+  await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}`);
   return c.json(stats);
 });
 
@@ -139,7 +139,7 @@ v7Routes.post("/regwatch/drafts/batch", async (c) => {
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可批次處理草稿" }, 403);
   const input = parseRegwatchDraftBatchInput(await c.req.json().catch(() => null));
   if (!input) return c.json({ error: "批次操作須指定 approve 或 delete，並提供 1 至 100 個 id" }, 422);
-  const result = await processRegwatchDraftBatch(c.env, input);
+  const result = await processRegwatchDraftBatch(c.env, input, user.id);
   await writeAudit(
     c.env.DB,
     user,

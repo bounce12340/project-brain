@@ -377,7 +377,7 @@ v6Routes.patch("/regwatch/:id", async (c) => {
 v6Routes.delete("/regwatch/:id", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
-  const result = await deleteRegwatchEntry(c.env, c.req.param("id"));
+  const result = await deleteRegwatchEntry(c.env, c.req.param("id"), user.id);
   if (!result) return c.json({ error: "找不到法規動態" }, 404);
   await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${result.title}」`);
   return c.json({ ok: true, deleted_files: result.deletedFiles });

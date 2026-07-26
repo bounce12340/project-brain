@@ -63,14 +63,22 @@ export function parseRegwatchDraftBatchInput(value: unknown): RegwatchDraftBatch
 export async function deleteRegwatchEntry(
   env: Pick<Env, "DB" | "FILES">,
   id: string,
+  rejectedBy: string,
   draftOnly = false,
 ): Promise<{ title: string; deletedFiles: number } | null> {
-  const current = await env.DB.prepare(`SELECT title,file_id FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`)
-    .bind(id).first<{ title: string; file_id: string | null }>();
+  const current = await env.DB.prepare(`SELECT title,file_id,source,source_ref FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`)
+    .bind(id).first<{ title: string; file_id: string | null; source: string; source_ref: string | null }>();
   if (!current) return null;
   const linked = await env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(id).all<{ file_id: string }>();
   const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
-  const result = await env.DB.prepare(`DELETE FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id).run();
+  const deleteStatement = env.DB.prepare(`DELETE FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id);
+  const result = current.source === "tfda_rss" && current.source_ref
+    ? (await env.DB.batch([
+      env.DB.prepare("INSERT OR IGNORE INTO tfda_rejected(source_ref,title,rejected_by) VALUES (?,?,?)")
+        .bind(current.source_ref, current.title, rejectedBy),
+      deleteStatement,
+    ]))[1]
+    : await deleteStatement.run();
   if ((result.meta.changes ?? 0) === 0) return null;
   const referencedIds: string[] = [];
   for (const fileId of new Set(candidateIds)) {
@@ -93,6 +101,7 @@ export async function deleteRegwatchEntry(
 export async function processRegwatchDraftBatch(
   env: Pick<Env, "DB" | "FILES">,
   input: RegwatchDraftBatchInput,
+  rejectedBy: string,
 ): Promise<RegwatchDraftBatchResult> {
   const uniqueIds = [...new Set(input.ids)];
   let processed = 0;
@@ -103,7 +112,7 @@ export async function processRegwatchDraftBatch(
     processed = result.meta.changes ?? 0;
   } else {
     for (const id of uniqueIds) {
-      if (await deleteRegwatchEntry(env, id, true)) processed += 1;
+      if (await deleteRegwatchEntry(env, id, rejectedBy, true)) processed += 1;
     }
   }
   return { processed, skipped: input.ids.length - processed };

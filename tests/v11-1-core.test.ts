@@ -21,7 +21,12 @@ class TestD1 {
       PRAGMA foreign_keys=ON;
       CREATE TABLE reg_entries (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual', source_ref TEXT,
         file_id TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE tfda_rejected (
+        source_ref TEXT PRIMARY KEY, title TEXT, rejected_by TEXT,
+        rejected_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE files (
         id TEXT PRIMARY KEY, project_id TEXT, storage_key TEXT NOT NULL

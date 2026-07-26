@@ -29,12 +29,13 @@ export interface TfdaFetchStats {
   fetched: number;
   new_drafts: number;
   skipped_ref: number;
+  skipped_rejected: number;
   skipped_dup: number;
   ai_fallback: number;
   errors: string[];
 }
 
-export type TfdaDuplicateReason = "source_ref" | "entry" | null;
+export type TfdaDuplicateReason = "source_ref" | "rejected" | "entry" | null;
 
 interface TfdaFetchDependencies {
   fetcher?: typeof fetch;
@@ -136,8 +137,10 @@ export function tfdaDuplicateReason(
   title: string,
   existingRefs: ReadonlySet<string>,
   existingEntryKeys: ReadonlySet<string>,
+  rejectedRefs: ReadonlySet<string> = new Set(),
 ): TfdaDuplicateReason {
   if (existingRefs.has(sourceRef)) return "source_ref";
+  if (rejectedRefs.has(sourceRef)) return "rejected";
   return existingEntryKeys.has(`${entryDate}\u0000${title}`) ? "entry" : null;
 }
 
@@ -202,7 +205,7 @@ async function notifyTfdaDrafts(db: D1Database, count: number): Promise<void> {
 }
 
 function emptyStats(): TfdaFetchStats {
-  return { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_dup: 0, ai_fallback: 0, errors: [] };
+  return { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_rejected: 0, skipped_dup: 0, ai_fallback: 0, errors: [] };
 }
 
 export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
@@ -246,6 +249,11 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
         stats.skipped_ref += 1;
         return;
       }
+      const rejectedRef = await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE source_ref=? LIMIT 1").bind(sourceRef).first();
+      if (rejectedRef) {
+        stats.skipped_rejected += 1;
+        return;
+      }
       const existingEntry = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE entry_date=? AND title=? LIMIT 1").bind(entryDate, item.title).first();
       if (existingEntry) {
         stats.skipped_dup += 1;
@@ -271,14 +279,17 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
       const draft = buildTfdaDraft(item, sourceRef, entryDate, plainText, extracted);
       const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO reg_entries
         (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,source,source_ref)
-        VALUES (?,?,?,?,?,?,?,?,NULL,'draft','tfda_rss',?)`)
-        .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, draft.sourceRef)
+        SELECT ?,?,?,?,?,?,?,?,NULL,'draft','tfda_rss',?
+        WHERE NOT EXISTS (SELECT 1 FROM tfda_rejected WHERE source_ref=?)`)
+        .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, draft.sourceRef, draft.sourceRef)
         .run();
       if ((inserted.meta.changes ?? 0) > 0) {
         stats.new_drafts += 1;
         if (draft.usedFallback) stats.ai_fallback += 1;
       } else if (await env.DB.prepare("SELECT 1 FROM reg_entries WHERE source_ref=? LIMIT 1").bind(sourceRef).first()) {
         stats.skipped_ref += 1;
+      } else if (await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE source_ref=? LIMIT 1").bind(sourceRef).first()) {
+        stats.skipped_rejected += 1;
       } else {
         stats.skipped_dup += 1;
       }

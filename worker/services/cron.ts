@@ -102,7 +102,7 @@ export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDepe
     tfda = await (dependencies.tfdaFetch ?? fetchTfdaDrafts)(env);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    tfda = { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_dup: 0, ai_fallback: 0, errors: [`cron: ${message}`] };
+    tfda = { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_rejected: 0, skipped_dup: 0, ai_fallback: 0, errors: [`cron: ${message}`] };
     console.error(JSON.stringify({ message: "TFDA cron pre-step failed", error: message }));
   }
   const reminders = await (dependencies.reminders ?? runDailyReminders)(env);
