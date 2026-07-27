@@ -83,3 +83,7 @@
 - 2026-07-27（v12）：AI 回傳的 `stage_name` 只有精確命中該專案階段才採用；缺漏或無效時，UI 的「第一個未完成階段」解讀為依 position 排序後、第一個含未完成任務的階段，若所有階段都沒有未完成任務則退回第一階段。所有 complete/create checkbox 一律初始 `false`。
 - 2026-07-27（v12）：個人偏好只存在目前瀏覽器的 `AIUR_PROGRESS_LINKS`；只有字串 `false` 代表關閉，缺值或未知舊值皆預設開。發布進度先完成 POST 與重新載入，再非同步取得建議；AI 失敗只寫 console，不改變已保存的進度。
 - 2026-07-27（v12）：套用採逐項串行，成功項立即生效且不因後項失敗回滾；dialog 會標記已成功項、防止重送，並逐項列出失敗。這個選擇維持既有 endpoint 的權限與副作用，也符合規格要求的部分成功回報。
+- 2026-07-27（v12.1）：每筆進度的 `can_edit` 由後端以 `canEditProgress ∩ (author_id = actor or project owner or admin)` 計算並隨 project detail 回傳；前端只依此欄顯示按鈕，PATCH／DELETE 仍在 API 再次覆核，避免前後端各自推導不同權限。
+- 2026-07-27（v12.1）：編輯與其 `progress_edited` audit、刪除與其 `progress_deleted` audit 分別放在同一個 D1 batch。刪除摘要以 Unicode 字元取原文前 40 字；`edited_by` 依規格使用可保留識別值的 nullable TEXT，不加外鍵。
+- 2026-07-27（v12.1）：規格只要求 PATCH 更新 `projects.last_activity_at`，DELETE 因此不改專案活動時間；兩條 mutation 都不觸碰 `progress_snapshot`、通知或報告。UI 以系統既有的 `✔ 完成` 前綴辨識 auto 完成紀錄並說明刪除不回滾任務／里程碑。
+- 2026-07-27（v12.1）：本版實作階段沒有尚待選擇的 open decision；若正式 migration／deploy／E2E 出現環境事實與 SPEC 不一致，另以 `v12.1，open` 增量記錄，不以假設補洞。
