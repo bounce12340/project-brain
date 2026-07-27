@@ -75,3 +75,5 @@
 - 2026-07-26（v11.2）：實證的復活根因是刪除 TFDA 條目時連同唯一 `source_ref` 一起消失，下一次 cron 因此無從分辨「從未抓過」與「已被使用者駁回」。單筆與批次刪除現在共用同一路徑：對 `source='tfda_rss'` 的 draft 或 published 條目，先以 `INSERT OR IGNORE` 寫入 `tfda_rejected`，再刪條目及清理孤兒附件；手動條目不寫墓碑。
 - 2026-07-26（v11.2）：TFDA fetch 的判重順序固定為既有 `reg_entries.source_ref` → `tfda_rejected.source_ref` → `(entry_date,title)`；墓碑命中計入 `skipped_rejected`。實際 INSERT 另帶 `NOT EXISTS tfda_rejected` 防護，縮小 fetch 與刪除同時發生時的復活窗口。
 - 2026-07-26（v11.2）：不提供 `/admin` 墓碑管理 UI。若業務日後要反悔，經確認目標 `source_ref` 後直接在 D1 執行 `DELETE FROM tfda_rejected WHERE source_ref = ?`；下一次 TFDA fetch 才可重新建立該公告。不得為現有真實草稿預先代寫墓碑。
+- 2026-07-27（v11.3）：年份選項以 `Asia/Taipei` 當日計算當年，固定下界 2018 並遞減排列；月份值以十進位整數 1–12 傳送，API 也接受等值的前導零表示法。month 缺 year 或不是純數字 1–12 時完全忽略，保留既有 year-only／無年月結果與不報錯合約。
+- 2026-07-27（v11.3）：清空年份時前端同步把月份重設為「全部月份」並停用月份下拉，避免 disabled 控制項保留不可見的月份過濾；本版只改查詢條件與前端選項，不改 schema，沒有 migration。
