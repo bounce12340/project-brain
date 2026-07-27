@@ -77,3 +77,4 @@
 - 2026-07-26（v11.2）：不提供 `/admin` 墓碑管理 UI。若業務日後要反悔，經確認目標 `source_ref` 後直接在 D1 執行 `DELETE FROM tfda_rejected WHERE source_ref = ?`；下一次 TFDA fetch 才可重新建立該公告。不得為現有真實草稿預先代寫墓碑。
 - 2026-07-27（v11.3）：年份選項以 `Asia/Taipei` 當日計算當年，固定下界 2018 並遞減排列；月份值以十進位整數 1–12 傳送，API 也接受等值的前導零表示法。month 缺 year 或不是純數字 1–12 時完全忽略，保留既有 year-only／無年月結果與不報錯合約。
 - 2026-07-27（v11.3）：清空年份時前端同步把月份重設為「全部月份」並停用月份下拉，避免 disabled 控制項保留不可見的月份過濾；本版只改查詢條件與前端選項，不改 schema，沒有 migration。
+- 2026-07-27（v11.3，open）：production E2E 開始時已有 16 筆 draft 與 4 筆 `tfda_rejected`，相較 V11.2 驗收的 20 drafts／0 tombstones，顯示其間已有 4 筆被駁回。V11.3 未建立、核准、刪除或更新任何真實法規條目或墓碑，且前後 `SELECT *` fingerprints 完全相同；這 4 筆駁回是否符合業務預期留待資料擁有者判定。

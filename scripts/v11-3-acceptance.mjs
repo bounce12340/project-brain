@@ -129,16 +129,27 @@ try {
   assert(html.includes("<title>艾爾水晶-專案進度</title>"), "production title smoke failed");
   const scriptPaths = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((match) => match[1]);
   assert(scriptPaths.length > 0, "production HTML has no JavaScript asset");
-  const scripts = await Promise.all(scriptPaths.map(async (scriptPath) => {
+  const entryScripts = await Promise.all(scriptPaths.map(async (scriptPath) => {
     const response = await fetch(new URL(scriptPath, base));
     assert(response.ok, `could not fetch production asset ${scriptPath}`);
     return response.text();
   }));
-  const builtAsset = scripts.join("\n");
+  const chunkPaths = [...new Set(entryScripts.flatMap((script) =>
+    [...script.matchAll(/(?:"|')((?:\.\/|assets\/)[^"']+\.js)(?:"|')/g)].map((match) =>
+      match[1].startsWith("assets/") ? `/${match[1]}` : new URL(match[1], new URL(scriptPaths[0], base)).pathname,
+    ),
+  ))];
+  const chunks = await Promise.all(chunkPaths.map(async (chunkPath) => {
+    const response = await fetch(new URL(chunkPath, base));
+    assert(response.ok, `could not fetch production chunk ${chunkPath}`);
+    return response.text();
+  }));
+  const builtAsset = [...entryScripts, ...chunks].join("\n");
   assert(builtAsset.includes("全部月份") && builtAsset.includes("All months"), "month dropdown labels missing from built asset");
   assert(/disabled:![\w$]+\.year/.test(builtAsset), "month disabled logic missing from built asset");
   report.assets = {
     script_count: scriptPaths.length,
+    chunk_count: chunkPaths.length,
     month_labels: true,
     disabled_when_year_empty: true,
   };
