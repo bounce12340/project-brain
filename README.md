@@ -168,6 +168,7 @@ The backend API rechecks each permission individually (centralized in `worker/se
 2. On “Overview,” switch between manual and automatic progress. Automatic mode = completion ratio of tasks + milestones + linked to-dos + KRs (the default for new projects).
 3. Switch freely among the four views under “Tasks.” Kanban supports dragging phases and cards. Select a task to open the drawer and edit its content, owner, start/end dates, and dependencies, or use comments with `@mentions`, attachments, and AI summaries.
 4. Paste rough notes into “Progress log,” use “AI drafting” to organize them into a three-part draft, then review and publish it.
+5. After the update is saved, AI may suggest marking explicitly completed tasks as done or creating follow-up tasks. Suggestions never write data by themselves: every checkbox starts clear, and only “Apply selected” sends the existing task PATCH/POST requests. New-task titles, stages, and due dates remain editable. Disable this prompt under Profile with “Show task suggestions after a progress update” (`AIUR_PROGRESS_LINKS`, enabled by default).
 
 ### Files, Automation, and AI
 
@@ -228,6 +229,7 @@ For complete recovery steps after accidental data deletion, machine rebuilds, or
 | v11 | Daily automatic TFDA RSS fetching + AI draft fallback + manual review and publication | [SPEC](SPEC-V11.md) / [Acceptance](ACCEPTANCE-V11.md) |
 | v11.1 | Select multiple TFDA drafts for batch approval/deletion + orphaned-attachment cleanup | [SPEC](SPEC-V11-1.md) / [Acceptance](ACCEPTANCE-V11-1.md) |
 | v11.2 | TFDA rejection tombstones prevent cron from reviving deleted announcements | [SPEC](SPEC-V11-2.md) / [Acceptance](ACCEPTANCE-V11-2.md) |
+| v12 | Progress updates produce AI task-link suggestions that require explicit human checkbox confirmation | [SPEC](SPEC-V12.md) / [Acceptance](ACCEPTANCE-V12.md) |
 
 ## 🧭 Development Model
 
