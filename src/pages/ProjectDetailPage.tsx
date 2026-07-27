@@ -12,6 +12,8 @@ import { OkrPanel } from "../components/OkrPanel";
 import { QaPanel } from "../components/QaPanel";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
+import { ProgressLinkDialog } from "../components/ProgressLinkDialog";
+import { readProgressLinksPreference, type ProgressLinksResponse } from "../progress-links";
 
 const baseTabs: Array<[string, TransKey]> = [["overview", "project.tab.overview"], ["tasks", "project.tab.tasks"], ["updates", "project.tab.updates"]];
 const bdStatuses: Array<[string, TransKey]> = [["準備文件", "bd.preparing"], ["已送件", "bd.submitted"], ["審查中", "bd.review"], ["補件中", "bd.supplement"], ["核准", "bd.approved"], ["結案", "bd.closed"]];
@@ -66,10 +68,26 @@ function Overview({ data, metadata, reload }: { data: ProjectDetail; metadata: M
 function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
   const { lang } = useLang();
   const t = useT();
-  const [content, setContent] = useState(""); const [raw, setRaw] = useState(""); const [busy, setBusy] = useState(false);
+  const [content, setContent] = useState(""); const [raw, setRaw] = useState(""); const [busy, setBusy] = useState(false); const [links, setLinks] = useState<ProgressLinksResponse | null>(null); const [toast, setToast] = useState("");
   const draft = async () => { if (!raw.trim()) return; setBusy(true); try { const result = await api<{ draft: string }>("/ai/draft-update", { method: "POST", body: JSON.stringify({ raw_text: raw, project_id: data.project.id, lang }) }); setContent(result.draft); } finally { setBusy(false); } };
-  const save = async () => { await api(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content, progress_snapshot: data.project.progress }) }); setContent(""); setRaw(""); reload(); };
-  return <div className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <><textarea className="mb-3 min-h-24 w-full" placeholder={t("project.rawPlaceholder")} value={raw} onChange={(e) => setRaw(e.target.value)} /><button className="btn-secondary mb-4" disabled={busy} onClick={() => void draft()}>{t(busy ? "project.organizing" : "project.aiDraft")}</button><textarea className="min-h-48 w-full" placeholder={t("project.updatePlaceholder")} value={content} onChange={(e) => setContent(e.target.value)} /><button className="btn mt-3" disabled={!content.trim()} onClick={() => void save()}>{t("project.publish")}</button></> : <p className="text-sm text-star-dim">{t("project.noEdit")}</p>}</section><section className="space-y-4 lg:col-span-3">{data.progress_updates.length ? data.progress_updates.map((item) => <article className="panel" key={item.id}><div className="mb-3 flex justify-between gap-3 text-xs text-star-dim"><span>{item.author_name}{item.is_support ? t("project.supportBy", { name: item.author_name }) : ""}</span><span>{formatDate(item.created_at, true, lang)}</span></div><Markdown content={item.content} />{item.progress_snapshot !== null && <div className="mt-4"><ProgressBar value={item.progress_snapshot} /></div>}</article>) : <Empty>{t("project.noUpdates")}</Empty>}</section></div>;
+  const save = async () => {
+    const publishedContent = content;
+    const result = await api<{ id: string }>(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content: publishedContent, progress_snapshot: data.project.progress }) });
+    setContent(""); setRaw(""); reload();
+    if (!readProgressLinksPreference()) return;
+    try {
+      const suggestions = await api<ProgressLinksResponse>("/ai/progress-links", { method: "POST", body: JSON.stringify({ project_id: data.project.id, content: publishedContent, progress_update_id: result.id, lang }) });
+      if (suggestions.complete.length || suggestions.create.length) setLinks(suggestions);
+    } catch (error) {
+      console.warn("progress link suggestions unavailable", error);
+    }
+  };
+  const applied = ({ completed, created }: { completed: number; created: number }) => {
+    reload();
+    setToast(t("progressLinks.appliedToast", { completed, created }));
+    window.setTimeout(() => setToast(""), 3500);
+  };
+  return <>{toast && <div className="fixed bottom-5 right-5 z-[60] border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <><textarea className="mb-3 min-h-24 w-full" placeholder={t("project.rawPlaceholder")} value={raw} onChange={(e) => setRaw(e.target.value)} /><button className="btn-secondary mb-4" disabled={busy} onClick={() => void draft()}>{t(busy ? "project.organizing" : "project.aiDraft")}</button><textarea className="min-h-48 w-full" placeholder={t("project.updatePlaceholder")} value={content} onChange={(e) => setContent(e.target.value)} /><button className="btn mt-3" disabled={!content.trim()} onClick={() => void save()}>{t("project.publish")}</button></> : <p className="text-sm text-star-dim">{t("project.noEdit")}</p>}</section><section className="space-y-4 lg:col-span-3">{data.progress_updates.length ? data.progress_updates.map((item) => <article className="panel" key={item.id}><div className="mb-3 flex justify-between gap-3 text-xs text-star-dim"><span>{item.author_name}{item.is_support ? t("project.supportBy", { name: item.author_name }) : ""}</span><span>{formatDate(item.created_at, true, lang)}</span></div><Markdown content={item.content} />{item.progress_snapshot !== null && <div className="mt-4"><ProgressBar value={item.progress_snapshot} /></div>}</article>) : <Empty>{t("project.noUpdates")}</Empty>}</section></div>{links && <ProgressLinkDialog response={links} projectId={data.project.id} stages={data.stages} tasks={data.tasks} onClose={() => setLinks(null)} onApplied={applied} />}</>;
 }
 
 function Clinical({ data, reload }: { data: ProjectDetail; reload(): void }) {

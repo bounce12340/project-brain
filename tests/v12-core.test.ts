@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { aiRoutes } from "../worker/routes/reports";
 import {
   buildProgressLinksPrompt,
@@ -8,6 +9,9 @@ import {
   type ProgressLinkTask,
 } from "../worker/services/progress-links";
 import type { AppContext, AuthUser } from "../worker/types";
+import { en, zh } from "../src/i18n/translations";
+import { progressLinkDrafts, readProgressLinksPreference } from "../src/progress-links";
+import type { Stage, Task } from "../src/types";
 
 const today = "2026-07-27";
 const tasks: ProgressLinkTask[] = [
@@ -159,5 +163,41 @@ describe("SPEC-V12 progress-links route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ complete: [], create: [], fallback: true });
     consoleSpy.mockRestore();
+  });
+});
+
+describe("SPEC-V12 人工確認 UI 契約", () => {
+  const uiStages = [
+    { id: "stage-done", project_id: "project-demo", name: "完成", color: "", position: 2 },
+    { id: "stage-doing", project_id: "project-demo", name: "進行中", color: "", position: 1 },
+  ] as Stage[];
+  const uiTasks = [
+    { id: "task-stability", stage_id: "stage-doing", title: "安定性數據收集", done: 0 },
+  ] as Task[];
+
+  it("complete 與 create 建議全部預設不勾選，缺階段時選第一個有未完成任務的階段", () => {
+    const drafts = progressLinkDrafts({
+      complete: [{ task_id: "task-stability", reason: "已完成安定性數據收集" }],
+      create: [{ title: "補件資料" }],
+      fallback: false,
+    }, uiStages, uiTasks);
+    expect([...drafts.complete, ...drafts.create].every((item) => item.selected === false)).toBe(true);
+    expect(drafts.create[0].stage_id).toBe("stage-doing");
+  });
+
+  it("設定開關預設開，只有明確儲存 false 才關閉", () => {
+    expect(readProgressLinksPreference({ getItem: () => null })).toBe(true);
+    expect(readProgressLinksPreference({ getItem: () => "invalid" })).toBe(true);
+    expect(readProgressLinksPreference({ getItem: () => "false" })).toBe(false);
+  });
+
+  it("dialog 具 aria modal、Esc、逐項既有寫入端點與中英 key parity", () => {
+    const dialog = readFileSync(new URL("../src/components/ProgressLinkDialog.tsx", import.meta.url), "utf8");
+    expect(dialog).toContain('role="dialog"');
+    expect(dialog).toContain('aria-modal="true"');
+    expect(dialog).toContain('event.key === "Escape"');
+    expect(dialog).toContain("patchBody({ done: true })");
+    expect(dialog).toContain("`/projects/${projectId}/tasks`");
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
   });
 });
