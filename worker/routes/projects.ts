@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AppContext, GroupType, ProjectAccess, Visibility } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { booleanInt, boundedNumber, optionalString, requiredString } from "../services/http";
-import { canEditProgress, canManageProject, canViewFees, canViewProject } from "../services/permissions";
+import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, canViewProject } from "../services/permissions";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 
@@ -33,6 +33,11 @@ interface ProjectRow {
   group_name: string;
   group_type: GroupType;
   member_ids_csv: string | null;
+}
+
+interface ProgressUpdateRow {
+  author_id: string;
+  [key: string]: unknown;
 }
 
 const visibilityValues = new Set(["all", "group", "private"]);
@@ -117,7 +122,7 @@ projectsRoutes.get("/:id", async (c) => {
       (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id=? ORDER BY t.stage_id,t.position`).bind(projectId).all<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY position").bind(projectId).all(),
-    c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all(),
+    c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all<ProgressUpdateRow>(),
     c.env.DB.prepare("SELECT * FROM clinical_settings WHERE project_id = ?").bind(projectId).first(),
     c.env.DB.prepare("SELECT ce.*, u.name AS created_by_name FROM clinical_enrollments ce JOIN users u ON u.id = ce.created_by WHERE ce.project_id = ? ORDER BY ce.record_date").bind(projectId).all(),
     c.env.DB.prepare("SELECT * FROM bd_cases WHERE project_id = ? ORDER BY created_at DESC").bind(projectId).all(),
@@ -127,7 +132,8 @@ projectsRoutes.get("/:id", async (c) => {
   if (canViewFees(user, access)) fees = await c.env.DB.prepare("SELECT * FROM bd_fees WHERE project_id = ? ORDER BY fee_date DESC").bind(projectId).all<Record<string, unknown>>();
   const { member_ids_csv: _memberIds, ...project } = row;
   const taskRows = tasks.results.map((task) => ({ ...task, dependency_ids: typeof task.dependency_ids_csv === "string" ? task.dependency_ids_csv.split(",").filter(Boolean) : [] }));
-  return c.json({ project, permissions: { can_edit: canEditProgress(user, access), can_manage: canManageProject(user, access), can_view_fees: canViewFees(user, access) }, members: members.results, stages: stages.results, tasks: taskRows, milestones: milestones.results, progress_updates: updates.results, clinical_settings: clinicalSettings, enrollments: enrollments.results, bd_cases: cases.results, bd_events: events.results, ...(fees ? { bd_fees: fees.results } : {}) });
+  const progressUpdates = updates.results.map((update) => ({ ...update, can_edit: canEditProgressUpdate(user, access, update.author_id) }));
+  return c.json({ project, permissions: { can_edit: canEditProgress(user, access), can_manage: canManageProject(user, access), can_view_fees: canViewFees(user, access) }, members: members.results, stages: stages.results, tasks: taskRows, milestones: milestones.results, progress_updates: progressUpdates, clinical_settings: clinicalSettings, enrollments: enrollments.results, bd_cases: cases.results, bd_events: events.results, ...(fees ? { bd_fees: fees.results } : {}) });
 });
 
 projectsRoutes.patch("/:id", async (c) => {

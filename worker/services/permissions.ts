@@ -17,6 +17,10 @@ export function canEditProgress(user: AuthUser, project: ProjectAccess): boolean
   return user.role === "member" && user.group_id === project.group_id;
 }
 
+export function canEditProgressUpdate(user: AuthUser, project: ProjectAccess, authorId: string): boolean {
+  return canEditProgress(user, project) && (user.id === authorId || project.owner_id === user.id || user.role === "admin");
+}
+
 export function canManageProject(user: AuthUser, project: ProjectAccess): boolean {
   return user.role === "admin" || project.owner_id === user.id;
 }

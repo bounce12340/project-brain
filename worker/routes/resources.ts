@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { boundedNumber, integer, optionalString, requiredString } from "../services/http";
-import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
+import { canEditProgress, canEditProgressUpdate, canViewFees, canViewProject } from "../services/permissions";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules, type AutomationEvent } from "../services/automation";
+import { progressAuditExcerpt } from "../services/progress-updates";
 
 export const resourcesRoutes = new Hono<AppContext>();
 
@@ -186,6 +187,41 @@ resourcesRoutes.post("/projects/:id/progress-updates", async (c) => {
   await touchProject(c.env.DB, projectId);
   if (user.id !== access.owner_id) await writeAudit(c.env.DB, user, "support_update", "project", projectId, `${user.name} 支援填寫進度`);
   return c.json({ id }, 201);
+});
+
+resourcesRoutes.patch("/progress-updates/:id", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null }>();
+  if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
+  const access = await getProjectAccess(c.env.DB, update.project_id);
+  if (!access || !canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有編輯權限" }, 403);
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const content = requiredString(body, "content");
+  if (!content) return c.json({ error: "請輸入進度內容" }, 422);
+  const editedAt = new Date().toISOString();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=? WHERE id=?").bind(content, editedAt, user.id, id),
+    c.env.DB.prepare("UPDATE projects SET last_activity_at=?,updated_at=? WHERE id=?").bind(editedAt, editedAt, update.project_id),
+    c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
+      .bind(createId("audit"), user.id, "progress_edited", "progress_update", id, `編輯進度紀錄：「${progressAuditExcerpt(content)}」`),
+  ]);
+  return c.json({ ok: true, edited_at: editedAt });
+});
+
+resourcesRoutes.delete("/progress-updates/:id", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null }>();
+  if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
+  const access = await getProjectAccess(c.env.DB, update.project_id);
+  if (!access || !canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有刪除權限" }, 403);
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
+      .bind(createId("audit"), user.id, "progress_deleted", "progress_update", id, `刪除進度紀錄：「${progressAuditExcerpt(update.content)}」`),
+    c.env.DB.prepare("DELETE FROM progress_updates WHERE id=?").bind(id),
+  ]);
+  return c.json({ ok: true });
 });
 
 resourcesRoutes.put("/projects/:id/clinical/settings", async (c) => {
