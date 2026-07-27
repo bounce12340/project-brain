@@ -5,10 +5,11 @@ import { requiredString } from "../services/http";
 import { llmChat, parseLooseJson } from "../services/llm";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
-import { reportPeriod, type ReportPeriodPreset } from "../services/time";
+import { reportPeriod, taipeiDate, type ReportPeriodPreset } from "../services/time";
 import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
 import { aiLanguageInstruction, draftFallback, normalizeAiLang, riskFallback, scheduleReason, taskFallback } from "../services/ai-language";
+import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkTask } from "../services/progress-links";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -86,6 +87,39 @@ reportsRoutes.post("/ai/regenerate", async (c) => {
 });
 
 export const aiRoutes = new Hono<AppContext>();
+
+aiRoutes.post("/progress-links", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const projectId = requiredString(body, "project_id");
+  const content = requiredString(body, "content");
+  const lang = normalizeAiLang(body.lang);
+  if (!projectId || !content) return c.json({ error: "請提供專案與進度內容" }, 422);
+  const access = await getProjectAccess(c.env.DB, projectId);
+  if (!access) return c.json({ error: "找不到專案" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  try {
+    const [taskRows, stageRows] = await Promise.all([
+      c.env.DB.prepare(`
+        SELECT t.id,t.title,s.name AS stage_name
+        FROM tasks t JOIN stages s ON s.id=t.stage_id
+        WHERE t.project_id=? AND t.done=0
+        ORDER BY s.position,t.position,t.created_at
+      `).bind(projectId).all<ProgressLinkTask>(),
+      c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
+    ]);
+    const stages = stageRows.results.map((stage) => stage.name);
+    const text = await llmChat(c.env, [
+      { role: "system", content: buildProgressLinksPrompt(lang) },
+      { role: "user", content: JSON.stringify({ progress: content, unfinished_tasks: taskRows.results, stages, progress_update_id: requiredString(body, "progress_update_id") }) },
+    ], { json: true });
+    const parsed = parseLooseJson<Record<string, unknown>>(text);
+    if (!parsed || !Array.isArray(parsed.complete) || !Array.isArray(parsed.create)) throw new Error("AI 任務連動格式不正確");
+    return c.json({ ...sanitizeProgressLinks(parsed, taskRows.results, stages, content, taipeiDate()), fallback: false });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "進度任務建議降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
+    return c.json(progressLinksFallback());
+  }
+});
 
 aiRoutes.post("/draft-update", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
