@@ -4,7 +4,7 @@
 
 > Like the Khala, it lets the team sense the pulse of every project together through the crystal.
 
-**Production**: <https://projects.uic-ai.com> | **Version**: v11.2 | **Tests**: 206/206 ✅ | **Platform**: Cloudflare Workers
+**Production**: <https://projects.uic-ai.com> | **Version**: v12.1 | **Tests**: 248/248 ✅ | **Platform**: Cloudflare Workers
 
 A shared project progress platform for the internal team of Taiwan-based pharmaceutical agency UIC. It replaces a fragmented workflow spread across six Excel files—where BD, RA, QA, and Clinical each worked in isolation and multiple people recorded the same project—with a single crystal for projects, progress, OKRs, regulatory updates, license expirations, and change control: real-time teamwide awareness, tiered permissions, AI assistance, and automated reminders.
 
@@ -44,14 +44,14 @@ flowchart LR
 | AI | OpenAI-compatible layer (Ollama Cloud `deepseek-v4-pro`) + Workers AI fallback |
 | Email | AgentMail REST API |
 | Authentication | PBKDF2-SHA256 (WebCrypto) · httpOnly session cookie · Email OTP |
-| Testing | Vitest 160 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
+| Testing | Vitest 248 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
 
 ## 📁 Project Structure
 
 ```
 worker/            # Hono API：routes、middleware、services（permissions/llm/mailer/crypto…）
 src/               # React SPA：pages、components、Protoss design tokens
-migrations/        # D1 migrations 0001–0007
+migrations/        # D1 migrations 0001–0011
 tests/             # Vitest（＋fixtures）
 scripts/           # 各版正式站 E2E 驗收腳本
 SPEC*.md           # 各版規格書（開發都由規格驅動）
