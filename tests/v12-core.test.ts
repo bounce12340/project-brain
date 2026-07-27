@@ -78,6 +78,11 @@ describe("SPEC-V12 progress-links 清洗", () => {
     expect(clean({ complete: [{ task_id: "task-stability", reason: "預計下週已完成安定性數據收集" }], create: [] }).complete).toEqual([]);
   });
 
+  it("原文明確完成且對應任務時，允許不重複完成字眼的簡短理由", () => {
+    expect(clean({ complete: [{ task_id: "task-stability", reason: "進度已提供成果證據" }], create: [] }).complete)
+      .toEqual([{ task_id: "task-stability", reason: "進度已提供成果證據" }]);
+  });
+
   it("complete 理由限制為 30 字", () => {
     const reason = `已完成安定性數據收集${"，證據".repeat(20)}`;
     expect(Array.from(clean({ complete: [{ task_id: "task-stability", reason }], create: [] }).complete[0].reason)).toHaveLength(30);

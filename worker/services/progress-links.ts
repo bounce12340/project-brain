@@ -93,7 +93,7 @@ export function sanitizeProgressLinks(
       const reason = typeof row.reason === "string" ? trimTo(row.reason, 30) : "";
       const task = taskMap.get(taskId);
       if (!task || !reason || seen.has(taskId)) continue;
-      if (!explicitCompletionPattern.test(reason) || ambiguousCompletionPattern.test(reason)) continue;
+      if (ambiguousCompletionPattern.test(reason)) continue;
       if (!clauses.some((clause) => clauseMatchesTask(clause, task.title))) continue;
       seen.add(taskId);
       complete.push({ task_id: taskId, reason });
