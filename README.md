@@ -1,5 +1,7 @@
 # 🔷 艾爾水晶-專案進度
 
+**繁體中文** | [English](README.en.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
+
 > 如同卡拉，讓團隊在水晶中共同感知每個專案的脈動。
 
 **正式站**：<https://projects.uic-ai.com>｜**版本**：v11.2｜**測試**：206/206 ✅｜**平台**：Cloudflare Workers
