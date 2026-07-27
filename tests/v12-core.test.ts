@@ -208,6 +208,9 @@ describe("SPEC-V12 人工確認 UI 契約", () => {
     expect(dialog).toContain('role="dialog"');
     expect(dialog).toContain('aria-modal="true"');
     expect(dialog).toContain('event.key === "Escape"');
+    expect(dialog).toContain("closeRef.current?.focus()");
+    expect(dialog).toContain("previous?.focus()");
+    expect(dialog).toContain("disabled={busy || selectedCount === 0}");
     expect(dialog).toContain("patchBody({ done: true })");
     expect(dialog).toContain("`/projects/${projectId}/tasks`");
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
