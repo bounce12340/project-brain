@@ -1,6 +1,6 @@
 # 🔷 艾爾水晶（アイウル・クリスタル）— プロジェクト進捗
 
-[繁體中文](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **日本語** | [한국어](README.ko.md)
+[English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [한국어](README.ko.md)
 
 > カーラのように、チーム全員が水晶を通じて各プロジェクトの鼓動をともに感じられます。
 

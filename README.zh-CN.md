@@ -1,6 +1,6 @@
 # 🔷 艾爾水晶（艾尔水晶）- 项目进度
 
-[繁體中文](README.md) | [English](README.en.md) | **简体中文** | [日本語](README.ja.md) | [한국어](README.ko.md)
+[English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 > 如同卡拉，让团队在水晶中共同感知每个项目的脉动。
 

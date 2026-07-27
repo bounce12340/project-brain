@@ -1,6 +1,6 @@
 # 🔷 艾爾水晶(아이우르 크리스털) — 프로젝트 진행 현황
 
-[繁體中文](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **한국어**
+[English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **한국어**
 
 > 칼라처럼, 팀 모두가 크리스털 안에서 각 프로젝트의 맥박을 함께 느낄 수 있습니다.
 
