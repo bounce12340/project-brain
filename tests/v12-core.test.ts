@@ -191,6 +191,13 @@ describe("SPEC-V12 人工確認 UI 契約", () => {
     expect(readProgressLinksPreference({ getItem: () => "false" })).toBe(false);
   });
 
+  it("個人設定以 AIUR_PROGRESS_LINKS 儲存開關，發布前先讀取偏好", () => {
+    const profile = readFileSync(new URL("../src/pages/ProfilePage.tsx", import.meta.url), "utf8");
+    const project = readFileSync(new URL("../src/pages/ProjectDetailPage.tsx", import.meta.url), "utf8");
+    expect(profile).toContain("writeProgressLinksPreference(value)");
+    expect(project).toContain("if (!readProgressLinksPreference()) return");
+  });
+
   it("dialog 具 aria modal、Esc、逐項既有寫入端點與中英 key parity", () => {
     const dialog = readFileSync(new URL("../src/components/ProgressLinkDialog.tsx", import.meta.url), "utf8");
     expect(dialog).toContain('role="dialog"');
