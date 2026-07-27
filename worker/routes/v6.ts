@@ -296,10 +296,18 @@ v6Routes.get("/regwatch", async (c) => {
   const productLine = c.req.query("product_line");
   const entryType = c.req.query("entry_type");
   const year = c.req.query("year");
+  const month = c.req.query("month");
   const keyword = c.req.query("keyword")?.trim();
   if (productLine) { conditions.push("r.product_line=?"); values.push(productLine); }
   if (entryType) { conditions.push("r.entry_type=?"); values.push(entryType); }
-  if (year) { conditions.push("substr(r.entry_date,1,4)=?"); values.push(year); }
+  const monthNumber = month && /^\d+$/.test(month) ? Number(month) : 0;
+  if (year && monthNumber >= 1 && monthNumber <= 12) {
+    conditions.push("substr(r.entry_date,1,7)=?");
+    values.push(`${year}-${String(monthNumber).padStart(2, "0")}`);
+  } else if (year) {
+    conditions.push("substr(r.entry_date,1,4)=?");
+    values.push(year);
+  }
   if (keyword) { conditions.push("(r.title LIKE ? OR COALESCE(r.key_points,'') LIKE ?)"); values.push(`%${keyword}%`, `%${keyword}%`); }
   const where = `WHERE ${conditions.join(" AND ")}`;
   const page = Math.max(1, Number(c.req.query("page")) || 1);
