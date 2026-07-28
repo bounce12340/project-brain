@@ -11,9 +11,21 @@
 - 手機（≤640px）同樣吸附；若導覽列在手機為非 sticky，則 tabs `top:0`。
 - 尊重 `prefers-reduced-motion`（不加額外動畫；純吸附即可）。
 
+## 1b. 甘特：未排程任務不得偽裝成「今天」
+
+> 使用者實例：Plenvu 專案 5 張任務卡皆無 `start_date`／`due_date`，`TaskViews.tsx:58` 以 `created_at` 作為 fallback，導致 5 張卡全部畫成同一天（建立日 7/28）的零寬點，看起來像「全部排在今天」，實際是「全部未排程」——誤導。
+
+- 判定：`start_date` 與 `due_date` **皆為空**的任務 → **不畫在時間軸上**（移除 `created_at` fallback）。
+- 改為在甘特圖下方顯示「**未排程（N）**」區塊：以淡色列出這些任務標題，附一行提示「設定起訖日後會顯示於時間軸」；點該列開啟既有任務抽屜以便填日期。
+- 只有其中一個日期的任務維持現行行為（畫在該日期的點）。
+- 日曆視圖：頁尾加一行「未排程 N 項」（不列清單，避免干擾），數字與甘特一致。
+- 圖表日期範圍計算隨之排除未排程任務（避免範圍被建立日拉歪）。
+- i18n 中英齊備。
+
 ## 2. 範圍
 
-- 只改專案詳情頁的分頁籤與必要 CSS（`src/pages/ProjectDetailPage.tsx`、`src/styles.css`）。
+- 分頁籤：`src/pages/ProjectDetailPage.tsx`、`src/styles.css`。
+- 甘特／日曆未排程處理：`src/components/TaskViews.tsx`。
 - **不改**分頁籤的既有邏輯、順序、權限顯示條件與任何資料行為。
 - 其他頁面（法規動態篩選列、報表控制列）本次不動。
 
@@ -21,6 +33,7 @@
 
 1. typecheck／test／build 全綠；deploy 成功（無 migration）。
 2. built asset 驗證：分頁籤容器含 sticky 定位與 `--nav-h` 變數引用；z-index 低於 drawer/modal 常數（列出實際數值比較）。
+2b. 甘特未排程：新增 vitest ≥3 驗證——皆無日期的任務不進入時間軸資料集且計入未排程數、只有單一日期者仍畫點、日期範圍計算不受未排程任務影響。
 3. 迴歸：GET / 200、未登入 401、真實資料 fingerprints 不變、title。
 4. 視覺（吸附位置、暗亮兩主題、窄螢幕水平捲動）由派工者以瀏覽器確認；本檔記錄可自驗部分。
 5. 結果如實寫入 ACCEPTANCE-V12-3.md。
