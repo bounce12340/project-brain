@@ -96,3 +96,7 @@
 - 2026-07-28（v12.3）：既有導覽列在所有 breakpoint 都是 sticky；`--nav-h` 因此固定由導覽列與專案 tabs 共用，桌面為 56px，`<1024px` 的雙列導覽為 101px。tabs 使用 z-index 20，低於 nav 30、drawer/modal 50 與 tour 80。
 - 2026-07-28（v12.3）：只有 `start_date` 或只有 `due_date` 的任務都以該唯一日期作為甘特起訖，呈現單一點；兩者皆空才歸入未排程。依賴線只在前後兩個任務都已排程時繪製，不再以 `created_at` 補值。
 - 2026-07-28（v12.3）：本版沒有 schema 變更或 migration。正式站只部署 code/assets並執行唯讀 fingerprint；瀏覽器互動全部使用本機固定前綴 demo fixture，清理 read-back 全為 0。本版沒有待使用者裁決的 open decision。
+- 2026-07-28（v12.4）：歷史日期不做成一般里程碑，因為里程碑是自動進度的工作分母與完成分子；把大量已發生事實塞進里程碑會在未來工作尚未開始時製造虛高進度。改以同表 `kind='event'` 保存日期事實，建立時固定 `done=1`，並在自動進度、逾期 KPI、cron 提醒、風險與歷史報表查詢中明確只納入 `kind='milestone'`。
+- 2026-07-28（v12.4）：`POST /api/projects/:id/milestones` 沿用既有權限與刪除端點，payload 的 `kind='event'` 代表歷程事件；event 必須有日期、不能由 PATCH 切回未完成。專案總覽不提供 event 完成切換，只提供依日期正序唯讀顯示、手動新增與刪除。
+- 2026-07-28（v12.4）：AI 建議仍是純讀取且預設不勾。清洗層除接受模型的 `events[]` 外，也從進度原文 deterministic 擷取「明確完成語氣＋合法過去日期」的子句，依 `(title,event_date)` 對既有 event 與本次建議去重，標題截為 60 個 Unicode 字元並上限 20；今日不算過去，仍不建立 event。
+- 2026-07-28（v12.4）：功能實作階段沒有待使用者裁決的 open decision；remote migration／deploy／production E2E 若發現基線差異，會另以 `v12.4，open` 增量記錄並在驗收文件標示，不修改任何真實專案或真實 TFDA 資料迎合規格。

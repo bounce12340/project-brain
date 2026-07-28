@@ -97,7 +97,7 @@ describe("SPEC-V12 progress-links 清洗", () => {
   });
 
   it("fallback 固定回 HTTP 可用的空陣列 shape", () => {
-    expect(progressLinksFallback()).toEqual({ complete: [], create: [], milestones: [], dates: [], fallback: true });
+    expect(progressLinksFallback()).toEqual({ complete: [], create: [], milestones: [], events: [], dates: [], fallback: true });
   });
 });
 
@@ -169,7 +169,7 @@ describe("SPEC-V12 progress-links route", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await routeRequest(actor({ id: "owner" }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ complete: [], create: [], milestones: [], dates: [], fallback: true });
+    expect(await response.json()).toEqual({ complete: [], create: [], milestones: [], events: [], dates: [], fallback: true });
     consoleSpy.mockRestore();
   });
 
@@ -191,6 +191,7 @@ describe("SPEC-V12 progress-links route", () => {
       complete: [],
       create: [],
       milestones: [{ title: "收到 X 文件", due_date: "2026-12-01" }],
+      events: [],
       dates: [{ task_id: "task-stability", due_date: "2026-12-31", reason: "收到文件後審查" }],
       fallback: false,
     });
@@ -211,6 +212,7 @@ describe("SPEC-V12 人工確認 UI 契約", () => {
       complete: [{ task_id: "task-stability", reason: "已完成安定性數據收集" }],
       create: [{ title: "補件資料" }],
       milestones: [],
+      events: [],
       dates: [],
       fallback: false,
     }, uiStages, uiTasks);

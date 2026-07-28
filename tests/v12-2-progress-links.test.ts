@@ -136,6 +136,7 @@ describe("SPEC-V12-2 progress-links UI contract", () => {
       complete: [],
       create: [],
       milestones: [{ title: "收到 X 文件", due_date: "2026-12-01" }],
+      events: [],
       dates: [
         { task_id: "task-review", due_date: "2026-12-31", reason: "審查一個月" },
         { task_id: "task-done", due_date: "2026-12-15", reason: "不應保留" },
