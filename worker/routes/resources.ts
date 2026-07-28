@@ -6,6 +6,7 @@ import { canEditProgress, canEditProgressUpdate, canViewFees, canViewProject } f
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules, type AutomationEvent } from "../services/automation";
 import { progressAuditExcerpt } from "../services/progress-updates";
+import { wouldCreateDependencyCycle, type DependencyEdge } from "../services/dependencies";
 
 export const resourcesRoutes = new Hono<AppContext>();
 
@@ -92,8 +93,31 @@ resourcesRoutes.patch("/tasks/:id", async (c) => {
   const stage = await c.env.DB.prepare("SELECT id FROM stages WHERE id=? AND project_id=?").bind(stageId, projectId).first();
   if (!stage) return c.json({ error: "階段不屬於此專案" }, 422);
   const done = "done" in body ? (body.done ? 1 : 0) : current.done;
-  await c.env.DB.prepare("UPDATE tasks SET title=?,description=?,stage_id=?,assignee_id=?,start_date=?,due_date=?,position=?,done=?,done_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-    .bind(optionalString(body, "title") ?? current.title, optionalString(body, "description") ?? current.description, stageId, "assignee_id" in body ? optionalString(body, "assignee_id") : current.assignee_id, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "due_date" in body ? optionalString(body, "due_date") : current.due_date, "position" in body ? integer(body, "position") : current.position, done, done ? (current.done ? await c.env.DB.prepare("SELECT done_at FROM tasks WHERE id=?").bind(id).first<string>("done_at") : new Date().toISOString()) : null, id).run();
+  let dependencyIds: string[] | undefined;
+  if ("dependency_ids" in body) {
+    if (!Array.isArray(body.dependency_ids) || body.dependency_ids.some((value) => typeof value !== "string" || !value.trim())) {
+      return c.json({ error: "前置任務格式不正確" }, 422);
+    }
+    dependencyIds = [...new Set(body.dependency_ids)];
+    const projectTaskIds = new Set((await c.env.DB.prepare("SELECT id FROM tasks WHERE project_id=?").bind(projectId).all<{ id: string }>()).results.map((task) => task.id));
+    if (dependencyIds.some((dependencyId) => !projectTaskIds.has(dependencyId))) {
+      return c.json({ error: "前置任務不屬於此專案" }, 422);
+    }
+    const edges = (await c.env.DB.prepare("SELECT td.task_id,td.depends_on_task_id FROM task_dependencies td JOIN tasks t ON t.id=td.task_id WHERE t.project_id=? AND td.task_id!=?").bind(projectId, id).all<DependencyEdge>()).results;
+    for (const dependencyId of dependencyIds) {
+      if (wouldCreateDependencyCycle(id, dependencyId, edges)) return c.json({ error: "依賴關係會形成循環" }, 422);
+      edges.push({ task_id: id, depends_on_task_id: dependencyId });
+    }
+  }
+  const statements = [
+    c.env.DB.prepare("UPDATE tasks SET title=?,description=?,stage_id=?,assignee_id=?,start_date=?,due_date=?,position=?,done=?,done_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(optionalString(body, "title") ?? current.title, optionalString(body, "description") ?? current.description, stageId, "assignee_id" in body ? optionalString(body, "assignee_id") : current.assignee_id, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "due_date" in body ? optionalString(body, "due_date") : current.due_date, "position" in body ? integer(body, "position") : current.position, done, done ? (current.done ? await c.env.DB.prepare("SELECT done_at FROM tasks WHERE id=?").bind(id).first<string>("done_at") : new Date().toISOString()) : null, id),
+  ];
+  if (dependencyIds) {
+    statements.push(c.env.DB.prepare("DELETE FROM task_dependencies WHERE task_id=?").bind(id));
+    statements.push(...dependencyIds.map((dependencyId) => c.env.DB.prepare("INSERT INTO task_dependencies (task_id,depends_on_task_id) VALUES (?,?)").bind(id, dependencyId)));
+  }
+  await c.env.DB.batch(statements);
   await touchProject(c.env.DB, projectId);
   const events: AutomationEvent[] = [];
   if (!current.done && done) events.push({ type: "task_done", taskId: id });
