@@ -107,3 +107,6 @@
 - 2026-07-28（v13）：兩套導覽沿用 `onboarding_done`，首次顯示專案／法規／略過三選一；`/help` 以具名事件重播。專案內頁導覽只會從 `/api/projects` 選 `is_demo=1` 專案及其任務；沒有可見 demo 資料就自動跳過內頁步驟，絕不退回第一個真實專案。
 - 2026-07-28（v13）：缺少目標元素時等待換頁完成後自動跳到下一步；這涵蓋無 demo 專案、無任務、非管理者看不到草稿批次工具、或清單無可刪列等情境，不因角色或資料差異中斷整套導覽。
 - 2026-07-28（v13）：本版是靜態內容與前端互動增量，不新增 API、network request、schema 或 migration。驗收不得建立或修改真實專案、TFDA 草稿、墓碑、`usr_admin` 或 secrets；production 檢查只用 demo 帳號與唯讀 fingerprints。
+- 2026-07-28（v13.1）：專案甘特與全域時間軸共用 `src/gantt.ts` 的階段色、透明度與對比規則；階段色缺漏、無對應階段或不是合法 3／6 碼 hex 時回退主題 psi。hex 相對亮度 ≥ 0.72 時以同色 RGB 乘 0.62 加 1px 深階描邊；色條上的完成勾記依亮度選深／白字，psi fallback 則使用隨主題切換的 void 色。
+- 2026-07-28（v13.1）：圖例只收實際被任務引用的階段，以 stage id 去重後依 position、名稱、id 穩定排序；專案甘特直接使用 detail stages，全域 `/timeline` 只增量回傳任務的 stage name/color/position，不新增 endpoint、schema 或 migration。
+- 2026-07-28（v13.1）：圖例位於同一可水平捲動的圖表容器內、不使用 sticky，寬度限制為目前 viewport 扣除 4rem 且上限 900px，使窄螢幕與階段數多時自動換行。功能與驗收未留下待使用者裁決的 open decision。

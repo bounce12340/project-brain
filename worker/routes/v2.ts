@@ -216,12 +216,12 @@ v2Routes.delete("/rules/:id", async (c) => {
 
 v2Routes.get("/timeline", async (c) => {
   const user = c.get("user");
-  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }>, events: [] as Array<{ id: string; title: string; event_date: string }> }));
+  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>, events: [] as Array<{ id: string; title: string; event_date: string }> }));
   if (projects.length) {
     const marks = projects.map(() => "?").join(",");
     const ids = projects.map((project) => project.id);
     const [tasks, events] = await Promise.all([
-      c.env.DB.prepare(`SELECT t.id,t.project_id,t.title,t.start_date,t.due_date,t.created_at,t.done,u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id IN (${marks}) ORDER BY t.position,t.created_at`).bind(...ids).all<{ id: string; project_id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }>(),
+      c.env.DB.prepare(`SELECT t.id,t.project_id,t.title,t.start_date,t.due_date,t.created_at,t.done,t.stage_id,u.name AS assignee_name,s.name AS stage_name,s.color AS stage_color,s.position AS stage_position FROM tasks t JOIN stages s ON s.id=t.stage_id LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id IN (${marks}) ORDER BY s.position,t.position,t.created_at`).bind(...ids).all<{ id: string; project_id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>(),
       c.env.DB.prepare(`SELECT id,project_id,title,due_date AS event_date FROM milestones WHERE kind='event' AND project_id IN (${marks}) ORDER BY due_date,title`).bind(...ids).all<{ id: string; project_id: string; title: string; event_date: string }>(),
     ]);
     const byProject = new Map<string, typeof tasks.results>();

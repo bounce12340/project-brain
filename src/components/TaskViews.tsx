@@ -10,6 +10,8 @@ import { TaskDrawer } from "./TaskDrawer";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { HelpTip } from "./HelpTip";
+import { GanttLegend } from "./GanttLegend";
+import { GANTT_ROW_HEIGHT, GANTT_TASK_HEIGHT, getTaskGanttStyle } from "../gantt";
 
 type View = "kanban" | "list" | "calendar" | "gantt";
 interface Suggestion { task_id: string; start_date: string; due_date: string; reason: string }
@@ -87,7 +89,53 @@ function ProjectGantt({ data, openTask }: { data: ProjectDetail; openTask(task: 
   const t = useT();
   const currentDate = today();
   const { dated, unscheduled, start, end } = buildGanttModel({ tasks: data.tasks, milestones: data.milestones, projectStart: data.project.start_date, projectEnd: data.project.target_date, currentDate });
-  const dayWidth = 24; const chartWidth = Math.max(700, (daysBetween(start, end) + 2) * dayWidth); const rowHeight = 46; const labelWidth = 190; const header = 70; const height = header + (dated.length + 1) * rowHeight;
+  const dayWidth = 24; const chartWidth = Math.max(700, (daysBetween(start, end) + 2) * dayWidth); const rowHeight = GANTT_ROW_HEIGHT; const labelWidth = 190; const header = 70; const height = header + (dated.length + 1) * rowHeight;
   const taskMap = new Map(dated.flatMap((item, index) => item.kind === "task" ? [[item.task.id, { task: item.task, index }] as const] : []));
-  return <div className="space-y-4"><section className="panel overflow-x-auto"><svg className="chart-surface" width={labelWidth + chartWidth} height={height} role="img" aria-label={t("views.ganttAria")}><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={CHART.starDim} /></marker></defs><rect width="100%" height="100%" fill={CHART.nexus} /><text x="8" y="25" fontSize="13" fontWeight="700" fill={CHART.goldBright}>{t("views.projectTask")}</text>{Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7)).map((date) => { const x = labelWidth + ganttPosition(date, start, end, chartWidth); return <g key={date}><line x1={x} x2={x} y1={header - 18} y2={height} stroke={CHART.line} /><text x={x + 3} y={header - 25} fontSize="10" fill={CHART.starDim}>{date.slice(5)}</text></g>; })}{data.project.start_date && data.project.target_date && <g><text x="8" y={header + 24} fontSize="12" fontWeight="600">{t("views.projectRange")}</text><rect x={labelWidth + ganttPosition(data.project.start_date, start, end, chartWidth)} y={header + 10} width={Math.max(5, ganttPosition(data.project.target_date, start, end, chartWidth) - ganttPosition(data.project.start_date, start, end, chartWidth))} height="16" rx="8" fill={CHART.gold}><title>{data.project.name}：{data.project.start_date} ～ {data.project.target_date}</title></rect></g>}{dated.map((item, index) => { const y = header + (index + 1) * rowHeight + 15; const x1 = labelWidth + ganttPosition(item.start, start, end, chartWidth); const x2 = labelWidth + ganttPosition(item.end, start, end, chartWidth); return <g key={`${item.kind}-${item.kind === "task" ? item.task.id : item.item.id}`} className={item.kind === "task" ? "cursor-pointer" : ""} onClick={() => item.kind === "task" && openTask(item.task)}><text x="8" y={y + 11} fontSize="12" fill={CHART.star}>{item.name.slice(0, 24)}</text>{item.kind === "event" ? <polygon points={`${x1},${y - 3} ${x1 + 10},${y + 7} ${x1},${y + 17} ${x1 - 10},${y + 7}`} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{item.name}（{item.start}）</title></polygon> : item.kind === "milestone" || x1 === x2 ? <polygon points={`${x1},${y - 3} ${x1 + 10},${y + 7} ${x1},${y + 17} ${x1 - 10},${y + 7}`} fill={item.kind === "milestone" ? CHART.gold : CHART.psi}><title>{item.name}：{item.start}</title></polygon> : <rect x={x1} y={y} width={Math.max(8, x2 - x1)} height="14" rx="7" fill={item.task.done ? CHART.gold : CHART.psi}><title>{item.name}：{item.start} ～ {item.end}</title></rect>}{item.kind === "task" && item.task.done && <text x={x1 + 3} y={y + 11} fill={CHART.void} fontSize="11">✓</text>}</g>; })}{dated.flatMap((item) => item.kind === "task" ? item.task.dependency_ids.map((dependsOn) => { const from = taskMap.get(dependsOn); const to = taskMap.get(item.task.id); if (!from || !to) return null; const fromEnd = from.task.due_date ?? from.task.start_date; const toStart = to.task.start_date ?? to.task.due_date; if (!fromEnd || !toStart) return null; const x1 = labelWidth + ganttPosition(fromEnd, start, end, chartWidth); const x2 = labelWidth + ganttPosition(toStart, start, end, chartWidth); const y1 = header + (from.index + 1) * rowHeight + 22; const y2 = header + (to.index + 1) * rowHeight + 22; const mid = Math.max(x1 + 10, (x1 + x2) / 2); return <polyline key={`${item.task.id}-${dependsOn}`} points={`${x1},${y1} ${mid},${y1} ${mid},${y2} ${x2},${y2}`} fill="none" stroke={CHART.starDim} strokeWidth="1.5" markerEnd="url(#arrow)" />; }) : [])}<line x1={labelWidth + ganttPosition(currentDate, start, end, chartWidth)} x2={labelWidth + ganttPosition(currentDate, start, end, chartWidth)} y1={header - 18} y2={height} stroke={CHART.psi} strokeWidth="3" /></svg>{dated.length === 0 && <Empty>{t("views.noGantt")}</Empty>}</section>{unscheduled.length > 0 && <section className="panel"><h3 className="font-bold">{t("views.unscheduled", { count: unscheduled.length })}<HelpTip topic="unscheduled" /></h3><p className="mt-1 text-sm text-star-dim">{t("views.unscheduledHint")}</p><div className="mt-3 divide-y divide-nexus-line">{unscheduled.map((task) => <button className="block w-full py-2 text-left text-sm text-star-dim hover:text-star" key={task.id} onClick={() => openTask(task)}>{task.title}</button>)}</div></section>}</div>;
+  return <div className="space-y-4">
+    <section className="panel overflow-x-auto">
+      <div style={{ width: labelWidth + chartWidth }}>
+        <GanttLegend stages={data.stages} tasks={data.tasks} milestoneLabel={t("project.milestones")} eventLabel={t("project.historyEvents")} />
+        <svg className="chart-surface" width={labelWidth + chartWidth} height={height} role="img" aria-label={t("views.ganttAria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-row-height={GANTT_ROW_HEIGHT}>
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={CHART.starDim} /></marker></defs>
+          <rect width="100%" height="100%" fill={CHART.nexus} />
+          <text x="8" y="25" fontSize="13" fontWeight="700" fill={CHART.goldBright}>{t("views.projectTask")}</text>
+          {Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7)).map((date) => {
+            const x = labelWidth + ganttPosition(date, start, end, chartWidth);
+            return <g key={date}><line x1={x} x2={x} y1={header - 18} y2={height} stroke={CHART.line} /><text x={x + 3} y={header - 25} fontSize="10" fill={CHART.starDim}>{date.slice(5)}</text></g>;
+          })}
+          {data.project.start_date && data.project.target_date && <g><text x="8" y={header + 24} fontSize="12" fontWeight="600" fill={CHART.star}>{t("views.projectRange")}</text><rect x={labelWidth + ganttPosition(data.project.start_date, start, end, chartWidth)} y={header + 10} width={Math.max(5, ganttPosition(data.project.target_date, start, end, chartWidth) - ganttPosition(data.project.start_date, start, end, chartWidth))} height="16" rx="8" fill={CHART.gold}><title>{data.project.name}：{data.project.start_date} ～ {data.project.target_date}</title></rect></g>}
+          {dated.map((item, index) => {
+            const y = header + (index + 1) * rowHeight + 15;
+            const x1 = labelWidth + ganttPosition(item.start, start, end, chartWidth);
+            const x2 = labelWidth + ganttPosition(item.end, start, end, chartWidth);
+            const taskStyle = item.kind === "task" ? getTaskGanttStyle(item.task, data.stages) : null;
+            const diamond = `${x1},${y - 4} ${x1 + 13},${y + 9} ${x1},${y + 22} ${x1 - 13},${y + 9}`;
+            return <g key={`${item.kind}-${item.kind === "task" ? item.task.id : item.item.id}`} className={item.kind === "task" ? "cursor-pointer" : ""} onClick={() => item.kind === "task" && openTask(item.task)}>
+              <text x="8" y={y + 13} fontSize="12" fill={CHART.star}>{item.name.slice(0, 24)}</text>
+              {item.kind === "event"
+                ? <polygon points={diamond} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{item.name}（{item.start}）</title></polygon>
+                : item.kind === "milestone"
+                  ? <polygon points={diamond} fill={CHART.gold}><title>{item.name}：{item.start}</title></polygon>
+                  : x1 === x2
+                    ? <polygon points={diamond} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start}</title></polygon>
+                    : <rect data-stage-colored-task x={x1} y={y} width={Math.max(8, x2 - x1)} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start} ～ {item.end}</title></rect>}
+              {item.kind === "task" && item.task.done && <text x={x1 + 3} y={y + 13} fill={taskStyle?.textColor} fontSize="11">✓</text>}
+            </g>;
+          })}
+          {dated.flatMap((item) => item.kind === "task" ? item.task.dependency_ids.map((dependsOn) => {
+            const from = taskMap.get(dependsOn); const to = taskMap.get(item.task.id);
+            if (!from || !to) return null;
+            const fromEnd = from.task.due_date ?? from.task.start_date; const toStart = to.task.start_date ?? to.task.due_date;
+            if (!fromEnd || !toStart) return null;
+            const x1 = labelWidth + ganttPosition(fromEnd, start, end, chartWidth); const x2 = labelWidth + ganttPosition(toStart, start, end, chartWidth);
+            const y1 = header + (from.index + 1) * rowHeight + 24; const y2 = header + (to.index + 1) * rowHeight + 24; const mid = Math.max(x1 + 10, (x1 + x2) / 2);
+            return <polyline key={`${item.task.id}-${dependsOn}`} points={`${x1},${y1} ${mid},${y1} ${mid},${y2} ${x2},${y2}`} fill="none" stroke={CHART.starDim} strokeWidth="1.5" markerEnd="url(#arrow)" />;
+          }) : [])}
+          <line x1={labelWidth + ganttPosition(currentDate, start, end, chartWidth)} x2={labelWidth + ganttPosition(currentDate, start, end, chartWidth)} y1={header - 18} y2={height} stroke={CHART.psi} strokeWidth="3" />
+        </svg>
+      </div>
+      {dated.length === 0 && <Empty>{t("views.noGantt")}</Empty>}
+    </section>
+    {unscheduled.length > 0 && <section className="panel"><h3 className="font-bold">{t("views.unscheduled", { count: unscheduled.length })}<HelpTip topic="unscheduled" /></h3><p className="mt-1 text-sm text-star-dim">{t("views.unscheduledHint")}</p><div className="mt-3 divide-y divide-nexus-line">{unscheduled.map((task) => <button className="block w-full py-2 text-left text-sm text-star-dim hover:text-star" key={task.id} onClick={() => openTask(task)}>{task.title}</button>)}</div></section>}
+  </div>;
 }
