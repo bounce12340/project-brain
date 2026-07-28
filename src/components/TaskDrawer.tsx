@@ -10,6 +10,7 @@ import type { Metadata, ProjectDetail, Task, TaskComment } from "../types";
 import { relativeTime } from "../utils/localized";
 import { ProjectFiles } from "./ProjectFiles";
 import { ErrorBox, Markdown } from "./UI";
+import { HelpTip } from "./HelpTip";
 
 interface Mentionable { id: string; name: string }
 
@@ -171,7 +172,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
         </div>
 
         <section data-task-drawer-section="dependencies" className="rounded-lg border border-nexus-line p-3">
-          <h3 className="font-bold">{t("task.dependencies")}</h3>
+          <h3 className="font-bold">{t("task.dependencies")}<HelpTip topic="dependencies" /></h3>
           <p className="mt-1 text-xs text-star-dim">{t("task.dependencyHint")}</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {data.tasks.filter((item) => item.id !== task.id).map((item) => <label className="flex items-center gap-2 rounded-lg border border-nexus-line p-2 text-sm" key={item.id}>
@@ -188,7 +189,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
 
         <div data-task-drawer-section="dates" className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="label">{t("task.start")}</label>
+            <label className="label">{t("task.start")}<HelpTip topic="taskDates" /></label>
             <input className="w-full" type="date" value={form.start_date ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => changeStartDate(event.target.value || null)} />
             {dateStatus === "auto-applied" && <p className="mt-1 text-xs text-psi">{t("task.autoStartApplied")}</p>}
             {dateStatus === "suggestion" && suggestedStartDate && <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gold-bright">

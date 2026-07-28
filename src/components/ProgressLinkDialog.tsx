@@ -3,6 +3,7 @@ import { api, patchBody } from "../api";
 import { useT } from "../i18n/LangContext";
 import { progressLinkDrafts, type ProgressLinksResponse } from "../progress-links";
 import type { Stage, Task } from "../types";
+import { HelpTip } from "./HelpTip";
 
 interface ApplySummary {
   completed: number;
@@ -151,7 +152,7 @@ export function ProgressLinkDialog({
   return <div className="fixed inset-0 z-50 grid place-items-center bg-void/80 p-4" onMouseDown={() => { if (!busy) onClose(); }}>
     <section className="panel max-h-[90vh] w-full max-w-3xl overflow-y-auto p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="progress-links-title" onMouseDown={(event) => event.stopPropagation()}>
       <header className="mb-5 flex items-start justify-between gap-4">
-        <div><h2 className="text-xl font-bold" id="progress-links-title">{t("progressLinks.title")}</h2><p className="mt-1 text-sm text-star-dim">{t("progressLinks.description")}</p></div>
+        <div><h2 className="text-xl font-bold" id="progress-links-title">{t("progressLinks.title")}<HelpTip topic="aiLinkSuggestions" /></h2><p className="mt-1 text-sm text-star-dim">{t("progressLinks.description")}</p></div>
         <button ref={closeRef} className="btn-secondary !px-3 !py-1.5" disabled={busy} onClick={onClose}>{t("common.close")}</button>
       </header>
       {complete.length > 0 && <section className="mb-6"><h3 className="mb-3 font-bold">{t("progressLinks.completeHeading")}</h3><div className="space-y-2">{complete.map((item) => <label className={`block border border-nexus-line p-3 ${applied.has(item.key) ? "opacity-60" : ""}`} key={item.key}><span className="flex items-start gap-3"><input type="checkbox" checked={item.selected} disabled={busy || applied.has(item.key)} onChange={(event) => setComplete((rows) => rows.map((row) => row.key === item.key ? { ...row, selected: event.target.checked } : row))} /><span className="min-w-0 flex-1"><span className="font-medium">{item.title}</span><span className="ml-2 text-xs text-star-dim">{item.stage_name}</span><span className="mt-1 block text-sm text-star-dim">{t("progressLinks.reason", { reason: item.reason })}</span></span>{applied.has(item.key) && <span className="text-xs text-ok">{t("progressLinks.applied")}</span>}</span></label>)}</div></section>}

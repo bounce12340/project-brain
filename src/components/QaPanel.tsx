@@ -4,6 +4,7 @@ import { Empty, ErrorBox, Loading } from "./UI";
 import type { CcrEvent, CcrRecord, CcrStatus, License } from "../types";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
+import { HelpTip } from "./HelpTip";
 
 const nextStatuses: Record<CcrStatus, CcrStatus[]> = { 申請: ["評估中"], 評估中: ["已核准", "駁回"], 已核准: ["執行中"], 執行中: ["效期確認"], 效期確認: ["已結案"], 已結案: [], 駁回: [] };
 const statusKeys: Record<CcrStatus, TransKey> = { 申請: "qa.status.applied", 評估中: "qa.status.evaluating", 已核准: "qa.status.approved", 執行中: "qa.status.executing", 效期確認: "qa.status.validity", 已結案: "qa.status.closed", 駁回: "qa.status.rejected" };
@@ -23,7 +24,7 @@ function ExpiryBadge({ expiresAt, base }: { expiresAt: string; base: string }) {
 export function QaPanel({ projectId }: { projectId: string }) {
   const t = useT();
   const [section, setSection] = useState<"licenses" | "ccr">("licenses");
-  return <div className="space-y-5"><div className="flex gap-2"><button className={section === "licenses" ? "btn" : "btn-secondary"} onClick={() => setSection("licenses")}>{t("qa.licenses")}</button><button className={section === "ccr" ? "btn" : "btn-secondary"} onClick={() => setSection("ccr")}>{t("qa.ccr")}</button></div>{section === "licenses" ? <Licenses projectId={projectId} /> : <CcrRegistry projectId={projectId} />}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap items-center gap-2"><button className={section === "licenses" ? "btn" : "btn-secondary"} onClick={() => setSection("licenses")}>{t("qa.licenses")}</button><HelpTip topic="qaLicenseExpiry" /><button className={section === "ccr" ? "btn" : "btn-secondary"} onClick={() => setSection("ccr")}>{t("qa.ccr")}</button><HelpTip topic="ccr" /></div>{section === "licenses" ? <Licenses projectId={projectId} /> : <CcrRegistry projectId={projectId} />}</div>;
 }
 
 function Licenses({ projectId }: { projectId: string }) {

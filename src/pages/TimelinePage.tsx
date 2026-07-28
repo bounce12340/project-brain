@@ -5,6 +5,7 @@ import { CHART } from "../chartTheme";
 import { PageHeader, RiskBadge } from "../components/UI";
 import { addDays, daysBetween, ganttPosition } from "../utils/dates";
 import { useT } from "../i18n/LangContext";
+import { HelpTip } from "../components/HelpTip";
 
 interface TimelineTask { id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }
 interface TimelineEvent { id: string; title: string; event_date: string }
@@ -61,7 +62,7 @@ export function TimelinePage() {
   };
 
   return <>
-    <PageHeader title={t("timeline.title")} description={t("timeline.description")} />
+    <PageHeader title={<span data-tour="timeline-lanes">{t("timeline.title")}<HelpTip topic="timelineLanes" /></span>} description={t("timeline.description")} />
     <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
     <section className="panel overflow-x-auto"><svg className="chart-surface" width={label + width} height={height} role="img" aria-label={t("timeline.aria")}><rect width="100%" height="100%" fill={CHART.nexus} />
       {weeks.map((date) => { const x = label + ganttPosition(date, start, end, width); return <g key={date}><line x1={x} x2={x} y1="30" y2={height} stroke={CHART.line} /><text x={x + 3} y="20" fontSize="11" fill={CHART.starDim}>{date.slice(5)}</text></g>; })}

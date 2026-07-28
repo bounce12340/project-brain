@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { Empty, ErrorBox, Loading, Markdown, PageHeader } from "../components/UI";
 import type { Metadata } from "../types";
 import { useT } from "../i18n/LangContext";
+import { HelpTip } from "../components/HelpTip";
 
 interface Summary {
   projects: Array<{ id: string; name: string; group_name: string; progress: number; progress_change: number; updates: number; completed_tasks: number; enrollments: number; bd_events: number }>;
@@ -71,7 +72,7 @@ export function ReportsPage() {
   return <>
     <PageHeader title={t("reports.title")} description={t("reports.description")} actions={<div className="flex gap-2 no-print"><button className="btn-secondary" onClick={() => window.print()}>{t("reports.print")}</button><button className="btn-secondary" onClick={() => csv("summary")}>{t("reports.exportCsv")}</button></div>} />
     <section className="panel mb-6 no-print">
-      <h2 className="mb-4 text-lg font-bold">{t("reports.generateTitle")}</h2>
+      <h2 className="mb-4 text-lg font-bold" data-tour="reports-generate">{t("reports.generateTitle")}<HelpTip topic="reportScope" /></h2>
       {error && <ErrorBox message={error} />}
       <div className="grid gap-3 md:grid-cols-4">
         <label><span className="label">{t("reports.group")}</span><select className="w-full" value={scope} onChange={(event) => setScope(event.target.value)}>{user?.role === "admin" && <option value="all">{t("reports.company")}</option>}{selectableGroups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label>
