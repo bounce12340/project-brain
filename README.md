@@ -19,7 +19,7 @@ A shared project progress platform for the internal team of Taiwan-based pharmac
 - **Automation**: “When…then…” rules engine; three cron jobs for daily TFDA RSS fetching + reminders, AI weekly reports (Monday), and AI monthly reports (the first day of each month)
 - **Reports**: One-click team weekly/monthly reports + printing, CSV export, and a timeline with team swimlanes
 - **Accounts**: Self-registration + Email verification code + administrator approval; administration transfer (co-administrator / full transfer) + safeguards for the last administrator
-- **Interface**: StarCraft Protoss theme (gold = structure, blue = energy, chamfered panels, shield progress bars), dark/light themes, Traditional Chinese/English switcher, first-login tour, and font-size controls
+- **Interface**: StarCraft Protoss theme (gold = structure, blue = energy, chamfered panels, shield progress bars), dark/light themes, Traditional Chinese/English switcher, concrete inline help tips, two replayable guided tours, a scenario-based manual, and font-size controls
 
 ## 🏗 System Architecture
 
