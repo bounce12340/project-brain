@@ -11,7 +11,7 @@ A shared project progress platform for the internal team of Taiwan-based pharmac
 ## ✨ Feature Overview
 
 - **Project management**: Teams (BD / Clinical / QA / RA-PV), three visibility levels (company-wide / same team / private), mutual editing support within a team, restricted visibility for interns, automatic/manual progress, milestones, and phase templates
-- **Four task views**: Kanban (drag and drop) | List | Calendar | Gantt (dependency arrows + today line); the task drawer includes comments with `@mentions`, attachments, dependencies, and AI summaries
+- **Four task views**: Kanban (drag and drop) | List | Calendar | Gantt (dependency arrows + today line); the task drawer puts prerequisites before dates and suggests the day after their latest due date without overwriting a manually edited start date
 - **OKRs**: Quarterly objectives + Key Results (owner / status / order), with completion incorporated into automatic progress
 - **Dedicated modules**: Clinical enrollment (target vs cumulative, daily entries) | BD registration (case state machine, history, fees) | QA license expiration (tiered expiry alerts + automatic notifications) and CCR change control (`CCR-YYYY-NNN` state machine + history)
 - **Regulatory updates**: A knowledge base of 600+ TFDA regulations dating back to 2018, sorted by announcement date with product-line/category/keyword filters; TFDA RSS is fetched daily into review drafts and published to all users only after approval; announcement text can also be pasted, or multiple files uploaded together, for AI-structured import
@@ -237,6 +237,7 @@ For complete recovery steps after accidental data deletion, machine rebuilds, or
 | v12.1 | Progress updates can be edited or deleted by their author, project owner, or admin, with immutable snapshots and an audit trail | [SPEC](SPEC-V12-1.md) / [Acceptance](ACCEPTANCE-V12-1.md) |
 | v12.2 | Fixes Taipei timestamp display and duplicate quick submissions; progress can suggest milestones and dates for existing tasks | [SPEC](SPEC-V12-2.md) / [Acceptance](ACCEPTANCE-V12-2.md) |
 | v12.4 | Past completed facts become history events on calendars and Gantt while remaining excluded from progress and reminders | [SPEC](SPEC-V12-4.md) / [Acceptance](ACCEPTANCE-V12-4.md) |
+| v12.5 | The task drawer is dependency-first and continues start dates from prerequisites while preserving manual edits | [SPEC](SPEC-V12-5.md) / [Acceptance](ACCEPTANCE-V12-5.md) |
 
 ## 🧭 Development Model
 

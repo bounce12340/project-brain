@@ -100,3 +100,6 @@
 - 2026-07-28（v12.4）：`POST /api/projects/:id/milestones` 沿用既有權限與刪除端點，payload 的 `kind='event'` 代表歷程事件；event 必須有日期、不能由 PATCH 切回未完成。專案總覽不提供 event 完成切換，只提供依日期正序唯讀顯示、手動新增與刪除。
 - 2026-07-28（v12.4）：AI 建議仍是純讀取且預設不勾。清洗層除接受模型的 `events[]` 外，也從進度原文 deterministic 擷取「明確完成語氣＋合法過去日期」的子句，依 `(title,event_date)` 對既有 event 與本次建議去重，標題截為 60 個 Unicode 字元並上限 20；今日不算過去，仍不建立 event。
 - 2026-07-28（v12.4）：功能實作階段沒有待使用者裁決的 open decision；remote migration／deploy／production E2E 若發現基線差異，會另以 `v12.4，open` 增量記錄並在驗收文件標示，不修改任何真實專案或真實 TFDA 資料迎合規格。
+- 2026-07-28（v12.5）：依賴勾選與自動日期都先留在 TaskDrawer form；按「儲存任務」時由既有 task PATCH 在同一個 D1 batch 更新 task 與完整 `dependency_ids`。PATCH 先驗證同專案與既有循環規則，錯誤仍回 422；原本的逐筆 dependency endpoints 保留相容性。這避免選依賴時自動把日期寫入資料庫，也避免依賴與日期只成功一半。
+- 2026-07-28（v12.5）：任一已選前置任務缺少 `due_date` 時不以其餘任務猜測建議值，整體顯示「無法自動接續」且不改日期；全部有日期才取最晚者加一個台北日曆日。使用者按建議旁「套用」視為接受自動值，`startDateTouched` 回到 false，後續變更依賴可繼續自動更新並保留工期。
+- 2026-07-28（v12.5）：抽屜重新開啟依規格將 `startDateTouched` 重置為 false；因此開啟後第一次變更依賴時，既有起始日會依建議更新，若同時有到期日則等量平移。功能實作階段沒有待使用者裁決的 open decision；deploy／E2E 若發現基線差異，另以 `v12.5，open` 增量記錄且不修改真實資料迎合規格。
