@@ -68,6 +68,22 @@ describe("SPEC-V12-2 progress-links milestones and dates", () => {
     expect(result.dates).toEqual([{ task_id: "task-review", due_date: "2026-12-31", reason: "收到文件後審查一個月" }]);
   });
 
+  it("uses dates only when a milestone duplicates an existing task", () => {
+    const result = clean({
+      complete: [],
+      create: [],
+      milestones: [
+        { title: "收到 X 文件", due_date: "2026-12-01" },
+        { title: "審查 CTD 文件完成", due_date: "2026-12-31" },
+      ],
+      dates: [
+        { task_id: "task-review", due_date: "2026-12-31", reason: "審查一個月" },
+      ],
+    });
+    expect(result.milestones).toEqual([{ title: "收到 X 文件", due_date: "2026-12-01" }]);
+    expect(result.dates).toEqual([{ task_id: "task-review", due_date: "2026-12-31", reason: "審查一個月" }]);
+  });
+
   it("keeps existing complete/create behavior while returning all four arrays", () => {
     const result = clean({
       complete: [{ task_id: "task-meeting", reason: "已完成安排會議" }],
@@ -86,6 +102,7 @@ describe("SPEC-V12-2 progress-links milestones and dates", () => {
     expect(prompt).toContain('"dates"');
     expect(prompt).toContain("Historical or past dates");
     expect(prompt).toContain("MUST NOT create");
+    expect(prompt).toContain("use dates only");
   });
 });
 

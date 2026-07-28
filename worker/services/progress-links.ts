@@ -80,7 +80,7 @@ export function buildProgressLinksPrompt(lang: AiLang): string {
     "A task may appear in complete ONLY when the progress text explicitly says that same work is already completed, submitted/sent, or obtained/received.",
     "Future or ambiguous wording such as will, planned, expected, next week, 將要, 預計, 規劃, 計畫, or 下週 MUST NEVER appear in complete.",
     "Put future next actions in create instead. Never infer completion.",
-    "Put future deliverable checkpoints in milestones, with an explicit future due_date, at most 5 items.",
+    "Put future deliverable checkpoints in milestones, with an explicit future due_date, at most 5 items. If a checkpoint is already represented by an unfinished task, use dates only and do not also create a milestone.",
     "Use dates only to suggest a future due_date for an existing unfinished task_id; include a short reason grounded in the progress text.",
     "Historical or past dates are narrative only and MUST NOT create any create, milestones, or dates object.",
     "Keep each complete reason to one sentence of at most 30 characters and each create title to at most 80 characters.",
@@ -140,7 +140,12 @@ export function sanitizeProgressLinks(
       const title = typeof row.title === "string" ? trimTo(row.title, 80) : "";
       const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
       const key = `${title}\u0000${dueDate ?? ""}`;
-      if (!title || !dueDate || seenMilestones.has(key)) continue;
+      const normalizedTitle = normalizedText(title);
+      const duplicatesExistingTask = tasks.some((task) => {
+        const normalizedTask = normalizedText(task.title);
+        return normalizedTask.length >= 2 && normalizedTitle.includes(normalizedTask);
+      });
+      if (!title || !dueDate || duplicatesExistingTask || seenMilestones.has(key)) continue;
       seenMilestones.add(key);
       milestones.push({ title, due_date: dueDate });
     }
