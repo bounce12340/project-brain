@@ -29,7 +29,7 @@ generalRoutes.get("/dashboard", async (c) => {
   if (ids.length) {
     const inList = placeholders(ids.length);
     const [overdueResult, updateResult, enrollmentResult] = await Promise.all([
-      c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE done=0 AND due_date < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value"),
+      c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE kind='milestone' AND done=0 AND due_date < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value"),
       c.env.DB.prepare(`SELECT pu.*,p.name AS project_name,u.name AS author_name FROM progress_updates pu JOIN projects p ON p.id=pu.project_id JOIN users u ON u.id=pu.author_id WHERE pu.project_id IN (${inList}) ORDER BY pu.created_at DESC LIMIT 12`).bind(...ids).all<Record<string, unknown>>(),
       c.env.DB.prepare(`SELECT ce.record_date,ce.count,ce.project_id,p.name AS project_name,cs.target_n FROM clinical_enrollments ce JOIN projects p ON p.id=ce.project_id JOIN clinical_settings cs ON cs.project_id=p.id WHERE ce.project_id IN (${inList}) ORDER BY ce.record_date`).bind(...ids).all<Record<string, unknown>>(),
     ]);

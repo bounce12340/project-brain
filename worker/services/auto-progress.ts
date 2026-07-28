@@ -35,8 +35,8 @@ export async function recomputeAutoProgress(
     SELECT
       (SELECT COUNT(*) FROM tasks WHERE project_id=?) AS totalTasks,
       (SELECT COUNT(*) FROM tasks WHERE project_id=? AND done=1) AS completedTasks,
-      (SELECT COUNT(*) FROM milestones WHERE project_id=?) AS totalMilestones,
-      (SELECT COUNT(*) FROM milestones WHERE project_id=? AND done=1) AS completedMilestones,
+      (SELECT COUNT(*) FROM milestones WHERE project_id=? AND kind='milestone') AS totalMilestones,
+      (SELECT COUNT(*) FROM milestones WHERE project_id=? AND kind='milestone' AND done=1) AS completedMilestones,
       (SELECT COUNT(*) FROM todos WHERE project_id=?) AS totalTodos,
       (SELECT COUNT(*) FROM todos WHERE project_id=? AND done=1) AS completedTodos,
       (SELECT COUNT(*) FROM key_results WHERE project_id=?) AS totalKeyResults,

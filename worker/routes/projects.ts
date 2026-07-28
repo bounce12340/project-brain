@@ -121,7 +121,7 @@ projectsRoutes.get("/:id", async (c) => {
       (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id=t.id) AS comment_count,
       (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id=? ORDER BY t.stage_id,t.position`).bind(projectId).all<Record<string, unknown>>(),
-    c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY position").bind(projectId).all(),
+    c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY kind,due_date,position").bind(projectId).all(),
     c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all<ProgressUpdateRow>(),
     c.env.DB.prepare("SELECT * FROM clinical_settings WHERE project_id = ?").bind(projectId).first(),
     c.env.DB.prepare("SELECT ce.*, u.name AS created_by_name FROM clinical_enrollments ce JOIN users u ON u.id = ce.created_by WHERE ce.project_id = ? ORDER BY ce.record_date").bind(projectId).all(),

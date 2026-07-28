@@ -59,7 +59,7 @@ export async function dataMarkdown(env: Env, input: GenerateReportInput): Promis
       env.DB.prepare(`SELECT bc.project_id,e.event_type,COUNT(*) AS count FROM bd_case_events e JOIN bd_cases bc ON bc.id=e.case_id WHERE e.event_date BETWEEN ? AND ? AND bc.project_id IN (${marks}) GROUP BY bc.project_id,e.event_type`).bind(input.start, input.end, ...ids).all<{ project_id: string; event_type: string; count: number }>(),
       env.DB.prepare(`SELECT f.project_id,f.currency,SUM(f.amount) AS total FROM bd_fees f WHERE f.fee_date BETWEEN ? AND ? AND f.project_id IN (${marks}) GROUP BY f.project_id,f.currency`).bind(input.start, input.end, ...ids).all<{ project_id: string; currency: string; total: number }>(),
       env.DB.prepare(`SELECT project_id,title,due_date FROM tasks WHERE done=0 AND due_date<? AND project_id IN (${marks}) ORDER BY due_date`).bind(input.end, ...ids).all<{ project_id: string; title: string; due_date: string }>(),
-      env.DB.prepare(`SELECT project_id,title,due_date FROM milestones WHERE done=0 AND due_date<? AND project_id IN (${marks}) ORDER BY due_date`).bind(input.end, ...ids).all<{ project_id: string; title: string; due_date: string }>(),
+      env.DB.prepare(`SELECT project_id,title,due_date FROM milestones WHERE kind='milestone' AND done=0 AND due_date<? AND project_id IN (${marks}) ORDER BY due_date`).bind(input.end, ...ids).all<{ project_id: string; title: string; due_date: string }>(),
     ]);
     const projectName = new Map(projects.map((project) => [project.id, project.name]));
     for (const project of projects) {
