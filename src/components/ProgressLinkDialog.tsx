@@ -7,6 +7,8 @@ import type { Stage, Task } from "../types";
 interface ApplySummary {
   completed: number;
   created: number;
+  milestones: number;
+  dates: number;
 }
 
 export function ProgressLinkDialog({
@@ -28,6 +30,8 @@ export function ProgressLinkDialog({
   const initial = useMemo(() => progressLinkDrafts(response, stages, tasks), [response, stages, tasks]);
   const [complete, setComplete] = useState(initial.complete);
   const [create, setCreate] = useState(initial.create);
+  const [milestones, setMilestones] = useState(initial.milestones);
+  const [dates, setDates] = useState(initial.dates);
   const [applied, setApplied] = useState<Set<string>>(() => new Set());
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,7 @@ export function ProgressLinkDialog({
     };
   }, [onClose]);
 
-  const selectedCount = [...complete, ...create].filter((item) => item.selected && !applied.has(item.key)).length;
+  const selectedCount = [...complete, ...create, ...milestones, ...dates].filter((item) => item.selected && !applied.has(item.key)).length;
   const apply = async () => {
     if (!selectedCount) return;
     setBusy(true);
@@ -57,6 +61,8 @@ export function ProgressLinkDialog({
     const failures: string[] = [];
     let completed = 0;
     let created = 0;
+    let milestoneCount = 0;
+    let dateCount = 0;
     for (const item of complete.filter((candidate) => candidate.selected && !applied.has(candidate.key))) {
       try {
         await api(`/tasks/${item.task_id}`, patchBody({ done: true }));
@@ -84,10 +90,41 @@ export function ProgressLinkDialog({
         failures.push(t("progressLinks.itemFailed", { item: item.title }));
       }
     }
+    for (const item of milestones.filter((candidate) => candidate.selected && !applied.has(candidate.key))) {
+      if (!item.title.trim() || !item.due_date) {
+        failures.push(t("progressLinks.milestoneInvalid", { item: item.title || t("progressLinks.untitledMilestone") }));
+        continue;
+      }
+      try {
+        await api(`/projects/${projectId}/milestones`, {
+          method: "POST",
+          body: JSON.stringify({ title: item.title.trim(), due_date: item.due_date }),
+        });
+        nextApplied.add(item.key);
+        milestoneCount += 1;
+      } catch (error) {
+        console.error("progress link milestone failed", error);
+        failures.push(error instanceof Error ? error.message : t("progressLinks.itemFailed", { item: item.title }));
+      }
+    }
+    for (const item of dates.filter((candidate) => candidate.selected && !applied.has(candidate.key))) {
+      if (!item.due_date) {
+        failures.push(t("progressLinks.dateInvalid", { item: item.title }));
+        continue;
+      }
+      try {
+        await api(`/tasks/${item.task_id}`, patchBody({ due_date: item.due_date }));
+        nextApplied.add(item.key);
+        dateCount += 1;
+      } catch (error) {
+        console.error("progress link date failed", error);
+        failures.push(t("progressLinks.itemFailed", { item: item.title }));
+      }
+    }
     setApplied(nextApplied);
     setErrors(failures);
     setBusy(false);
-    if (completed || created) onApplied({ completed, created });
+    if (completed || created || milestoneCount || dateCount) onApplied({ completed, created, milestones: milestoneCount, dates: dateCount });
     if (!failures.length) onClose();
   };
 
@@ -99,6 +136,8 @@ export function ProgressLinkDialog({
       </header>
       {complete.length > 0 && <section className="mb-6"><h3 className="mb-3 font-bold">{t("progressLinks.completeHeading")}</h3><div className="space-y-2">{complete.map((item) => <label className={`block border border-nexus-line p-3 ${applied.has(item.key) ? "opacity-60" : ""}`} key={item.key}><span className="flex items-start gap-3"><input type="checkbox" checked={item.selected} disabled={busy || applied.has(item.key)} onChange={(event) => setComplete((rows) => rows.map((row) => row.key === item.key ? { ...row, selected: event.target.checked } : row))} /><span className="min-w-0 flex-1"><span className="font-medium">{item.title}</span><span className="ml-2 text-xs text-star-dim">{item.stage_name}</span><span className="mt-1 block text-sm text-star-dim">{t("progressLinks.reason", { reason: item.reason })}</span></span>{applied.has(item.key) && <span className="text-xs text-ok">{t("progressLinks.applied")}</span>}</span></label>)}</div></section>}
       {create.length > 0 && <section className="mb-6"><h3 className="mb-3 font-bold">{t("progressLinks.createHeading")}</h3><div className="space-y-3">{create.map((item) => <div className={`grid gap-3 border border-nexus-line p-3 sm:grid-cols-[auto_1fr_11rem_10rem] ${applied.has(item.key) ? "opacity-60" : ""}`} key={item.key}><input aria-label={t("progressLinks.selectCreate", { title: item.title })} type="checkbox" checked={item.selected} disabled={busy || applied.has(item.key)} onChange={(event) => setCreate((rows) => rows.map((row) => row.key === item.key ? { ...row, selected: event.target.checked } : row))} /><input aria-label={t("common.title")} maxLength={80} value={item.title} disabled={busy || applied.has(item.key)} onChange={(event) => setCreate((rows) => rows.map((row) => row.key === item.key ? { ...row, title: event.target.value } : row))} /><select aria-label={t("automation.stage")} value={item.stage_id} disabled={busy || applied.has(item.key)} onChange={(event) => setCreate((rows) => rows.map((row) => row.key === item.key ? { ...row, stage_id: event.target.value } : row))}>{stages.map((stage) => <option value={stage.id} key={stage.id}>{stage.name}</option>)}</select><input aria-label={t("task.end")} type="date" value={item.due_date} disabled={busy || applied.has(item.key)} onChange={(event) => setCreate((rows) => rows.map((row) => row.key === item.key ? { ...row, due_date: event.target.value } : row))} />{applied.has(item.key) && <span className="text-xs text-ok sm:col-start-2">{t("progressLinks.applied")}</span>}</div>)}</div></section>}
+      {milestones.length > 0 && <section className="mb-6"><h3 className="mb-3 font-bold">{t("progressLinks.milestoneHeading")}</h3><div className="space-y-3">{milestones.map((item) => <div className={`grid gap-3 border border-nexus-line p-3 sm:grid-cols-[auto_1fr_10rem] ${applied.has(item.key) ? "opacity-60" : ""}`} key={item.key}><input aria-label={t("progressLinks.selectMilestone", { title: item.title })} type="checkbox" checked={item.selected} disabled={busy || applied.has(item.key)} onChange={(event) => setMilestones((rows) => rows.map((row) => row.key === item.key ? { ...row, selected: event.target.checked } : row))} /><input aria-label={t("common.title")} maxLength={80} value={item.title} disabled={busy || applied.has(item.key)} onChange={(event) => setMilestones((rows) => rows.map((row) => row.key === item.key ? { ...row, title: event.target.value } : row))} /><input aria-label={t("task.end")} type="date" value={item.due_date} disabled={busy || applied.has(item.key)} onChange={(event) => setMilestones((rows) => rows.map((row) => row.key === item.key ? { ...row, due_date: event.target.value } : row))} />{applied.has(item.key) && <span className="text-xs text-ok sm:col-start-2">{t("progressLinks.applied")}</span>}</div>)}</div></section>}
+      {dates.length > 0 && <section className="mb-6"><h3 className="mb-3 font-bold">{t("progressLinks.dateHeading")}</h3><div className="space-y-3">{dates.map((item) => <div className={`grid gap-3 border border-nexus-line p-3 sm:grid-cols-[auto_1fr_10rem] ${applied.has(item.key) ? "opacity-60" : ""}`} key={item.key}><input aria-label={t("progressLinks.selectDate", { title: item.title })} type="checkbox" checked={item.selected} disabled={busy || applied.has(item.key)} onChange={(event) => setDates((rows) => rows.map((row) => row.key === item.key ? { ...row, selected: event.target.checked } : row))} /><span className="min-w-0"><span className="font-medium">{item.title}</span><span className="mt-1 block text-sm text-star-dim">{t("progressLinks.reason", { reason: item.reason })}</span></span><input aria-label={t("task.end")} type="date" value={item.due_date} disabled={busy || applied.has(item.key)} onChange={(event) => setDates((rows) => rows.map((row) => row.key === item.key ? { ...row, due_date: event.target.value } : row))} />{applied.has(item.key) && <span className="text-xs text-ok sm:col-start-2">{t("progressLinks.applied")}</span>}</div>)}</div></section>}
       {errors.length > 0 && <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger"><p className="font-semibold">{t("progressLinks.partialFailure")}</p><ul className="mt-2 list-disc pl-5">{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>}
       <footer className="flex justify-end gap-3"><button className="btn-secondary" disabled={busy} onClick={onClose}>{t("progressLinks.skip")}</button><button className="btn" disabled={busy || selectedCount === 0} onClick={() => void apply()}>{t(busy ? "progressLinks.applying" : "progressLinks.apply")}</button></footer>
     </section>

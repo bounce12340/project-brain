@@ -170,7 +170,9 @@ The backend API rechecks each permission individually (centralized in `worker/se
 3. Switch freely among the four views under “Tasks.” Kanban supports dragging phases and cards. Select a task to open the drawer and edit its content, owner, start/end dates, and dependencies, or use comments with `@mentions`, attachments, and AI summaries.
 4. Paste rough notes into “Progress log,” use “AI drafting” to organize them into a three-part draft, then review and publish it.
 5. The author, project owner, or an administrator can use the controls at the top right of an update to edit it inline or delete it. Editing preserves the original progress snapshot and adds an edit timestamp. Deletion is irreversible, but the audit trail remains; deleting an automatically generated completion log does not revert the task or milestone.
-6. After the update is saved, AI may suggest marking explicitly completed tasks as done or creating follow-up tasks. Suggestions never write data by themselves: every checkbox starts clear, and only “Apply selected” sends the existing task PATCH/POST requests. New-task titles, stages, and due dates remain editable. Disable this prompt under Profile with “Show task suggestions after a progress update” (`AIUR_PROGRESS_LINKS`, enabled by default).
+6. After the update is saved, AI may suggest marking explicitly completed tasks as done, creating follow-up tasks or future milestones, and setting dates on existing unfinished tasks. Suggestions never write data by themselves: every checkbox starts clear, and only “Apply selected” sends existing task/milestone endpoints. Suggested titles and dates remain editable. Historical dates stay in the progress narrative and create no objects. Disable this prompt under Profile (`AIUR_PROGRESS_LINKS`, enabled by default).
+
+Server timestamps are stored as UTC and all interface timestamps are displayed in `Asia/Taipei`; date-only project and task dates remain Taipei calendar dates.
 
 ### Files, Automation, and AI
 

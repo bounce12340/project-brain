@@ -87,3 +87,7 @@
 - 2026-07-27（v12.1）：編輯與其 `progress_edited` audit、刪除與其 `progress_deleted` audit 分別放在同一個 D1 batch。刪除摘要以 Unicode 字元取原文前 40 字；`edited_by` 依規格使用可保留識別值的 nullable TEXT，不加外鍵。
 - 2026-07-27（v12.1）：規格只要求 PATCH 更新 `projects.last_activity_at`，DELETE 因此不改專案活動時間；兩條 mutation 都不觸碰 `progress_snapshot`、通知或報告。UI 以系統既有的 `✔ 完成` 前綴辨識 auto 完成紀錄並說明刪除不回滾任務／里程碑。
 - 2026-07-27（v12.1）：本版實作階段沒有尚待選擇的 open decision；若正式 migration／deploy／E2E 出現環境事實與 SPEC 不一致，另以 `v12.1，open` 增量記錄，不以假設補洞。
+- 2026-07-28（v12.2）：前端後端時間戳統一由 `parseServerDate` 解析：date-only 固定台北零時、帶 `Z`／offset 原樣解析、其餘 naive datetime 視為 UTC。日曆／甘特內部的 date-only 算術不屬於後端時間戳，不改其 UTC 日曆運算。
+- 2026-07-28（v12.2）：里程碑判重採既有 POST 內的 null-safe `due_date IS ?` 查詢，不新增 unique index 或 migration，符合本版「無 migration」驗收條件。任務仍允許同名；進度 dialog 套用里程碑也走同一 POST，因而共享 409 防重。
+- 2026-07-28（v12.2）：`milestones` 只有標題與合法未來日期皆存在才保留，依 `(title,due_date)` 去重並上限 5；`dates` 只接受本次傳入的既有未完成 task_id、合法未來日期與非空 reason，同一 task 最多一筆。規格未要求 `dates` 數量上限，因此不另行截斷。
+- 2026-07-28（v12.2）：本版功能實作階段沒有尚待使用者選擇的 open decision；正式 deploy／E2E 若發現環境基線差異，將以 `v12.2，open` 另行增量記錄並在驗收文件標示，不修改真實資料迎合規格。

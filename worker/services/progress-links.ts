@@ -17,9 +17,22 @@ export interface ProgressLinkCreate {
   due_date?: string;
 }
 
+export interface ProgressLinkMilestone {
+  title: string;
+  due_date: string;
+}
+
+export interface ProgressLinkDate {
+  task_id: string;
+  due_date: string;
+  reason: string;
+}
+
 export interface ProgressLinksResult {
   complete: ProgressLinkComplete[];
   create: ProgressLinkCreate[];
+  milestones: ProgressLinkMilestone[];
+  dates: ProgressLinkDate[];
   fallback: boolean;
 }
 
@@ -62,11 +75,14 @@ export function buildProgressLinksPrompt(lang: AiLang): string {
   const outputLanguage = lang === "en" ? "English" : "Traditional Chinese";
   return [
     `Respond in ${outputLanguage}. Return JSON only:`,
-    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}]}.',
+    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}],"milestones":[{"title":"...","due_date":"YYYY-MM-DD"}],"dates":[{"task_id":"...","due_date":"YYYY-MM-DD","reason":"..."}]}.',
     "Use only the supplied unfinished tasks and exact stage names.",
     "A task may appear in complete ONLY when the progress text explicitly says that same work is already completed, submitted/sent, or obtained/received.",
     "Future or ambiguous wording such as will, planned, expected, next week, 將要, 預計, 規劃, 計畫, or 下週 MUST NEVER appear in complete.",
     "Put future next actions in create instead. Never infer completion.",
+    "Put future deliverable checkpoints in milestones, with an explicit future due_date, at most 5 items.",
+    "Use dates only to suggest a future due_date for an existing unfinished task_id; include a short reason grounded in the progress text.",
+    "Historical or past dates are narrative only and MUST NOT create any create, milestones, or dates object.",
     "Keep each complete reason to one sentence of at most 30 characters and each create title to at most 80 characters.",
     "Return at most 5 create items. Use null or omit due_date unless the text provides a future date.",
   ].join(" ");
@@ -113,9 +129,40 @@ export function sanitizeProgressLinks(
       create.push({ title, ...(stageName ? { stage_name: stageName } : {}), ...(dueDate ? { due_date: dueDate } : {}) });
     }
   }
-  return { complete, create };
+
+  const milestones: ProgressLinkMilestone[] = [];
+  const seenMilestones = new Set<string>();
+  if (Array.isArray(source.milestones)) {
+    for (const item of source.milestones) {
+      if (milestones.length >= 5) break;
+      if (typeof item !== "object" || item === null) continue;
+      const row = item as Record<string, unknown>;
+      const title = typeof row.title === "string" ? trimTo(row.title, 80) : "";
+      const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
+      const key = `${title}\u0000${dueDate ?? ""}`;
+      if (!title || !dueDate || seenMilestones.has(key)) continue;
+      seenMilestones.add(key);
+      milestones.push({ title, due_date: dueDate });
+    }
+  }
+
+  const dates: ProgressLinkDate[] = [];
+  const seenDates = new Set<string>();
+  if (Array.isArray(source.dates)) {
+    for (const item of source.dates) {
+      if (typeof item !== "object" || item === null) continue;
+      const row = item as Record<string, unknown>;
+      const taskId = typeof row.task_id === "string" ? row.task_id : "";
+      const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
+      const reason = typeof row.reason === "string" ? trimTo(row.reason, 80) : "";
+      if (!taskMap.has(taskId) || !dueDate || !reason || seenDates.has(taskId)) continue;
+      seenDates.add(taskId);
+      dates.push({ task_id: taskId, due_date: dueDate, reason });
+    }
+  }
+  return { complete, create, milestones, dates };
 }
 
 export function progressLinksFallback(): ProgressLinksResult {
-  return { complete: [], create: [], fallback: true };
+  return { complete: [], create: [], milestones: [], dates: [], fallback: true };
 }

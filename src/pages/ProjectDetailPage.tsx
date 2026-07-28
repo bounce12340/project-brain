@@ -91,14 +91,14 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
     if (!readProgressLinksPreference()) return;
     try {
       const suggestions = await api<ProgressLinksResponse>("/ai/progress-links", { method: "POST", body: JSON.stringify({ project_id: data.project.id, content: publishedContent, progress_update_id: result.id, lang }) });
-      if (suggestions.complete.length || suggestions.create.length) setLinks(suggestions);
+      if (suggestions.complete.length || suggestions.create.length || suggestions.milestones.length || suggestions.dates.length) setLinks(suggestions);
     } catch (error) {
       console.warn("progress link suggestions unavailable", error);
     }
   };
-  const applied = ({ completed, created }: { completed: number; created: number }) => {
+  const applied = ({ completed, created, milestones, dates }: { completed: number; created: number; milestones: number; dates: number }) => {
     reload();
-    setToast(t("progressLinks.appliedToast", { completed, created }));
+    setToast(t("progressLinks.appliedToast", { completed, created, milestones, dates }));
     window.setTimeout(() => setToast(""), 3500);
   };
   return <>{toast && <div className="fixed bottom-5 right-5 z-[60] border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <><textarea className="mb-3 min-h-24 w-full" placeholder={t("project.rawPlaceholder")} value={raw} onChange={(e) => setRaw(e.target.value)} /><button className="btn-secondary mb-4" disabled={busy} onClick={() => void draft()}>{t(busy ? "project.organizing" : "project.aiDraft")}</button><textarea className="min-h-48 w-full" placeholder={t("project.updatePlaceholder")} value={content} onChange={(e) => setContent(e.target.value)} /><button className="btn mt-3" disabled={!content.trim()} onClick={() => void save()}>{t("project.publish")}</button></> : <p className="text-sm text-star-dim">{t("project.noEdit")}</p>}</section><section className="space-y-4 lg:col-span-3">{data.progress_updates.length ? data.progress_updates.map((item) => <ProgressUpdateCard item={item} reload={reload} key={item.id} />) : <Empty>{t("project.noUpdates")}</Empty>}</section></div>{links && <ProgressLinkDialog response={links} projectId={data.project.id} stages={data.stages} tasks={data.tasks} onClose={() => setLinks(null)} onApplied={applied} />}</>;

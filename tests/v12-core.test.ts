@@ -97,7 +97,7 @@ describe("SPEC-V12 progress-links 清洗", () => {
   });
 
   it("fallback 固定回 HTTP 可用的空陣列 shape", () => {
-    expect(progressLinksFallback()).toEqual({ complete: [], create: [], fallback: true });
+    expect(progressLinksFallback()).toEqual({ complete: [], create: [], milestones: [], dates: [], fallback: true });
   });
 });
 
@@ -141,13 +141,16 @@ function routeDb(): D1Database {
   } as unknown as D1Database;
 }
 
-async function routeRequest(user: AuthUser) {
+async function routeRequest(user: AuthUser, aiResponse?: string) {
   const app = new Hono<AppContext>();
   app.use("*", async (c, next) => { c.set("user", user); await next(); });
   app.route("/ai", aiRoutes);
   const env = {
     DB: routeDb(),
-    AI: { run: async () => { throw new Error("offline"); } },
+    AI: { run: async () => {
+      if (aiResponse) return { response: aiResponse };
+      throw new Error("offline");
+    } },
   } as unknown as Env;
   return app.request("/ai/progress-links", {
     method: "POST",
@@ -166,8 +169,31 @@ describe("SPEC-V12 progress-links route", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await routeRequest(actor({ id: "owner" }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ complete: [], create: [], fallback: true });
+    expect(await response.json()).toEqual({ complete: [], create: [], milestones: [], dates: [], fallback: true });
     consoleSpy.mockRestore();
+  });
+
+  it("成功回應含 milestones/dates，並清除歷史日期與未知 task_id", async () => {
+    const response = await routeRequest(actor({ id: "owner" }), JSON.stringify({
+      complete: [],
+      create: [],
+      milestones: [
+        { title: "收到 X 文件", due_date: "2026-12-01" },
+        { title: "歷史會議", due_date: "2025-12-09" },
+      ],
+      dates: [
+        { task_id: "task-stability", due_date: "2026-12-31", reason: "收到文件後審查" },
+        { task_id: "other-project", due_date: "2026-12-31", reason: "未知任務" },
+      ],
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      complete: [],
+      create: [],
+      milestones: [{ title: "收到 X 文件", due_date: "2026-12-01" }],
+      dates: [{ task_id: "task-stability", due_date: "2026-12-31", reason: "收到文件後審查" }],
+      fallback: false,
+    });
   });
 });
 
@@ -184,6 +210,8 @@ describe("SPEC-V12 人工確認 UI 契約", () => {
     const drafts = progressLinkDrafts({
       complete: [{ task_id: "task-stability", reason: "已完成安定性數據收集" }],
       create: [{ title: "補件資料" }],
+      milestones: [],
+      dates: [],
       fallback: false,
     }, uiStages, uiTasks);
     expect([...drafts.complete, ...drafts.create].every((item) => item.selected === false)).toBe(true);

@@ -110,10 +110,10 @@ aiRoutes.post("/progress-links", async (c) => {
     const stages = stageRows.results.map((stage) => stage.name);
     const text = await llmChat(c.env, [
       { role: "system", content: buildProgressLinksPrompt(lang) },
-      { role: "user", content: JSON.stringify({ progress: content, unfinished_tasks: taskRows.results, stages, progress_update_id: requiredString(body, "progress_update_id") }) },
+      { role: "user", content: JSON.stringify({ today: taipeiDate(), progress: content, unfinished_tasks: taskRows.results, stages, progress_update_id: requiredString(body, "progress_update_id") }) },
     ], { json: true });
     const parsed = parseLooseJson<Record<string, unknown>>(text);
-    if (!parsed || !Array.isArray(parsed.complete) || !Array.isArray(parsed.create)) throw new Error("AI 任務連動格式不正確");
+    if (!parsed || !Array.isArray(parsed.complete) || !Array.isArray(parsed.create) || !Array.isArray(parsed.milestones) || !Array.isArray(parsed.dates)) throw new Error("AI 任務連動格式不正確");
     return c.json({ ...sanitizeProgressLinks(parsed, taskRows.results, stages, content, taipeiDate()), fallback: false });
   } catch (error) {
     console.error(JSON.stringify({ message: "進度任務建議降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));

@@ -5,6 +5,8 @@ export const PROGRESS_LINKS_STORAGE_KEY = "AIUR_PROGRESS_LINKS";
 export interface ProgressLinksResponse {
   complete: Array<{ task_id: string; reason: string }>;
   create: Array<{ title: string; stage_name?: string; due_date?: string }>;
+  milestones: Array<{ title: string; due_date: string }>;
+  dates: Array<{ task_id: string; due_date: string; reason: string }>;
   fallback: boolean;
 }
 
@@ -25,6 +27,22 @@ export interface ProgressCreateDraft {
   selected: boolean;
 }
 
+export interface ProgressMilestoneDraft {
+  key: string;
+  title: string;
+  due_date: string;
+  selected: boolean;
+}
+
+export interface ProgressDateDraft {
+  key: string;
+  task_id: string;
+  title: string;
+  due_date: string;
+  reason: string;
+  selected: boolean;
+}
+
 export function readProgressLinksPreference(storage: Pick<Storage, "getItem"> = localStorage): boolean {
   return storage.getItem(PROGRESS_LINKS_STORAGE_KEY) !== "false";
 }
@@ -41,6 +59,8 @@ export function defaultProgressLinkStageId(stages: Stage[], tasks: Task[]): stri
 export function progressLinkDrafts(response: ProgressLinksResponse, stages: Stage[], tasks: Task[]): {
   complete: ProgressCompleteDraft[];
   create: ProgressCreateDraft[];
+  milestones: ProgressMilestoneDraft[];
+  dates: ProgressDateDraft[];
 } {
   const defaultStageId = defaultProgressLinkStageId(stages, tasks);
   return {
@@ -63,5 +83,23 @@ export function progressLinkDrafts(response: ProgressLinksResponse, stages: Stag
       due_date: item.due_date ?? "",
       selected: false,
     })),
+    milestones: response.milestones.map((item, index) => ({
+      key: `milestone-${index}`,
+      title: item.title,
+      due_date: item.due_date,
+      selected: false,
+    })),
+    dates: response.dates.flatMap((item, index) => {
+      const task = tasks.find((candidate) => candidate.id === item.task_id && !candidate.done);
+      if (!task) return [];
+      return [{
+        key: `date-${item.task_id}-${index}`,
+        task_id: task.id,
+        title: task.title,
+        due_date: item.due_date,
+        reason: item.reason,
+        selected: false,
+      }];
+    }),
   };
 }
