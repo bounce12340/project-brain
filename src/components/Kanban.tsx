@@ -8,7 +8,7 @@ import { useT } from "../i18n/LangContext";
 
 export function Kanban({ projectId, initialStages, initialTasks, canEdit, onReload, onTaskOpen }: { projectId: string; initialStages: Stage[]; initialTasks: Task[]; canEdit: boolean; onReload(): void; onTaskOpen(task: Task): void }) {
   const t = useT();
-  const [stages, setStages] = useState([...initialStages].sort((a, b) => a.position - b.position)); const [tasks, setTasks] = useState(initialTasks); const [stageName, setStageName] = useState(""); const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [stages, setStages] = useState([...initialStages].sort((a, b) => a.position - b.position)); const [tasks, setTasks] = useState(initialTasks); const [stageName, setStageName] = useState(""); const [stageSubmitting, setStageSubmitting] = useState(false); const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   useEffect(() => { setStages([...initialStages].sort((a, b) => a.position - b.position)); setTasks(initialTasks); }, [initialStages, initialTasks]);
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event; if (!over || active.id === over.id || !canEdit) return;
@@ -30,18 +30,26 @@ export function Kanban({ projectId, initialStages, initialTasks, canEdit, onRelo
       void Promise.all(normalized.map((item) => api(`/tasks/${item.id}`, patchBody({ stage_id: item.stage_id, position: item.position }))));
     }
   };
-  const addStage = async (event: FormEvent) => { event.preventDefault(); if (!stageName.trim()) return; await api(`/projects/${projectId}/stages`, { method: "POST", body: JSON.stringify({ name: stageName }) }); setStageName(""); onReload(); };
+  const addStage = async (event: FormEvent) => {
+    event.preventDefault(); if (!stageName.trim()) return; setStageSubmitting(true);
+    try { await api(`/projects/${projectId}/stages`, { method: "POST", body: JSON.stringify({ name: stageName }) }); setStageName(""); onReload(); }
+    finally { setStageSubmitting(false); }
+  };
   return <div><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}><SortableContext items={stages.map((stage) => `stage:${stage.id}`)} strategy={horizontalListSortingStrategy}><div className="flex min-h-80 gap-4 overflow-x-auto pb-4">{stages.map((stage) => <StageColumn key={stage.id} stage={stage} tasks={tasks.filter((task) => task.stage_id === stage.id).sort((a, b) => a.position - b.position)} canEdit={canEdit} onReload={onReload} onTaskOpen={onTaskOpen} />)}</div></SortableContext></DndContext>
-    {canEdit && <form className="mt-3 flex max-w-md gap-2" onSubmit={addStage}><input className="flex-1" placeholder={t("kanban.newStagePlaceholder")} value={stageName} onChange={(e) => setStageName(e.target.value)} /><button className="btn">{t("kanban.addStage")}</button></form>}</div>;
+    {canEdit && <form className="mt-3 flex max-w-md gap-2" onSubmit={addStage}><input className="flex-1" placeholder={t("kanban.newStagePlaceholder")} value={stageName} onChange={(e) => setStageName(e.target.value)} /><button className="btn" disabled={stageSubmitting}>{t(stageSubmitting ? "common.processing" : "kanban.addStage")}</button></form>}</div>;
 }
 
 function StageColumn({ stage, tasks, canEdit, onReload, onTaskOpen }: { stage: Stage; tasks: Task[]; canEdit: boolean; onReload(): void; onTaskOpen(task: Task): void }) {
   const t = useT();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `stage:${stage.id}`, data: { type: "stage", stageId: stage.id }, disabled: !canEdit }); const [title, setTitle] = useState("");
-  const addTask = async (event: FormEvent) => { event.preventDefault(); if (!title.trim()) return; await api(`/projects/${stage.project_id}/tasks`, { method: "POST", body: JSON.stringify({ title, stage_id: stage.id }) }); setTitle(""); onReload(); };
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `stage:${stage.id}`, data: { type: "stage", stageId: stage.id }, disabled: !canEdit }); const [title, setTitle] = useState(""); const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const addTask = async (event: FormEvent) => {
+    event.preventDefault(); if (!title.trim()) return; setTaskSubmitting(true);
+    try { await api(`/projects/${stage.project_id}/tasks`, { method: "POST", body: JSON.stringify({ title, stage_id: stage.id }) }); setTitle(""); onReload(); }
+    finally { setTaskSubmitting(false); }
+  };
   const rename = async () => { const name = window.prompt(t("kanban.stageName"), stage.name); if (name?.trim()) { await api(`/stages/${stage.id}`, patchBody({ name })); onReload(); } };
   const remove = async () => { if (window.confirm(t("kanban.deleteStage"))) { try { await api(`/stages/${stage.id}`, { method: "DELETE" }); onReload(); } catch (error) { window.alert(error instanceof Error ? error.message : t("error.operation")); } } };
-  return <section ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .6 : 1 }} className="panel w-72 shrink-0 p-3"><header className="mb-3 flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: stage.color }} /><button type="button" className="flex-1 cursor-grab text-left font-semibold" {...attributes} {...listeners}>{stage.name} <span className="text-xs text-star-dim">{tasks.length}</span></button>{canEdit && <><button className="text-xs text-star-dim" onClick={() => void rename()}>{t("kanban.rename")}</button><button className="text-xs text-danger" onClick={() => void remove()}>{t("kanban.deleteShort")}</button></>}</header><SortableContext items={tasks.map((task) => `task:${task.id}`)} strategy={verticalListSortingStrategy}><div className="min-h-12 space-y-2">{tasks.map((task) => <TaskCard key={task.id} task={task} canEdit={canEdit} onReload={onReload} onTaskOpen={onTaskOpen} />)}</div></SortableContext>{canEdit && <form className="mt-3 flex gap-2" onSubmit={addTask}><input className="min-w-0 flex-1 !px-2 !py-1.5" placeholder={t("kanban.newTask")} value={title} onChange={(e) => setTitle(e.target.value)} /><button className="btn !px-2 !py-1.5">＋</button></form>}</section>;
+  return <section ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .6 : 1 }} className="panel w-72 shrink-0 p-3"><header className="mb-3 flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: stage.color }} /><button type="button" className="flex-1 cursor-grab text-left font-semibold" {...attributes} {...listeners}>{stage.name} <span className="text-xs text-star-dim">{tasks.length}</span></button>{canEdit && <><button className="text-xs text-star-dim" onClick={() => void rename()}>{t("kanban.rename")}</button><button className="text-xs text-danger" onClick={() => void remove()}>{t("kanban.deleteShort")}</button></>}</header><SortableContext items={tasks.map((task) => `task:${task.id}`)} strategy={verticalListSortingStrategy}><div className="min-h-12 space-y-2">{tasks.map((task) => <TaskCard key={task.id} task={task} canEdit={canEdit} onReload={onReload} onTaskOpen={onTaskOpen} />)}</div></SortableContext>{canEdit && <form className="mt-3 flex gap-2" onSubmit={addTask}><input className="min-w-0 flex-1 !px-2 !py-1.5" placeholder={t("kanban.newTask")} value={title} onChange={(e) => setTitle(e.target.value)} /><button className="btn !px-2 !py-1.5" disabled={taskSubmitting}>{taskSubmitting ? t("common.processing") : "＋"}</button></form>}</section>;
 }
 
 function TaskCard({ task, canEdit, onReload, onTaskOpen }: { task: Task; canEdit: boolean; onReload(): void; onTaskOpen(task: Task): void }) {

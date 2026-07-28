@@ -127,9 +127,12 @@ resourcesRoutes.post("/projects/:id/milestones", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const title = requiredString(body, "title");
   if (!title) return c.json({ error: "請輸入里程碑" }, 422);
+  const dueDate = optionalString(body, "due_date");
+  const duplicate = await c.env.DB.prepare("SELECT id FROM milestones WHERE project_id=? AND title=? AND due_date IS ? LIMIT 1").bind(projectId, title, dueDate).first();
+  if (duplicate) return c.json({ error: "相同里程碑已存在" }, 409);
   const position = await c.env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM milestones WHERE project_id=?").bind(projectId).first<number>("value");
   const id = createId("ms");
-  await c.env.DB.prepare("INSERT INTO milestones (id,project_id,title,due_date,position) VALUES (?,?,?,?,?)").bind(id, projectId, title, optionalString(body, "due_date"), position ?? 0).run();
+  await c.env.DB.prepare("INSERT INTO milestones (id,project_id,title,due_date,position) VALUES (?,?,?,?,?)").bind(id, projectId, title, dueDate, position ?? 0).run();
   await touchProject(c.env.DB, projectId);
   const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
   if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);

@@ -15,11 +15,16 @@ export function OkrPanel({ projectId, metadata, onChanged }: { projectId: string
   const [quarter, setQuarter] = useState(currentQuarter());
   const [data, setData] = useState<{ objective: { objective: string } | null; key_results: KeyResult[]; can_edit: boolean } | null>(null);
   const [error, setError] = useState("");
+  const [krSubmitting, setKrSubmitting] = useState(false);
   const load = () => api<{ objective: { objective: string } | null; key_results: KeyResult[]; can_edit: boolean }>(`/projects/${projectId}/okr?quarter=${quarter}`).then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : t("okr.loadFailed")));
   useEffect(() => { void load(); }, [projectId, quarter]);
   const ids = useMemo(() => data?.key_results.map((item) => item.id) ?? [], [data]);
   const saveObjective = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); await api(`/projects/${projectId}/quarter-goals/${quarter}`, { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); await load(); };
-  const createKr = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); await api(`/projects/${projectId}/key-results`, { method: "POST", body: JSON.stringify({ ...Object.fromEntries(new FormData(event.currentTarget)), quarter }) }); event.currentTarget.reset(); await load(); onChanged(); };
+  const createKr = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); const form = event.currentTarget; setKrSubmitting(true);
+    try { await api(`/projects/${projectId}/key-results`, { method: "POST", body: JSON.stringify({ ...Object.fromEntries(new FormData(form)), quarter }) }); form.reset(); await load(); onChanged(); }
+    finally { setKrSubmitting(false); }
+  };
   const update = async (id: string, patch: Record<string, unknown>) => { await api(`/key-results/${id}`, patchBody(patch)); await load(); onChanged(); };
   const remove = async (id: string) => { await api(`/key-results/${id}`, { method: "DELETE" }); await load(); onChanged(); };
   const dragEnd = async ({ active, over }: DragEndEvent) => { if (!data || !over || active.id === over.id) return; const from = ids.indexOf(String(active.id)); const to = ids.indexOf(String(over.id)); const ordered = arrayMove(data.key_results, from, to); setData({ ...data, key_results: ordered }); await api(`/projects/${projectId}/key-results/reorder`, { method: "POST", body: JSON.stringify({ ids: ordered.map((item) => item.id) }) }); };
@@ -27,7 +32,7 @@ export function OkrPanel({ projectId, metadata, onChanged }: { projectId: string
   return <section className="panel mt-6"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">OKR</h2><p className="text-sm text-star-dim">{t("okr.description")}</p></div><select value={quarter} onChange={(event) => setQuarter(event.target.value)}>{quarterOptions().map((value) => <option key={value}>{value}</option>)}</select></div>
     {data.can_edit ? <form className="mb-5 flex gap-2" key={`${quarter}-${data.objective?.objective ?? ""}`} onSubmit={saveObjective}><input className="min-w-0 flex-1" name="objective" defaultValue={data.objective?.objective ?? ""} placeholder={t("okr.objectivePlaceholder")} required /><button className="btn">{t("okr.saveObjective")}</button></form> : <p className="mb-5 text-sm text-star-dim">{data.objective?.objective || t("okr.noObjective")}</p>}
     <DndContext collisionDetection={closestCenter} onDragEnd={(event) => void dragEnd(event)}><SortableContext items={ids} strategy={verticalListSortingStrategy}><div className="space-y-2">{data.key_results.map((item) => <SortableKr key={item.id} item={item} canEdit={data.can_edit} onUpdate={update} onRemove={remove} />)}{data.key_results.length === 0 && <Empty>{t("okr.empty")}</Empty>}</div></SortableContext></DndContext>
-    {data.can_edit && <form className="mt-5 grid gap-3 md:grid-cols-4" onSubmit={createKr}><input name="title" placeholder={t("okr.newKr")} required /><select name="owner_id"><option value="">{t("okr.noOwner")}</option>{metadata?.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select><select name="status"><option value="未開始">{t("okr.notStarted")}</option><option value="進行中">{t("okr.inProgress")}</option><option value="完成">{t("okr.completed")}</option><option value="暫停">{t("okr.paused")}</option></select><input name="note" placeholder={t("common.notes")} /><button className="btn md:col-span-4">{t("okr.add")}</button></form>}
+    {data.can_edit && <form className="mt-5 grid gap-3 md:grid-cols-4" onSubmit={createKr}><input name="title" placeholder={t("okr.newKr")} required /><select name="owner_id"><option value="">{t("okr.noOwner")}</option>{metadata?.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select><select name="status"><option value="未開始">{t("okr.notStarted")}</option><option value="進行中">{t("okr.inProgress")}</option><option value="完成">{t("okr.completed")}</option><option value="暫停">{t("okr.paused")}</option></select><input name="note" placeholder={t("common.notes")} /><button className="btn md:col-span-4" disabled={krSubmitting}>{t(krSubmitting ? "common.processing" : "okr.add")}</button></form>}
   </section>;
 }
 
