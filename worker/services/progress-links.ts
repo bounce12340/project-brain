@@ -38,6 +38,7 @@ export interface ProgressLinksResult {
 
 const explicitCompletionPattern = /已(?:經)?(?:完成|送出|提交|取得|收到|獲得|核准)|完成了|送出了|\b(?:completed|submitted|obtained|received|sent)\b/i;
 const ambiguousCompletionPattern = /將要|將於|預計|規劃|計畫|打算|下週|明天|之後|尚待|待辦|\b(?:will|plan(?:ned|ning)?|expect(?:ed|ing)?|intend(?:ed|ing)?|next\s+(?:week|month)|tomorrow|going\s+to)\b/i;
+const deliverableCheckpointPattern = /(?:收到|取得|獲得|交付|提供|提交|核准|批准).*(?:文件|資料|報告|結果|許可|證照)|(?:receive|obtain|deliver|provide|submit|approv).*(?:document|file|data|report|result|license|certificate)/i;
 
 function codePoints(value: string): string[] {
   return Array.from(value);
@@ -80,7 +81,7 @@ export function buildProgressLinksPrompt(lang: AiLang): string {
     "A task may appear in complete ONLY when the progress text explicitly says that same work is already completed, submitted/sent, or obtained/received.",
     "Future or ambiguous wording such as will, planned, expected, next week, 將要, 預計, 規劃, 計畫, or 下週 MUST NEVER appear in complete.",
     "Put future next actions in create instead. Never infer completion.",
-    "Put future deliverable checkpoints in milestones, with an explicit future due_date, at most 5 items. If a checkpoint is already represented by an unfinished task, use dates only and do not also create a milestone.",
+    "Put every dated future deliverable handoff (for example, providing or receiving a document) in milestones, NEVER in create, with an explicit future due_date, at most 5 items. If a checkpoint is already represented by an unfinished task, use dates only and do not also create a milestone.",
     "Use dates only to suggest a future due_date for an existing unfinished task_id; include a short reason grounded in the progress text.",
     "Historical or past dates are narrative only and MUST NOT create any create, milestones, or dates object.",
     "Keep each complete reason to one sentence of at most 30 characters and each create title to at most 80 characters.",
@@ -116,6 +117,31 @@ export function sanitizeProgressLinks(
     }
   }
 
+  const milestones: ProgressLinkMilestone[] = [];
+  const seenMilestones = new Set<string>();
+  const addMilestone = (title: string, dueDate: string): boolean => {
+    const key = `${title}\u0000${dueDate}`;
+    const normalizedTitle = normalizedText(title);
+    const duplicatesExistingTask = tasks.some((task) => {
+      const normalizedTask = normalizedText(task.title);
+      return normalizedTask.length >= 2 && normalizedTitle.includes(normalizedTask);
+    });
+    if (!title || milestones.length >= 5 || duplicatesExistingTask || seenMilestones.has(key)) return false;
+    seenMilestones.add(key);
+    milestones.push({ title, due_date: dueDate });
+    return true;
+  };
+
+  if (Array.isArray(source.milestones)) {
+    for (const item of source.milestones) {
+      if (typeof item !== "object" || item === null) continue;
+      const row = item as Record<string, unknown>;
+      const title = typeof row.title === "string" ? trimTo(row.title, 80) : "";
+      const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
+      if (title && dueDate) addMilestone(title, dueDate);
+    }
+  }
+
   const create: ProgressLinkCreate[] = [];
   if (Array.isArray(source.create)) {
     for (const item of source.create) {
@@ -126,28 +152,11 @@ export function sanitizeProgressLinks(
       if (!title) continue;
       const stageName = typeof row.stage_name === "string" && stages.has(row.stage_name) ? row.stage_name : undefined;
       const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
+      if (dueDate && deliverableCheckpointPattern.test(title)) {
+        addMilestone(title, dueDate);
+        continue;
+      }
       create.push({ title, ...(stageName ? { stage_name: stageName } : {}), ...(dueDate ? { due_date: dueDate } : {}) });
-    }
-  }
-
-  const milestones: ProgressLinkMilestone[] = [];
-  const seenMilestones = new Set<string>();
-  if (Array.isArray(source.milestones)) {
-    for (const item of source.milestones) {
-      if (milestones.length >= 5) break;
-      if (typeof item !== "object" || item === null) continue;
-      const row = item as Record<string, unknown>;
-      const title = typeof row.title === "string" ? trimTo(row.title, 80) : "";
-      const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
-      const key = `${title}\u0000${dueDate ?? ""}`;
-      const normalizedTitle = normalizedText(title);
-      const duplicatesExistingTask = tasks.some((task) => {
-        const normalizedTask = normalizedText(task.title);
-        return normalizedTask.length >= 2 && normalizedTitle.includes(normalizedTask);
-      });
-      if (!title || !dueDate || duplicatesExistingTask || seenMilestones.has(key)) continue;
-      seenMilestones.add(key);
-      milestones.push({ title, due_date: dueDate });
     }
   }
 

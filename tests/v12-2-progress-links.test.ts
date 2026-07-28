@@ -84,6 +84,20 @@ describe("SPEC-V12-2 progress-links milestones and dates", () => {
     expect(result.dates).toEqual([{ task_id: "task-review", due_date: "2026-12-31", reason: "審查一個月" }]);
   });
 
+  it("promotes a dated deliverable that the model placed in create to a milestone", () => {
+    const result = clean({
+      complete: [],
+      create: [
+        { title: "取得 Hina 提供的 X 文件", stage_name: "進行中", due_date: "2026-12-01" },
+        { title: "準備補件", stage_name: "待處理", due_date: "2026-12-15" },
+      ],
+      milestones: [],
+      dates: [],
+    });
+    expect(result.milestones).toEqual([{ title: "取得 Hina 提供的 X 文件", due_date: "2026-12-01" }]);
+    expect(result.create).toEqual([{ title: "準備補件", stage_name: "待處理", due_date: "2026-12-15" }]);
+  });
+
   it("keeps existing complete/create behavior while returning all four arrays", () => {
     const result = clean({
       complete: [{ task_id: "task-meeting", reason: "已完成安排會議" }],
@@ -102,6 +116,7 @@ describe("SPEC-V12-2 progress-links milestones and dates", () => {
     expect(prompt).toContain('"dates"');
     expect(prompt).toContain("Historical or past dates");
     expect(prompt).toContain("MUST NOT create");
+    expect(prompt).toContain("NEVER in create");
     expect(prompt).toContain("use dates only");
   });
 });
