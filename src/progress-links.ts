@@ -6,6 +6,7 @@ export interface ProgressLinksResponse {
   complete: Array<{ task_id: string; reason: string }>;
   create: Array<{ title: string; stage_name?: string; due_date?: string }>;
   milestones: Array<{ title: string; due_date: string }>;
+  events: Array<{ title: string; event_date: string }>;
   dates: Array<{ task_id: string; due_date: string; reason: string }>;
   fallback: boolean;
 }
@@ -31,6 +32,13 @@ export interface ProgressMilestoneDraft {
   key: string;
   title: string;
   due_date: string;
+  selected: boolean;
+}
+
+export interface ProgressEventDraft {
+  key: string;
+  title: string;
+  event_date: string;
   selected: boolean;
 }
 
@@ -60,6 +68,7 @@ export function progressLinkDrafts(response: ProgressLinksResponse, stages: Stag
   complete: ProgressCompleteDraft[];
   create: ProgressCreateDraft[];
   milestones: ProgressMilestoneDraft[];
+  events: ProgressEventDraft[];
   dates: ProgressDateDraft[];
 } {
   const defaultStageId = defaultProgressLinkStageId(stages, tasks);
@@ -87,6 +96,12 @@ export function progressLinkDrafts(response: ProgressLinksResponse, stages: Stag
       key: `milestone-${index}`,
       title: item.title,
       due_date: item.due_date,
+      selected: false,
+    })),
+    events: response.events.map((item, index) => ({
+      key: `event-${index}`,
+      title: item.title,
+      event_date: item.event_date,
       selected: false,
     })),
     dates: response.dates.flatMap((item, index) => {

@@ -9,7 +9,7 @@ import { reportPeriod, taipeiDate, type ReportPeriodPreset } from "../services/t
 import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
 import { aiLanguageInstruction, draftFallback, normalizeAiLang, riskFallback, scheduleReason, taskFallback } from "../services/ai-language";
-import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkTask } from "../services/progress-links";
+import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkEvent, type ProgressLinkTask } from "../services/progress-links";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -98,7 +98,7 @@ aiRoutes.post("/progress-links", async (c) => {
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   try {
-    const [taskRows, stageRows] = await Promise.all([
+    const [taskRows, stageRows, eventRows] = await Promise.all([
       c.env.DB.prepare(`
         SELECT t.id,t.title,s.name AS stage_name
         FROM tasks t JOIN stages s ON s.id=t.stage_id
@@ -106,6 +106,7 @@ aiRoutes.post("/progress-links", async (c) => {
         ORDER BY s.position,t.position,t.created_at
       `).bind(projectId).all<ProgressLinkTask>(),
       c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
+      c.env.DB.prepare("SELECT title,due_date AS event_date FROM milestones WHERE project_id=? AND kind='event' ORDER BY due_date").bind(projectId).all<ProgressLinkEvent>(),
     ]);
     const stages = stageRows.results.map((stage) => stage.name);
     const text = await llmChat(c.env, [
@@ -113,8 +114,8 @@ aiRoutes.post("/progress-links", async (c) => {
       { role: "user", content: JSON.stringify({ today: taipeiDate(), progress: content, unfinished_tasks: taskRows.results, stages, progress_update_id: requiredString(body, "progress_update_id") }) },
     ], { json: true });
     const parsed = parseLooseJson<Record<string, unknown>>(text);
-    if (!parsed || !Array.isArray(parsed.complete) || !Array.isArray(parsed.create) || !Array.isArray(parsed.milestones) || !Array.isArray(parsed.dates)) throw new Error("AI 任務連動格式不正確");
-    return c.json({ ...sanitizeProgressLinks(parsed, taskRows.results, stages, content, taipeiDate()), fallback: false });
+    if (!parsed || !Array.isArray(parsed.complete) || !Array.isArray(parsed.create) || !Array.isArray(parsed.milestones) || (parsed.events !== undefined && !Array.isArray(parsed.events)) || !Array.isArray(parsed.dates)) throw new Error("AI 任務連動格式不正確");
+    return c.json({ ...sanitizeProgressLinks(parsed, taskRows.results, stages, content, taipeiDate(), eventRows.results), fallback: false });
   } catch (error) {
     console.error(JSON.stringify({ message: "進度任務建議降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
     return c.json(progressLinksFallback());
@@ -191,7 +192,7 @@ aiRoutes.post("/project-risk", async (c) => {
   const [project, overdueTasks, overdueMilestones, updates] = await Promise.all([
     c.env.DB.prepare("SELECT id,name,progress,start_date,target_date,last_activity_at FROM projects WHERE id=?").bind(projectId).first<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM tasks WHERE project_id=? AND done=0 AND due_date<date('now')").bind(projectId).first<number>("value"),
-    c.env.DB.prepare("SELECT COUNT(*) AS value FROM milestones WHERE project_id=? AND done=0 AND due_date<date('now')").bind(projectId).first<number>("value"),
+    c.env.DB.prepare("SELECT COUNT(*) AS value FROM milestones WHERE project_id=? AND kind='milestone' AND done=0 AND due_date<date('now')").bind(projectId).first<number>("value"),
     c.env.DB.prepare("SELECT content,created_at FROM progress_updates WHERE project_id=? ORDER BY created_at DESC LIMIT 5").bind(projectId).all(),
   ]);
   if (!project) return c.json({ error: "找不到專案" }, 404);

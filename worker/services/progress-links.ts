@@ -22,6 +22,11 @@ export interface ProgressLinkMilestone {
   due_date: string;
 }
 
+export interface ProgressLinkEvent {
+  title: string;
+  event_date: string;
+}
+
 export interface ProgressLinkDate {
   task_id: string;
   due_date: string;
@@ -32,6 +37,7 @@ export interface ProgressLinksResult {
   complete: ProgressLinkComplete[];
   create: ProgressLinkCreate[];
   milestones: ProgressLinkMilestone[];
+  events: ProgressLinkEvent[];
   dates: ProgressLinkDate[];
   fallback: boolean;
 }
@@ -72,18 +78,38 @@ function isValidFutureDate(value: unknown, today: string): value is string {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function isValidPastDate(value: unknown, today: string): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value >= today) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function extractedHistoryEvents(content: string, today: string): ProgressLinkEvent[] {
+  const events: ProgressLinkEvent[] = [];
+  for (const clause of content.split(/[\n。！？!?；;]/).map((value) => value.trim()).filter(Boolean)) {
+    if (!explicitCompletionPattern.test(clause) || ambiguousCompletionPattern.test(clause)) continue;
+    const match = clause.match(/\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b/);
+    if (!match) continue;
+    const eventDate = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+    if (!isValidPastDate(eventDate, today)) continue;
+    const title = trimTo(clause.replace(match[0], "").replace(/^[\s:：,，、.-]+|[\s:：,，、.-]+$/g, ""), 60);
+    if (title) events.push({ title, event_date: eventDate });
+  }
+  return events;
+}
+
 export function buildProgressLinksPrompt(lang: AiLang): string {
   const outputLanguage = lang === "en" ? "English" : "Traditional Chinese";
   return [
     `Respond in ${outputLanguage}. Return JSON only:`,
-    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}],"milestones":[{"title":"...","due_date":"YYYY-MM-DD"}],"dates":[{"task_id":"...","due_date":"YYYY-MM-DD","reason":"..."}]}.',
+    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}],"milestones":[{"title":"...","due_date":"YYYY-MM-DD"}],"events":[{"title":"...","event_date":"YYYY-MM-DD"}],"dates":[{"task_id":"...","due_date":"YYYY-MM-DD","reason":"..."}]}.',
     "Use only the supplied unfinished tasks and exact stage names.",
     "A task may appear in complete ONLY when the progress text explicitly says that same work is already completed, submitted/sent, or obtained/received.",
     "Future or ambiguous wording such as will, planned, expected, next week, 將要, 預計, 規劃, 計畫, or 下週 MUST NEVER appear in complete.",
     "Put future next actions in create instead. Never infer completion.",
     "Put every dated future deliverable handoff (for example, providing or receiving a document) in milestones, NEVER in create, with an explicit future due_date, at most 5 items. If a checkpoint is already represented by an unfinished task, use dates only and do not also create a milestone.",
     "Use dates only to suggest a future due_date for an existing unfinished task_id; include a short reason grounded in the progress text.",
-    "Historical or past dates are narrative only and MUST NOT create any create, milestones, or dates object.",
+    "Put completed facts with explicit past dates in events, at most 20 items. Event titles must be at most 60 characters. Historical or past dates MUST NOT create any create, milestones, or dates object.",
     "Keep each complete reason to one sentence of at most 30 characters and each create title to at most 80 characters.",
     "Return at most 5 create items. Use null or omit due_date unless the text provides a future date.",
   ].join(" ");
@@ -95,6 +121,7 @@ export function sanitizeProgressLinks(
   stageNames: string[],
   content: string,
   today: string,
+  existingEvents: ProgressLinkEvent[] = [],
 ): Omit<ProgressLinksResult, "fallback"> {
   const source = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
@@ -142,6 +169,32 @@ export function sanitizeProgressLinks(
     }
   }
 
+  const events: ProgressLinkEvent[] = [];
+  const existingEventKeys = new Set(existingEvents.map((event) => `${event.title}\u0000${event.event_date}`));
+  const seenEvents = new Set<string>();
+  const addEvent = (title: string, eventDate: string) => {
+    const key = `${title}\u0000${eventDate}`;
+    const normalizedTitle = normalizedText(title);
+    const duplicatesSuggestion = events.some((event) => {
+      if (event.event_date !== eventDate) return false;
+      const normalizedExisting = normalizedText(event.title);
+      return normalizedTitle.includes(normalizedExisting) || normalizedExisting.includes(normalizedTitle);
+    });
+    if (!title || events.length >= 20 || existingEventKeys.has(key) || seenEvents.has(key) || duplicatesSuggestion) return;
+    seenEvents.add(key);
+    events.push({ title, event_date: eventDate });
+  };
+  if (Array.isArray(source.events)) {
+    for (const item of source.events) {
+      if (typeof item !== "object" || item === null) continue;
+      const row = item as Record<string, unknown>;
+      const title = typeof row.title === "string" ? trimTo(row.title, 60) : "";
+      const eventDate = isValidPastDate(row.event_date, today) ? row.event_date : undefined;
+      if (title && eventDate) addEvent(title, eventDate);
+    }
+  }
+  for (const event of extractedHistoryEvents(content, today)) addEvent(event.title, event.event_date);
+
   const create: ProgressLinkCreate[] = [];
   if (Array.isArray(source.create)) {
     for (const item of source.create) {
@@ -174,9 +227,9 @@ export function sanitizeProgressLinks(
       dates.push({ task_id: taskId, due_date: dueDate, reason });
     }
   }
-  return { complete, create, milestones, dates };
+  return { complete, create, milestones, events, dates };
 }
 
 export function progressLinksFallback(): ProgressLinksResult {
-  return { complete: [], create: [], milestones: [], dates: [], fallback: true };
+  return { complete: [], create: [], milestones: [], events: [], dates: [], fallback: true };
 }
