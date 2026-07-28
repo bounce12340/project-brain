@@ -4,6 +4,7 @@ export const CHART = {
   raised: "rgb(var(--color-nexus-raised))",
   line: "rgb(var(--color-nexus-line))",
   gold: "rgb(var(--color-gold))",
+  goldDim: "rgb(var(--color-gold-dim))",
   goldBright: "rgb(var(--color-gold-bright))",
   psi: "rgb(var(--color-psi))",
   psiDeep: "rgb(var(--color-psi-deep))",

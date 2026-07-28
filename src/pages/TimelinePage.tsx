@@ -7,9 +7,10 @@ import { addDays, daysBetween, ganttPosition } from "../utils/dates";
 import { useT } from "../i18n/LangContext";
 
 interface TimelineTask { id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null }
-interface TimelineProject { id: string; name: string; start_date: string | null; target_date: string | null; progress: number; risk_level: string | null; group_id: string; group_name: string; tasks: TimelineTask[] }
+interface TimelineEvent { id: string; title: string; event_date: string }
+interface TimelineProject { id: string; name: string; start_date: string | null; target_date: string | null; progress: number; risk_level: string | null; group_id: string; group_name: string; tasks: TimelineTask[]; events: TimelineEvent[] }
 interface TimelineGroup { id: string; name: string; projects: TimelineProject[] }
-type TimelineRow = { kind: "group"; group: TimelineGroup; y: number } | { kind: "project"; project: TimelineProject; y: number } | { kind: "task"; project: TimelineProject; task: TimelineTask; y: number };
+type TimelineRow = { kind: "group"; group: TimelineGroup; y: number } | { kind: "project"; project: TimelineProject; y: number } | { kind: "task"; project: TimelineProject; task: TimelineTask; y: number } | { kind: "event"; project: TimelineProject; event: TimelineEvent; y: number };
 
 const STORAGE_KEY = "timeline-expanded-projects";
 const HEADER_HEIGHT = 58;
@@ -32,7 +33,7 @@ export function TimelinePage() {
   useEffect(() => { void api<{ groups: TimelineGroup[] }>("/timeline").then((result) => setGroups(result.groups)); }, []);
   const visibleGroups = groupFilter ? groups.filter((group) => group.id === groupFilter) : groups;
   const projects = visibleGroups.flatMap((group) => group.projects);
-  const dates = [today(), ...projects.flatMap((project) => [project.start_date, project.target_date, ...project.tasks.flatMap((task) => [task.start_date ?? task.created_at.slice(0, 10), task.due_date])])].filter((value): value is string => !!value).sort();
+  const dates = [today(), ...projects.flatMap((project) => [project.start_date, project.target_date, ...project.tasks.flatMap((task) => [task.start_date ?? task.created_at.slice(0, 10), task.due_date]), ...project.events.map((event) => event.event_date)])].filter((value): value is string => !!value).sort();
   const start = dates[0] ?? today();
   const end = dates.at(-1) ?? addDays(start, 90);
   const width = Math.max(820, (daysBetween(start, end) + 2) * 8);
@@ -44,12 +45,15 @@ export function TimelinePage() {
       result.push({ kind: "group", group, y }); y += GROUP_HEIGHT;
       for (const project of group.projects) {
         result.push({ kind: "project", project, y }); y += PROJECT_HEIGHT;
-        if (expanded.includes(project.id)) for (const task of project.tasks) { result.push({ kind: "task", project, task, y }); y += TASK_HEIGHT; }
+        if (expanded.includes(project.id)) {
+          for (const task of project.tasks) { result.push({ kind: "task", project, task, y }); y += TASK_HEIGHT; }
+          for (const event of project.events) { result.push({ kind: "event", project, event, y }); y += TASK_HEIGHT; }
+        }
       }
     }
     return result;
   }, [visibleGroups, expanded]);
-  const height = Math.max(170, (rows.at(-1)?.y ?? HEADER_HEIGHT) + (rows.at(-1)?.kind === "task" ? TASK_HEIGHT : PROJECT_HEIGHT));
+  const height = Math.max(170, (rows.at(-1)?.y ?? HEADER_HEIGHT) + (["task", "event"].includes(rows.at(-1)?.kind ?? "") ? TASK_HEIGHT : PROJECT_HEIGHT));
   const weeks = useMemo(() => Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7)), [start, end]);
   const toggle = (projectId: string) => {
     const next = expanded.includes(projectId) ? expanded.filter((id) => id !== projectId) : [...expanded, projectId];
@@ -67,6 +71,10 @@ export function TimelinePage() {
           const projectStart = row.project.start_date ?? start; const projectEnd = row.project.target_date ?? projectStart;
           const x = label + ganttPosition(projectStart, start, end, width); const barWidth = Math.max(8, ganttPosition(projectEnd, start, end, width) - ganttPosition(projectStart, start, end, width)); const y = row.y + 16;
           return <g key={`project-${row.project.id}`}><foreignObject x="4" y={row.y + 4} width={label - 12} height={PROJECT_HEIGHT - 4}><div className="flex items-start gap-2"><button className="no-print mt-0.5 text-sm text-psi" aria-label={t("timeline.expandTasks", { action: t(expanded.includes(row.project.id) ? "common.collapse" : "common.expand"), project: row.project.name })} onClick={() => toggle(row.project.id)}>{expanded.includes(row.project.id) ? "▼" : "▶"}</button><Link to={`/projects/${row.project.id}`} className="block min-w-0 text-sm font-semibold text-star hover:text-psi">{row.project.name}<span className="mt-0.5 block text-xs font-normal text-star-dim">{t("timeline.taskCount", { risk: riskLabel(row.project.risk_level, t), count: row.project.tasks.length })}</span></Link></div></foreignObject><Link to={`/projects/${row.project.id}`}><rect x={x} y={y} width={barWidth} height="16" rx="8" fill={CHART.raised}><title>{row.project.name}：{projectStart} ～ {projectEnd}</title></rect><rect x={x} y={y} width={barWidth * row.project.progress / 100} height="16" rx="8" fill={row.project.progress >= 100 ? CHART.gold : CHART.psi} style={{ filter: `drop-shadow(0 0 6px ${CHART.psiGlow})` }} /><text x={x + 6} y={y + 12} fill={CHART.star} fontSize="11">{row.project.progress}%</text></Link></g>;
+        }
+        if (row.kind === "event") {
+          const x = label + ganttPosition(row.event.event_date, start, end, width); const y = row.y + 7;
+          return <g key={`event-${row.event.id}`}><text x="38" y={row.y + 21} fontSize="12" fill={CHART.starDim}>{t("views.history")} · {row.event.title.slice(0, 24)}</text><polygon points={`${x},${y} ${x + 8},${y + 8} ${x},${y + 16} ${x - 8},${y + 8}`} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{row.event.title}（{row.event.event_date}）</title></polygon></g>;
         }
         const taskStart = row.task.start_date ?? row.task.created_at.slice(0, 10); const taskEnd = row.task.due_date ?? taskStart;
         const x = label + ganttPosition(taskStart, start, end, width); const barWidth = Math.max(8, ganttPosition(taskEnd, start, end, width) - ganttPosition(taskStart, start, end, width)); const y = row.y + 9;

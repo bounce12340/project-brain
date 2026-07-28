@@ -14,7 +14,7 @@ export interface Metadata {
 
 export interface Stage { id: string; project_id: string; name: string; color: string; position: number }
 export interface Task { id: string; project_id: string; stage_id: string; title: string; description: string; assignee_id: string | null; assignee_name?: string; start_date: string | null; due_date: string | null; position: number; done: number; done_at: string | null; created_at: string; dependency_ids: string[]; comment_count: number; attachment_count: number }
-export interface Milestone { id: string; title: string; due_date: string | null; done: number; position: number }
+export interface Milestone { id: string; title: string; due_date: string | null; done: number; position: number; kind: "milestone" | "event" }
 export interface ProgressUpdate { id: string; author_id: string; content: string; progress_snapshot: number | null; author_name: string; is_support: number; created_at: string; edited_at: string | null; edited_by: string | null; can_edit: boolean }
 export interface Enrollment { id: string; record_date: string; site: string | null; count: number; note: string; created_by_name: string }
 export interface BdCase { id: string; case_name: string; product_name: string; case_type: string; submission_no: string | null; current_status: string; submitted_at: string | null; expected_approval: string | null; note: string }
