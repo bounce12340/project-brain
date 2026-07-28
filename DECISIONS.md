@@ -91,3 +91,5 @@
 - 2026-07-28（v12.2）：里程碑判重採既有 POST 內的 null-safe `due_date IS ?` 查詢，不新增 unique index 或 migration，符合本版「無 migration」驗收條件。任務仍允許同名；進度 dialog 套用里程碑也走同一 POST，因而共享 409 防重。
 - 2026-07-28（v12.2）：`milestones` 只有標題與合法未來日期皆存在才保留，依 `(title,due_date)` 去重並上限 5；`dates` 只接受本次傳入的既有未完成 task_id、合法未來日期與非空 reason，同一 task 最多一筆。規格未要求 `dates` 數量上限，因此不另行截斷。
 - 2026-07-28（v12.2）：本版功能實作階段沒有尚待使用者選擇的 open decision；正式 deploy／E2E 若發現環境基線差異，將以 `v12.2，open` 另行增量記錄並在驗收文件標示，不修改真實資料迎合規格。
+- 2026-07-28（v12.2）：production LLM 曾把同一個既有任務完成點同時列為 milestone，也曾把有日期的外部文件交付放進 `create`。清洗層因此採 deterministic 分類：標題包含既有未完成任務完整正規化名稱的 milestone 丟棄、只保留 `dates`；有合法未來日期且語意為文件／資料／報告／許可交接的 `create` 改歸 `milestones`。這維持人工套用原則，也避免依賴模型每次都遵守 bucket。
+- 2026-07-28（v12.2）：正式站最終基線為 published 631、drafts 16、tombstones 4、真實 projects 32；本輪所有 demo E2E 的前後完整 fingerprints 均一致，沒有需要資料擁有者裁決的新 open decision。

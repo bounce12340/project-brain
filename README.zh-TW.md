@@ -4,7 +4,7 @@
 
 > 如同卡拉，讓團隊在水晶中共同感知每個專案的脈動。
 
-**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.1｜**測試**：248/248 ✅｜**平台**：Cloudflare Workers
+**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.2｜**測試**：270/270 ✅｜**平台**：Cloudflare Workers
 
 給台灣醫藥代理商（UIC）內部團隊的共享專案進度平台。取代原先分散在六份 Excel 的追蹤方式（BD／RA／QA／臨床各自為政、同一專案被多人重複記錄），把專案、進度、OKR、法規動態、證照效期、變更管制收進同一顆水晶：全員即時共感、權限分級、AI 輔助、自動提醒。
 
@@ -44,7 +44,7 @@ flowchart LR
 | AI | OpenAI 相容層（Ollama Cloud `deepseek-v4-pro`）＋ Workers AI fallback |
 | 郵件 | AgentMail REST API |
 | 認證 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
-| 測試 | Vitest 248 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
+| 測試 | Vitest 270 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
 
 ## 📁 專案結構
 

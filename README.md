@@ -4,7 +4,7 @@
 
 > Like the Khala, it lets the team sense the pulse of every project together through the crystal.
 
-**Production**: <https://projects.uic-ai.com> | **Version**: v12.1 | **Tests**: 248/248 ✅ | **Platform**: Cloudflare Workers
+**Production**: <https://projects.uic-ai.com> | **Version**: v12.2 | **Tests**: 270/270 ✅ | **Platform**: Cloudflare Workers
 
 A shared project progress platform for the internal team of Taiwan-based pharmaceutical agency UIC. It replaces a fragmented workflow spread across six Excel files—where BD, RA, QA, and Clinical each worked in isolation and multiple people recorded the same project—with a single crystal for projects, progress, OKRs, regulatory updates, license expirations, and change control: real-time teamwide awareness, tiered permissions, AI assistance, and automated reminders.
 
@@ -44,7 +44,7 @@ flowchart LR
 | AI | OpenAI-compatible layer (Ollama Cloud `deepseek-v4-pro`) + Workers AI fallback |
 | Email | AgentMail REST API |
 | Authentication | PBKDF2-SHA256 (WebCrypto) · httpOnly session cookie · Email OTP |
-| Testing | Vitest 248 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
+| Testing | Vitest 270 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
 
 ## 📁 Project Structure
 
@@ -235,6 +235,7 @@ For complete recovery steps after accidental data deletion, machine rebuilds, or
 | v11.2 | TFDA rejection tombstones prevent cron from reviving deleted announcements | [SPEC](SPEC-V11-2.md) / [Acceptance](ACCEPTANCE-V11-2.md) |
 | v12 | Progress updates produce AI task-link suggestions that require explicit human checkbox confirmation | [SPEC](SPEC-V12.md) / [Acceptance](ACCEPTANCE-V12.md) |
 | v12.1 | Progress updates can be edited or deleted by their author, project owner, or admin, with immutable snapshots and an audit trail | [SPEC](SPEC-V12-1.md) / [Acceptance](ACCEPTANCE-V12-1.md) |
+| v12.2 | Fixes Taipei timestamp display and duplicate quick submissions; progress can suggest milestones and dates for existing tasks | [SPEC](SPEC-V12-2.md) / [Acceptance](ACCEPTANCE-V12-2.md) |
 
 ## 🧭 Development Model
 
