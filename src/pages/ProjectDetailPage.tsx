@@ -31,7 +31,7 @@ export function ProjectDetailPage() {
   const remove = async () => { if (window.confirm(t("project.deleteConfirm"))) { await api(`/projects/${id}`, { method: "DELETE" }); navigate("/projects"); } };
   const status = { active: t("status.active"), paused: t("status.paused"), done: t("status.done"), archived: t("status.archived") };
   return <><PageHeader title={`${data.project.visibility === "private" ? "🔒 " : ""}${data.project.name}`} description={`${data.project.group_name} · ${t("common.owner", { name: data.project.owner_name })}`} actions={<div className="flex gap-2"><span className="badge">{status[data.project.status]}</span>{data.permissions.can_manage && <button className="btn-danger !py-1.5" onClick={() => void remove()}>{t("common.delete")}</button>}</div>} />
-    <div data-tour="project-tabs" className="mb-5 flex gap-1 overflow-x-auto border-b border-nexus-line">{tabs.map(([key, label]) => <button key={key} className={`border-b-2 px-4 py-3 text-sm font-medium ${tab === key ? "border-psi text-psi" : "border-transparent text-star-dim"}`} onClick={() => setTab(key)}>{t(label)}</button>)}</div>
+    <div data-tour="project-tabs" className="project-tabs mb-5 flex gap-1">{tabs.map(([key, label]) => <button key={key} className={`border-b-2 px-4 py-3 text-sm font-medium ${tab === key ? "border-psi text-psi" : "border-transparent text-star-dim"}`} onClick={() => setTab(key)}>{t(label)}</button>)}</div>
     {tab === "overview" && <Overview data={data} metadata={meta} reload={load} />}
     {tab === "tasks" && <TaskWorkspace data={data} metadata={meta} reload={load} />}
     {tab === "updates" && <Updates data={data} reload={load} />}
