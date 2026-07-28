@@ -93,3 +93,6 @@
 - 2026-07-28（v12.2）：本版功能實作階段沒有尚待使用者選擇的 open decision；正式 deploy／E2E 若發現環境基線差異，將以 `v12.2，open` 另行增量記錄並在驗收文件標示，不修改真實資料迎合規格。
 - 2026-07-28（v12.2）：production LLM 曾把同一個既有任務完成點同時列為 milestone，也曾把有日期的外部文件交付放進 `create`。清洗層因此採 deterministic 分類：標題包含既有未完成任務完整正規化名稱的 milestone 丟棄、只保留 `dates`；有合法未來日期且語意為文件／資料／報告／許可交接的 `create` 改歸 `milestones`。這維持人工套用原則，也避免依賴模型每次都遵守 bucket。
 - 2026-07-28（v12.2）：正式站最終基線為 published 631、drafts 16、tombstones 4、真實 projects 32；本輪所有 demo E2E 的前後完整 fingerprints 均一致，沒有需要資料擁有者裁決的新 open decision。
+- 2026-07-28（v12.3）：既有導覽列在所有 breakpoint 都是 sticky；`--nav-h` 因此固定由導覽列與專案 tabs 共用，桌面為 56px，`<1024px` 的雙列導覽為 101px。tabs 使用 z-index 20，低於 nav 30、drawer/modal 50 與 tour 80。
+- 2026-07-28（v12.3）：只有 `start_date` 或只有 `due_date` 的任務都以該唯一日期作為甘特起訖，呈現單一點；兩者皆空才歸入未排程。依賴線只在前後兩個任務都已排程時繪製，不再以 `created_at` 補值。
+- 2026-07-28（v12.3）：本版沒有 schema 變更或 migration。正式站只部署 code/assets並執行唯讀 fingerprint；瀏覽器互動全部使用本機固定前綴 demo fixture，清理 read-back 全為 0。本版沒有待使用者裁決的 open decision。
