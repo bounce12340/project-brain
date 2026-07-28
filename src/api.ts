@@ -1,3 +1,5 @@
+import { parseServerDate } from "./utils/server-date";
+
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
@@ -31,7 +33,7 @@ export const patchBody = (value: unknown): RequestInit => ({ method: "PATCH", bo
 
 export function formatDate(value?: string | null, includeTime = false, lang?: "zh" | "en"): string {
   if (!value) return "—";
-  const date = value.length === 10 ? new Date(`${value}T00:00:00+08:00`) : new Date(value);
+  const date = parseServerDate(value);
   const activeLang = lang ?? (typeof document !== "undefined" && document.documentElement.lang === "en" ? "en" : "zh");
   return new Intl.DateTimeFormat(activeLang === "en" ? "en-US" : "zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: activeLang === "en" ? "short" : "2-digit", day: "numeric", ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}) }).format(date);
 }
