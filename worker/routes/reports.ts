@@ -106,7 +106,7 @@ aiRoutes.post("/progress-links", async (c) => {
         ORDER BY s.position,t.position,t.created_at
       `).bind(projectId).all<ProgressLinkTask>(),
       c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
-      c.env.DB.prepare("SELECT title,due_date AS event_date FROM milestones WHERE project_id=? AND kind='event' ORDER BY due_date").bind(projectId).all<ProgressLinkEvent>(),
+      c.env.DB.prepare("SELECT title,due_date AS event_date,end_date FROM milestones WHERE project_id=? AND kind='event' ORDER BY due_date").bind(projectId).all<ProgressLinkEvent>(),
     ]);
     const stages = stageRows.results.map((stage) => stage.name);
     const text = await llmChat(c.env, [

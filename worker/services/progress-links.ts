@@ -20,11 +20,13 @@ export interface ProgressLinkCreate {
 export interface ProgressLinkMilestone {
   title: string;
   due_date: string;
+  end_date?: string;
 }
 
 export interface ProgressLinkEvent {
   title: string;
   event_date: string;
+  end_date?: string;
 }
 
 export interface ProgressLinkDate {
@@ -102,7 +104,7 @@ export function buildProgressLinksPrompt(lang: AiLang): string {
   const outputLanguage = lang === "en" ? "English" : "Traditional Chinese";
   return [
     `Respond in ${outputLanguage}. Return JSON only:`,
-    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}],"milestones":[{"title":"...","due_date":"YYYY-MM-DD"}],"events":[{"title":"...","event_date":"YYYY-MM-DD"}],"dates":[{"task_id":"...","due_date":"YYYY-MM-DD","reason":"..."}]}.',
+    '{"complete":[{"task_id":"...","reason":"..."}],"create":[{"title":"...","stage_name":"...","due_date":"YYYY-MM-DD"}],"milestones":[{"title":"...","due_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD"}],"events":[{"title":"...","event_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD"}],"dates":[{"task_id":"...","due_date":"YYYY-MM-DD","reason":"..."}]}.',
     "Use only the supplied unfinished tasks and exact stage names.",
     "A task may appear in complete ONLY when the progress text explicitly says that same work is already completed, submitted/sent, or obtained/received.",
     "Future or ambiguous wording such as will, planned, expected, next week, 將要, 預計, 規劃, 計畫, or 下週 MUST NEVER appear in complete.",
@@ -110,6 +112,7 @@ export function buildProgressLinksPrompt(lang: AiLang): string {
     "Put every dated future deliverable handoff (for example, providing or receiving a document) in milestones, NEVER in create, with an explicit future due_date, at most 5 items. If a checkpoint is already represented by an unfinished task, use dates only and do not also create a milestone.",
     "Use dates only to suggest a future due_date for an existing unfinished task_id; include a short reason grounded in the progress text.",
     "Put completed facts with explicit past dates in events, at most 20 items. Event titles must be at most 60 characters. Historical or past dates MUST NOT create any create, milestones, or dates object.",
+    "Include end_date only when the text states a clear period or duration (for example, 2/6 through 3/23 or lasting one month). end_date must be on or after due_date/event_date. Omit it for a single checkpoint.",
     "Keep each complete reason to one sentence of at most 30 characters and each create title to at most 80 characters.",
     "Return at most 5 create items. Use null or omit due_date unless the text provides a future date.",
   ].join(" ");
@@ -146,7 +149,7 @@ export function sanitizeProgressLinks(
 
   const milestones: ProgressLinkMilestone[] = [];
   const seenMilestones = new Set<string>();
-  const addMilestone = (title: string, dueDate: string): boolean => {
+  const addMilestone = (title: string, dueDate: string, endDate?: string): boolean => {
     const key = `${title}\u0000${dueDate}`;
     const normalizedTitle = normalizedText(title);
     const duplicatesExistingTask = tasks.some((task) => {
@@ -155,7 +158,7 @@ export function sanitizeProgressLinks(
     });
     if (!title || milestones.length >= 5 || duplicatesExistingTask || seenMilestones.has(key)) return false;
     seenMilestones.add(key);
-    milestones.push({ title, due_date: dueDate });
+    milestones.push({ title, due_date: dueDate, ...(endDate ? { end_date: endDate } : {}) });
     return true;
   };
 
@@ -165,14 +168,15 @@ export function sanitizeProgressLinks(
       const row = item as Record<string, unknown>;
       const title = typeof row.title === "string" ? trimTo(row.title, 80) : "";
       const dueDate = isValidFutureDate(row.due_date, today) ? row.due_date : undefined;
-      if (title && dueDate) addMilestone(title, dueDate);
+      const endDate = isValidFutureDate(row.end_date, today) && dueDate && row.end_date >= dueDate ? row.end_date : undefined;
+      if (title && dueDate) addMilestone(title, dueDate, endDate);
     }
   }
 
   const events: ProgressLinkEvent[] = [];
   const existingEventKeys = new Set(existingEvents.map((event) => `${event.title}\u0000${event.event_date}`));
   const seenEvents = new Set<string>();
-  const addEvent = (title: string, eventDate: string) => {
+  const addEvent = (title: string, eventDate: string, endDate?: string) => {
     const key = `${title}\u0000${eventDate}`;
     const normalizedTitle = normalizedText(title);
     const duplicatesSuggestion = events.some((event) => {
@@ -182,7 +186,7 @@ export function sanitizeProgressLinks(
     });
     if (!title || events.length >= 20 || existingEventKeys.has(key) || seenEvents.has(key) || duplicatesSuggestion) return;
     seenEvents.add(key);
-    events.push({ title, event_date: eventDate });
+    events.push({ title, event_date: eventDate, ...(endDate ? { end_date: endDate } : {}) });
   };
   if (Array.isArray(source.events)) {
     for (const item of source.events) {
@@ -190,7 +194,8 @@ export function sanitizeProgressLinks(
       const row = item as Record<string, unknown>;
       const title = typeof row.title === "string" ? trimTo(row.title, 60) : "";
       const eventDate = isValidPastDate(row.event_date, today) ? row.event_date : undefined;
-      if (title && eventDate) addEvent(title, eventDate);
+      const endDate = isValidPastDate(row.end_date, today) && eventDate && row.end_date >= eventDate ? row.end_date : undefined;
+      if (title && eventDate) addEvent(title, eventDate, endDate);
     }
   }
   for (const event of extractedHistoryEvents(content, today)) addEvent(event.title, event.event_date);

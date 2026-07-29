@@ -5,6 +5,7 @@ import { boundedNumber, integer, optionalString, requiredString } from "../servi
 import { canEditProgress, canEditProgressUpdate, canViewFees, canViewProject } from "../services/permissions";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules, type AutomationEvent } from "../services/automation";
+import { milestoneDateRangeError } from "../services/milestone-dates";
 import { progressAuditExcerpt } from "../services/progress-updates";
 import { wouldCreateDependencyCycle, type DependencyEdge } from "../services/dependencies";
 
@@ -153,17 +154,20 @@ resourcesRoutes.post("/projects/:id/milestones", async (c) => {
   const kind = body.kind === "event" ? "event" : "milestone";
   if (!title) return c.json({ error: kind === "event" ? "請輸入歷程事件" : "請輸入里程碑" }, 422);
   const dueDate = optionalString(body, "due_date");
+  const endDate = optionalString(body, "end_date");
   if (kind === "event" && !dueDate) return c.json({ error: "歷程事件必須有日期" }, 422);
+  const dateError = milestoneDateRangeError(dueDate, endDate);
+  if (dateError) return c.json({ error: dateError }, 422);
   const duplicate = await c.env.DB.prepare("SELECT id FROM milestones WHERE project_id=? AND title=? AND due_date IS ? LIMIT 1").bind(projectId, title, dueDate).first();
   if (duplicate) return c.json({ error: kind === "event" ? "相同歷程事件已存在" : "相同里程碑已存在" }, 409);
   const position = await c.env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM milestones WHERE project_id=?").bind(projectId).first<number>("value");
   const id = createId(kind === "event" ? "evt" : "ms");
-  await c.env.DB.prepare("INSERT INTO milestones (id,project_id,title,due_date,done,done_at,position,kind) VALUES (?,?,?,?,?,?,?,?)")
-    .bind(id, projectId, title, dueDate, kind === "event" ? 1 : 0, kind === "event" ? new Date().toISOString() : null, position ?? 0, kind).run();
+  await c.env.DB.prepare("INSERT INTO milestones (id,project_id,title,due_date,end_date,done,done_at,position,kind) VALUES (?,?,?,?,?,?,?,?,?)")
+    .bind(id, projectId, title, dueDate, endDate, kind === "event" ? 1 : 0, kind === "event" ? new Date().toISOString() : null, position ?? 0, kind).run();
   await touchProject(c.env.DB, projectId);
   const progress = await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
   if (progress?.changed) await runAutomationRules(c.env.DB, c.get("user").id, projectId, [{ type: "progress_reached", previousProgress: progress.previous, progress: progress.progress }]);
-  return c.json({ id }, 201);
+  return c.json({ id, end_date: endDate }, 201);
 });
 
 resourcesRoutes.patch("/milestones/:id", async (c) => {
@@ -173,10 +177,14 @@ resourcesRoutes.patch("/milestones/:id", async (c) => {
   const access = await getProjectAccess(c.env.DB, projectId);
   if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT * FROM milestones WHERE id=?").bind(id).first<{ title: string; due_date: string | null; done: number; position: number; kind: "milestone" | "event" }>();
+  const current = await c.env.DB.prepare("SELECT * FROM milestones WHERE id=?").bind(id).first<{ title: string; due_date: string | null; end_date: string | null; done: number; position: number; kind: "milestone" | "event" }>();
   if (!current) return c.json({ error: "找不到里程碑" }, 404);
   const done = current.kind === "event" ? 1 : ("done" in body ? (body.done ? 1 : 0) : current.done);
-  await c.env.DB.prepare("UPDATE milestones SET title=?,due_date=?,done=?,done_at=?,position=? WHERE id=?").bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, done, done ? new Date().toISOString() : null, "position" in body ? integer(body, "position") : current.position, id).run();
+  const dueDate = "due_date" in body ? optionalString(body, "due_date") : current.due_date;
+  const endDate = "end_date" in body ? optionalString(body, "end_date") : current.end_date;
+  const dateError = milestoneDateRangeError(dueDate, endDate);
+  if (dateError) return c.json({ error: dateError }, 422);
+  await c.env.DB.prepare("UPDATE milestones SET title=?,due_date=?,end_date=?,done=?,done_at=?,position=? WHERE id=?").bind(optionalString(body, "title") ?? current.title, dueDate, endDate, done, done ? new Date().toISOString() : null, "position" in body ? integer(body, "position") : current.position, id).run();
   await touchProject(c.env.DB, projectId);
   const events: AutomationEvent[] = [];
   if (!current.done && done) events.push({ type: "milestone_done" });

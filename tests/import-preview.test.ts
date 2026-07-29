@@ -9,7 +9,7 @@ describe("admin import preview", () => {
         { tasks: [{ title: "B" }, { title: "C" }] },
       ],
       reg_entries: [{ title: "rule" }],
-    }))).toEqual({ projects: 2, tasks: 3, progress_updates: 2, reg_entries: 1 });
+    }))).toEqual({ projects: 2, tasks: 3, milestones: 0, events: 0, progress_updates: 2, reg_entries: 1 });
   });
 
   it("rejects non-array import collections", () => {

@@ -2,12 +2,15 @@ import type { AuthUser } from "../types";
 import { createId } from "./db";
 import { isIsoDate, resolveImportUser } from "./importer";
 import { currentTaipeiQuarter, taipeiDate } from "./time";
+import { milestoneDateRangeError } from "./milestone-dates";
 
 type JsonObject = Record<string, unknown>;
 
 export interface ImportStats {
   projects: { created: number; updated: number };
   tasks: { created: number; skipped: number };
+  milestones: { created: number; skipped: number };
+  events: { created: number; skipped: number };
   progress_updates: { created: number; skipped: number };
   reg_entries: { created: number; skipped: number };
   warnings: string[];
@@ -73,7 +76,7 @@ export async function runAdminImport(db: D1Database, actor: AuthUser, payload: u
   if (!root) throw new ImportValidationError("JSON 根節點必須是物件");
   const projects = objects(root.projects, "projects");
   const regEntries = objects(root.reg_entries, "reg_entries");
-  const stats: ImportStats = { projects: { created: 0, updated: 0 }, tasks: { created: 0, skipped: 0 }, progress_updates: { created: 0, skipped: 0 }, reg_entries: { created: 0, skipped: 0 }, warnings: [] };
+  const stats: ImportStats = { projects: { created: 0, updated: 0 }, tasks: { created: 0, skipped: 0 }, milestones: { created: 0, skipped: 0 }, events: { created: 0, skipped: 0 }, progress_updates: { created: 0, skipped: 0 }, reg_entries: { created: 0, skipped: 0 }, warnings: [] };
   const [userRows, groupRows, templateRows] = await Promise.all([
     db.prepare("SELECT id,email FROM users WHERE is_active=1 AND approval_status='approved'").all<{ id: string; email: string }>(),
     db.prepare("SELECT id,name,type FROM groups").all<{ id: string; name: string; type: string }>(),
@@ -166,6 +169,27 @@ export async function runAdminImport(db: D1Database, actor: AuthUser, payload: u
       await db.prepare("INSERT INTO tasks (id,project_id,stage_id,title,description,assignee_id,due_date,position,done,done_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
         .bind(createId("task"), projectId, stageId, title, assignee.notePrefix, assignee.userId, dueDate, position ?? 0, done, done ? new Date().toISOString() : null).run();
       stats.tasks.created += 1;
+    }
+
+    for (const [field, kind] of [["milestones", "milestone"], ["events", "event"]] as const) {
+      for (const milestone of objects(item[field], `${externalKey}.${field}`)) {
+        const title = text(milestone.title);
+        const dueDate = date(milestone.due_date, `${externalKey}.${field}[].due_date`, kind === "milestone");
+        const endDate = date(milestone.end_date, `${externalKey}.${field}[].end_date`);
+        if (!title) throw new ImportValidationError(`${externalKey}.${field}[].title 必填`);
+        if (kind === "event" && !dueDate) throw new ImportValidationError(`${externalKey}.${field}[].due_date 必填`);
+        const rangeError = milestoneDateRangeError(dueDate, endDate);
+        if (rangeError) throw new ImportValidationError(`${externalKey}.${field}「${title}」：${rangeError}`);
+        if (await db.prepare("SELECT id FROM milestones WHERE project_id=? AND kind=? AND title=? AND due_date IS ?").bind(projectId, kind, title, dueDate).first()) {
+          stats[field].skipped += 1;
+          continue;
+        }
+        const position = await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM milestones WHERE project_id=?").bind(projectId).first<number>("value");
+        const done = kind === "event" ? 1 : (milestone.done === true || milestone.done === 1 ? 1 : 0);
+        await db.prepare("INSERT INTO milestones (id,project_id,title,due_date,end_date,done,done_at,position,kind) VALUES (?,?,?,?,?,?,?,?,?)")
+          .bind(createId(kind === "event" ? "evt" : "ms"), projectId, title, dueDate, endDate, done, done ? new Date().toISOString() : null, position ?? 0, kind).run();
+        stats[field].created += 1;
+      }
     }
 
     for (const update of objects(item.progress_updates, `${externalKey}.progress_updates`)) {
