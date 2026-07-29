@@ -110,3 +110,7 @@
 - 2026-07-28（v13.1）：專案甘特與全域時間軸共用 `src/gantt.ts` 的階段色、透明度與對比規則；階段色缺漏、無對應階段或不是合法 3／6 碼 hex 時回退主題 psi。hex 相對亮度 ≥ 0.72 時以同色 RGB 乘 0.62 加 1px 深階描邊；色條上的完成勾記依亮度選深／白字，psi fallback 則使用隨主題切換的 void 色。
 - 2026-07-28（v13.1）：圖例只收實際被任務引用的階段，以 stage id 去重後依 position、名稱、id 穩定排序；專案甘特直接使用 detail stages，全域 `/timeline` 只增量回傳任務的 stage name/color/position，不新增 endpoint、schema 或 migration。
 - 2026-07-28（v13.1）：圖例位於同一可水平捲動的圖表容器內、不使用 sticky，寬度限制為目前 viewport 扣除 4rem 且上限 900px，使窄螢幕與階段數多時自動換行。功能與驗收未留下待使用者裁決的 open decision。
+- 2026-07-29（v13.2）：`end_date` 只有在同筆 `due_date` 存在且不早於它時才接受；等於起始日是合法的一日區間。PATCH 傳 `null` 或空字串會正規化為 `NULL`、回到單點，避免把空字串當作期間。
+- 2026-07-29（v13.2）：批次匯入的 `milestones[]` 與 `events[]` 都使用既有 `due_date` 作為起始日並選填 `end_date`；progress-links 對外仍保留事件語意的 `event_date`，套用時再映射到 milestones API 的 `due_date`。AI 建議一律維持預設不勾。
+- 2026-07-29（v13.2）：期間端點延續單點菱形的視覺家族；里程碑期間用實心金色、歷程期間用半透明淡金虛線。完成斜紋與逾期紅端標圖例只在實際資料需要時出現，歷程事件不套完成斜紋。
+- 2026-07-29（v13.2）：remote 驗收只建立隨機 id 的 `is_demo=1` 專案與專用 demo user/session；正式資料 fingerprint 在建立前與清理後比對。功能、migration、deploy 與驗收沒有留下需資料擁有者裁決的 open decision。
