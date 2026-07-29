@@ -40,6 +40,8 @@
 | `quarter_goals` | 否 | object[] | 季度目標 |
 | `key_results` | 否 | object[] | KR |
 | `tasks` | 否 | object[] | 任務 |
+| `milestones` | 否 | object[] | 里程碑；可用 `end_date` 表示期間 |
+| `events` | 否 | object[] | 歷程事件；可用 `end_date` 表示期間 |
 | `progress_updates` | 否 | object[] | 進度紀錄 |
 | `clinical` | 否 | object | 臨床目標與收案 |
 | `licenses` | 否 | object[] | QA 效期紀錄 |
@@ -50,12 +52,16 @@
 - `quarter_goals[]`: `{ "quarter": "2026Q3", "objective": "本季目標" }`
 - `key_results[]`: `{ "title": "完成送件", "owner_email": "user@example.com", "quarter": "2026Q3", "status": "未開始|進行中|完成|暫停" }`
 - `tasks[]`: `{ "title": "工作", "stage": "進行中", "assignee_email": "user@example.com", "due_date": "2026-08-31", "done": false }`
+- `milestones[]`: `{ "title": "審查期", "due_date": "2026-09-01", "end_date": "2026-09-30", "done": false }`
+- `events[]`: `{ "title": "CDE 收案至審查回覆", "due_date": "2026-02-06", "end_date": "2026-03-23" }`
 - `progress_updates[]`: `{ "date": "2026-07-21", "content": "進度文字", "author_email": "user@example.com" }`
 - `clinical`: `{ "target_n": 50, "enrollments": [{ "record_date": "2026-07-21", "site": "台大", "count": 2, "note": "", "author_email": "user@example.com" }] }`
 - `licenses[]`: `{ "name": "GDP 許可", "subject": "公司", "authority": "TFDA", "license_no": "A-001", "issued_at": "2025-01-01", "expires_at": "2027-01-01", "status": "有效|換證中|已過期|已停用", "note": "" }`
 - `ccrs[]`: `{ "title": "包材變更", "target_type": "產品|文件|供應商|製程|設備|其他", "description": "變更說明", "reason": "原因", "classification": "重大|次要", "impact_assessment": "影響", "status": "申請|評估中|已核准|執行中|效期確認|已結案|駁回", "requested_at": "2026-07-21", "note": "" }`
 
-子項採「不存在才建立」：任務以同專案、階段、標題判重；KR 以同專案、季度、標題判重；進度紀錄以日期與最終 content 前 40 字判重；license 以專案、名稱、效期判重；CCR 以專案、標題、原因判重。
+`milestones[]` 的 `due_date` 可省略；`events[]` 的 `due_date` 必填並代表事件起始日。兩者的 `end_date` 都可省略；有值時必須是合法 `YYYY-MM-DD` 且不得早於 `due_date`。省略 `end_date` 會在甘特顯示單點節點，填入則顯示起訖橫條。
+
+子項採「不存在才建立」：任務以同專案、階段、標題判重；里程碑／歷程以同專案、類型、標題、起始日期判重；KR 以同專案、季度、標題判重；進度紀錄以日期與最終 content 前 40 字判重；license 以專案、名稱、效期判重；CCR 以專案、標題、原因判重。
 
 ## `reg_entries[]`
 
@@ -98,6 +104,8 @@
     "quarter_goals": [{ "quarter": "2026Q3", "objective": "完成稽核改善" }],
     "key_results": [{ "title": "完成 5 項 CAPA", "quarter": "2026Q3", "status": "進行中", "owner_email": "qa@example.com" }],
     "tasks": [{ "title": "盤點證照", "stage": "待辦", "assignee_email": "qa@example.com", "due_date": "2026-08-15", "done": false }],
+    "milestones": [{ "title": "年度審查", "due_date": "2026-09-01", "end_date": "2026-09-30" }],
+    "events": [{ "title": "前次稽核期間", "due_date": "2026-02-06", "end_date": "2026-03-23" }],
     "progress_updates": [{ "date": "2026-07-21", "content": "已完成資料盤點", "author_email": "qa@example.com" }],
     "licenses": [{ "name": "GDP 許可", "subject": "公司", "expires_at": "2027-01-31", "status": "有效" }]
   }],
