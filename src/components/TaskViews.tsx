@@ -101,7 +101,7 @@ function ProjectGantt({ data, openTask }: { data: ProjectDetail; openTask(task: 
     <section className="panel overflow-x-auto">
       <div style={{ width: labelWidth + chartWidth }}>
         <GanttLegend stages={data.stages} tasks={data.tasks} milestones={data.milestones} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} />
-        <svg className="chart-surface" width={labelWidth + chartWidth} height={height} role="img" aria-label={t("views.ganttAria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-row-height={GANTT_ROW_HEIGHT}>
+        <svg className="chart-surface" width={labelWidth + chartWidth} height={height} role="img" aria-label={t("views.ganttAria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-row-height={GANTT_ROW_HEIGHT} data-gantt-time-font-size="14" data-gantt-time-font-weight="600" data-gantt-label-font-size="14" data-gantt-label-width={labelWidth}>
           <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={CHART.starDim} /></marker></defs>
           <rect width="100%" height="100%" fill={CHART.nexus} />
           <text x="8" y="25" fontSize="13" fontWeight="700" fill={CHART.goldBright}>{t("views.projectTask")}</text>
