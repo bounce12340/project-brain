@@ -11,7 +11,7 @@ import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { HelpTip } from "./HelpTip";
 import { GanttLegend } from "./GanttLegend";
-import { GANTT_ROW_HEIGHT, GANTT_TASK_HEIGHT, getTaskGanttStyle } from "../gantt";
+import { GANTT_ROW_HEIGHT, GANTT_TASK_HEIGHT, ganttDonePatternId, getTaskGanttStyle, isGanttOverdue } from "../gantt";
 
 type View = "kanban" | "list" | "calendar" | "gantt";
 interface Suggestion { task_id: string; start_date: string; due_date: string; reason: string }
@@ -19,6 +19,10 @@ type GanttDatedItem =
   | { kind: "task"; task: Task; name: string; start: string; end: string }
   | { kind: "milestone"; item: Milestone; name: string; start: string; end: string }
   | { kind: "event"; item: Milestone; name: string; start: string; end: string };
+
+export function milestoneOccursOnDate(item: Pick<Milestone, "due_date" | "end_date">, day: string): boolean {
+  return !!item.due_date && item.due_date <= day && (item.end_date ?? item.due_date) >= day;
+}
 
 export function buildGanttModel({ tasks, milestones, projectStart, projectEnd, currentDate }: {
   tasks: Task[];
@@ -34,8 +38,8 @@ export function buildGanttModel({ tasks, milestones, projectStart, projectEnd, c
       return { kind: "task" as const, task, name: task.title, start: date, end: task.due_date ?? task.start_date as string };
     }),
     ...milestones.filter((item) => item.due_date).map((item): GanttDatedItem => item.kind === "event"
-      ? { kind: "event", item, name: item.title, start: item.due_date as string, end: item.due_date as string }
-      : { kind: "milestone", item, name: item.title, start: item.due_date as string, end: item.due_date as string }),
+      ? { kind: "event", item, name: item.title, start: item.due_date as string, end: item.end_date ?? item.due_date as string }
+      : { kind: "milestone", item, name: item.title, start: item.due_date as string, end: item.end_date ?? item.due_date as string }),
   ];
   const allDates = [projectStart, projectEnd, currentDate, ...dated.flatMap((item) => [item.start, item.end])].filter((value): value is string => !!value).sort();
   const start = allDates[0] ?? currentDate;
@@ -79,47 +83,65 @@ function TaskCalendar({ tasks, milestones, openTask }: { tasks: Task[]; mileston
   const t = useT();
   const now = new Date(); const [month, setMonth] = useState(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))); const [selected, setSelected] = useState(today()); const days = calendarGrid(month.getUTCFullYear(), month.getUTCMonth());
   const move = (delta: number) => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + delta, 1)));
+  const occursOn = milestoneOccursOnDate;
   const unscheduledCount = tasks.filter((task) => !task.start_date && !task.due_date).length;
-  const selectedTasks = tasks.filter((task) => task.due_date === selected); const selectedMilestones = milestones.filter((item) => item.kind === "milestone" && item.due_date === selected); const selectedEvents = milestones.filter((item) => item.kind === "event" && item.due_date === selected);
+  const selectedTasks = tasks.filter((task) => task.due_date === selected); const selectedMilestones = milestones.filter((item) => item.kind === "milestone" && milestoneOccursOnDate(item, selected)); const selectedEvents = milestones.filter((item) => item.kind === "event" && milestoneOccursOnDate(item, selected));
   const weekdays: TransKey[] = ["views.week.mon", "views.week.tue", "views.week.wed", "views.week.thu", "views.week.fri", "views.week.sat", "views.week.sun"];
-  return <div className="space-y-3"><div className="grid gap-5 lg:grid-cols-4"><section className="panel overflow-x-auto lg:col-span-3"><header className="mb-4 flex items-center justify-between"><button className="btn-secondary !px-3" onClick={() => move(-1)}>{t("views.previousMonth")}</button><h3 className="font-bold">{t("views.monthTitle", { year: month.getUTCFullYear(), month: month.getUTCMonth() + 1 })}</h3><button className="btn-secondary !px-3" onClick={() => move(1)}>{t("views.nextMonth")}</button></header><div className="grid min-w-[700px] grid-cols-7 text-center text-xs font-semibold text-star-dim">{weekdays.map((key) => <div className="py-2" key={key}>{t(key)}</div>)}</div><div className="grid min-w-[700px] grid-cols-7">{days.map((day) => { const dayTasks = tasks.filter((task) => task.due_date === day); const dayMilestones = milestones.filter((item) => item.kind === "milestone" && item.due_date === day); const dayEvents = milestones.filter((item) => item.kind === "event" && item.due_date === day); return <button className={`min-h-28 border border-nexus-line p-2 text-left align-top ${day.slice(0, 7) !== month.toISOString().slice(0, 7) ? "bg-nexus-raised text-star-dim/60" : ""} ${day === today() ? "ring-2 ring-inset ring-psi" : ""}`} key={day} onClick={() => setSelected(day)}><span className="text-xs">{Number(day.slice(-2))}</span>{dayTasks.slice(0, 2).map((task) => <span className="mt-1 block truncate border border-psi-deep bg-psi-deep/30 px-1.5 py-1 text-xs text-psi" key={task.id}>{task.title}</span>)}{dayMilestones.slice(0, 1).map((item) => <span className="mt-1 block truncate text-xs text-warn" key={item.id}>◆ {item.title}</span>)}{dayEvents.slice(0, 2).map((item) => <span className="mt-1 flex items-center gap-1 truncate text-xs text-star-dim" key={item.id}><span className="inline-block h-2 w-2 shrink-0 rounded-full bg-star-dim" />{item.title}</span>)}</button>; })}</div></section><aside className="panel"><h3 className="mb-3 font-bold">{selected}</h3>{selectedTasks.map((task) => <button className="mb-2 block w-full border border-psi-deep bg-psi-deep/30 p-3 text-left text-sm text-star hover:shadow-[0_0_12px_rgb(var(--color-psi)/.25)]" key={task.id} onClick={() => openTask(task)}>{task.title}</button>)}{selectedMilestones.map((item) => <div className="mb-2 rounded-lg border border-warn bg-void p-3 text-sm text-warn" key={item.id}>◆ {item.title}</div>)}{selectedEvents.map((item) => <div className="mb-2 flex items-center gap-2 border border-nexus-line bg-nexus-raised p-3 text-sm text-star-dim" key={item.id}><span className="inline-block h-2 w-2 shrink-0 rounded-full bg-star-dim" /><span>{t("views.history")} · {item.title}</span></div>)}{selectedTasks.length + selectedMilestones.length + selectedEvents.length === 0 && <p className="empty-inline text-sm text-star-dim">{t("views.noDayItems")}</p>}</aside></div><p className="text-sm text-star-dim">{t("views.unscheduledCount", { count: unscheduledCount })}</p></div>;
+  return <div className="space-y-3"><div className="grid gap-5 lg:grid-cols-4"><section className="panel overflow-x-auto lg:col-span-3"><header className="mb-4 flex items-center justify-between"><button className="btn-secondary !px-3" onClick={() => move(-1)}>{t("views.previousMonth")}</button><h3 className="font-bold">{t("views.monthTitle", { year: month.getUTCFullYear(), month: month.getUTCMonth() + 1 })}</h3><button className="btn-secondary !px-3" onClick={() => move(1)}>{t("views.nextMonth")}</button></header><div className="grid min-w-[700px] grid-cols-7 text-center text-xs font-semibold text-star-dim">{weekdays.map((key) => <div className="py-2" key={key}>{t(key)}</div>)}</div><div className="grid min-w-[700px] grid-cols-7">{days.map((day) => { const dayTasks = tasks.filter((task) => task.due_date === day); const dayMilestones = milestones.filter((item) => item.kind === "milestone" && occursOn(item, day)); const dayEvents = milestones.filter((item) => item.kind === "event" && occursOn(item, day)); return <button className={`min-h-28 border border-nexus-line p-2 text-left align-top ${day.slice(0, 7) !== month.toISOString().slice(0, 7) ? "bg-nexus-raised text-star-dim/60" : ""} ${day === today() ? "ring-2 ring-inset ring-psi" : ""}`} key={day} onClick={() => setSelected(day)}><span className="text-xs">{Number(day.slice(-2))}</span>{dayTasks.slice(0, 2).map((task) => <span className="mt-1 block truncate border border-psi-deep bg-psi-deep/30 px-1.5 py-1 text-xs text-psi" key={task.id}>{task.title}</span>)}{dayMilestones.slice(0, 1).map((item) => <span className="mt-1 block truncate text-xs text-warn" key={item.id}>◆ {item.title}</span>)}{dayEvents.slice(0, 2).map((item) => <span className="mt-1 flex items-center gap-1 truncate text-xs text-star-dim" key={item.id}><span className="inline-block h-2 w-2 shrink-0 rounded-full bg-star-dim" />{item.title}</span>)}</button>; })}</div></section><aside className="panel"><h3 className="mb-3 font-bold">{selected}</h3>{selectedTasks.map((task) => <button className="mb-2 block w-full border border-psi-deep bg-psi-deep/30 p-3 text-left text-sm text-star hover:shadow-[0_0_12px_rgb(var(--color-psi)/.25)]" key={task.id} onClick={() => openTask(task)}>{task.title}</button>)}{selectedMilestones.map((item) => <div className="mb-2 rounded-lg border border-warn bg-void p-3 text-sm text-warn" key={item.id}>◆ {item.title}</div>)}{selectedEvents.map((item) => <div className="mb-2 flex items-center gap-2 border border-nexus-line bg-nexus-raised p-3 text-sm text-star-dim" key={item.id}><span className="inline-block h-2 w-2 shrink-0 rounded-full bg-star-dim" /><span>{t("views.history")} · {item.title}</span></div>)}{selectedTasks.length + selectedMilestones.length + selectedEvents.length === 0 && <p className="empty-inline text-sm text-star-dim">{t("views.noDayItems")}</p>}</aside></div><p className="text-sm text-star-dim">{t("views.unscheduledCount", { count: unscheduledCount })}</p></div>;
 }
 
 function ProjectGantt({ data, openTask }: { data: ProjectDetail; openTask(task: Task): void }) {
   const t = useT();
   const currentDate = today();
   const { dated, unscheduled, start, end } = buildGanttModel({ tasks: data.tasks, milestones: data.milestones, projectStart: data.project.start_date, projectEnd: data.project.target_date, currentDate });
-  const dayWidth = 24; const chartWidth = Math.max(700, (daysBetween(start, end) + 2) * dayWidth); const rowHeight = GANTT_ROW_HEIGHT; const labelWidth = 190; const header = 70; const height = header + (dated.length + 1) * rowHeight;
+  const dayWidth = 24; const chartWidth = Math.max(700, (daysBetween(start, end) + 2) * dayWidth); const rowHeight = GANTT_ROW_HEIGHT; const labelWidth = 210; const header = 70; const height = header + (dated.length + 1) * rowHeight;
+  const weeks = Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7));
   const taskMap = new Map(dated.flatMap((item, index) => item.kind === "task" ? [[item.task.id, { task: item.task, index }] as const] : []));
   return <div className="space-y-4">
     <section className="panel overflow-x-auto">
       <div style={{ width: labelWidth + chartWidth }}>
-        <GanttLegend stages={data.stages} tasks={data.tasks} milestoneLabel={t("project.milestones")} eventLabel={t("project.historyEvents")} />
+        <GanttLegend stages={data.stages} tasks={data.tasks} milestones={data.milestones} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} />
         <svg className="chart-surface" width={labelWidth + chartWidth} height={height} role="img" aria-label={t("views.ganttAria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-row-height={GANTT_ROW_HEIGHT}>
           <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={CHART.starDim} /></marker></defs>
           <rect width="100%" height="100%" fill={CHART.nexus} />
           <text x="8" y="25" fontSize="13" fontWeight="700" fill={CHART.goldBright}>{t("views.projectTask")}</text>
-          {Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7)).map((date) => {
+          {weeks.map((date, index) => {
             const x = labelWidth + ganttPosition(date, start, end, chartWidth);
-            return <g key={date}><line x1={x} x2={x} y1={header - 18} y2={height} stroke={CHART.line} /><text x={x + 3} y={header - 25} fontSize="10" fill={CHART.starDim}>{date.slice(5)}</text></g>;
+            const monthTick = index === 0 || weeks[index - 1].slice(0, 7) !== date.slice(0, 7);
+            return <g key={date}><line x1={x} x2={x} y1={header - 18} y2={height} stroke={CHART.line} /><text className={monthTick ? "gantt-month-label" : "gantt-week-label"} data-gantt-time-label x={x + 3} y={header - 25} fontSize="14" fontWeight="600">{date.slice(5)}</text></g>;
           })}
-          {data.project.start_date && data.project.target_date && <g><text x="8" y={header + 24} fontSize="12" fontWeight="600" fill={CHART.star}>{t("views.projectRange")}</text><rect x={labelWidth + ganttPosition(data.project.start_date, start, end, chartWidth)} y={header + 10} width={Math.max(5, ganttPosition(data.project.target_date, start, end, chartWidth) - ganttPosition(data.project.start_date, start, end, chartWidth))} height="16" rx="8" fill={CHART.gold}><title>{data.project.name}：{data.project.start_date} ～ {data.project.target_date}</title></rect></g>}
+          {data.project.start_date && data.project.target_date && <g><text x="8" y={header + 24} fontSize="14" fontWeight="500" fill={CHART.star}>{t("views.projectRange")}</text><rect x={labelWidth + ganttPosition(data.project.start_date, start, end, chartWidth)} y={header + 10} width={Math.max(5, ganttPosition(data.project.target_date, start, end, chartWidth) - ganttPosition(data.project.start_date, start, end, chartWidth))} height="16" rx="8" fill={CHART.gold}><title>{data.project.name}：{data.project.start_date} ～ {data.project.target_date}</title></rect></g>}
           {dated.map((item, index) => {
             const y = header + (index + 1) * rowHeight + 15;
             const x1 = labelWidth + ganttPosition(item.start, start, end, chartWidth);
             const x2 = labelWidth + ganttPosition(item.end, start, end, chartWidth);
             const taskStyle = item.kind === "task" ? getTaskGanttStyle(item.task, data.stages) : null;
             const diamond = `${x1},${y - 4} ${x1 + 13},${y + 9} ${x1},${y + 22} ${x1 - 13},${y + 9}`;
+            const period = item.kind !== "task" && !!item.item.end_date;
+            const width = Math.max(8, x2 - x1);
+            const periodEnd = x1 + width;
+            const endpoint = (x: number) => `${x},${y + 3} ${x + 6},${y + 9} ${x},${y + 15} ${x - 6},${y + 9}`;
+            const patternId = item.kind === "task" ? ganttDonePatternId(item.task.id) : "";
+            const overdue = item.kind === "task"
+              ? isGanttOverdue(item.task, currentDate)
+              : item.kind === "milestone" && isGanttOverdue(item.item, currentDate);
+            const overdueX = item.kind === "task" && x1 === x2 ? x1 + 13 : period ? periodEnd : x2;
             return <g key={`${item.kind}-${item.kind === "task" ? item.task.id : item.item.id}`} className={item.kind === "task" ? "cursor-pointer" : ""} onClick={() => item.kind === "task" && openTask(item.task)}>
-              <text x="8" y={y + 13} fontSize="12" fill={CHART.star}>{item.name.slice(0, 24)}</text>
+              {item.kind === "task" && item.task.done && <defs><pattern id={patternId} data-gantt-done-pattern patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke={taskStyle?.hatchColor} strokeWidth="2" /></pattern></defs>}
+              <text x="8" y={y + 13} fontSize="14" fontWeight="500" fill={CHART.star}>{item.name.slice(0, 24)}</text>
               {item.kind === "event"
-                ? <polygon points={diamond} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{item.name}（{item.start}）</title></polygon>
+                ? period
+                  ? <><rect data-gantt-event-period x={x1} y={y} width={width} height={GANTT_TASK_HEIGHT} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} strokeWidth="2" strokeDasharray="6 4"><title>{t("views.history")}：{item.name}（{item.start} ～ {item.end}）</title></rect><polygon points={endpoint(x1)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /><polygon points={endpoint(periodEnd)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /></>
+                  : <polygon points={diamond} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{item.name}（{item.start}）</title></polygon>
                 : item.kind === "milestone"
-                  ? <polygon points={diamond} fill={CHART.gold}><title>{item.name}：{item.start}</title></polygon>
+                  ? period
+                    ? <><rect data-gantt-milestone-period x={x1} y={y} width={width} height={GANTT_TASK_HEIGHT} fill={CHART.gold} stroke={CHART.goldDim} strokeWidth="2"><title>{item.name}：{item.start} ～ {item.end}</title></rect><polygon points={endpoint(x1)} fill={CHART.gold} stroke={CHART.goldDim} /><polygon points={endpoint(periodEnd)} fill={CHART.gold} stroke={CHART.goldDim} /></>
+                    : <polygon points={diamond} fill={CHART.gold}><title>{item.name}：{item.start}</title></polygon>
                   : x1 === x2
-                    ? <polygon points={diamond} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start}</title></polygon>
-                    : <rect data-stage-colored-task x={x1} y={y} width={Math.max(8, x2 - x1)} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start} ～ {item.end}</title></rect>}
+                    ? <><polygon points={diamond} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start}</title></polygon>{item.task.done && <polygon points={diamond} fill={`url(#${patternId})`} />}</>
+                    : <><rect data-stage-colored-task x={x1} y={y} width={width} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={taskStyle?.fill} fillOpacity={taskStyle?.fillOpacity} stroke={taskStyle?.stroke} strokeWidth={taskStyle?.strokeWidth}><title>{item.name}：{item.start} ～ {item.end}</title></rect>{item.task.done && <rect x={x1} y={y} width={width} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={`url(#${patternId})`} />}</>}
               {item.kind === "task" && item.task.done && <text x={x1 + 3} y={y + 13} fill={taskStyle?.textColor} fontSize="11">✓</text>}
+              {overdue && <line data-gantt-overdue-end x1={overdueX} x2={overdueX} y1={y - 1} y2={y + GANTT_TASK_HEIGHT + 1} stroke={CHART.danger} strokeWidth="3" />}
             </g>;
           })}
           {dated.flatMap((item) => item.kind === "task" ? item.task.dependency_ids.map((dependsOn) => {

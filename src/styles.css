@@ -19,6 +19,9 @@
     --color-ok: 31 122 86; --color-warn: 154 106 20; --color-danger: 194 47 64;
   }
   *, ::before, ::after { border-color: rgb(var(--color-nexus-line)); }
+  .gantt-week-label { fill: rgb(var(--color-star-dim)); }
+  .gantt-month-label { fill: rgb(var(--color-gold-bright)); }
+  :root[data-theme="light"] .gantt-month-label { fill: rgb(var(--color-gold-dim)); }
   html { font-size: 17px; line-height: 1.65; }
   html[data-fontsize="large"] { font-size: 18.5px; }
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }

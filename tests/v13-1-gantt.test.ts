@@ -53,7 +53,7 @@ describe("SPEC-V13-1 stage-colored Gantt", () => {
 
   it("uses 0.85 opacity for active tasks and 0.45 for completed tasks", () => {
     expect(getTaskGanttStyle(task(), stages).fillOpacity).toBe(0.85);
-    expect(getTaskGanttStyle(task({ done: 1 }), stages).fillOpacity).toBe(0.45);
+    expect(getTaskGanttStyle(task({ done: 1 }), stages).fillOpacity).toBe(0.3);
   });
 
   it("includes only stages that have tasks and sorts the legend by stage position", () => {

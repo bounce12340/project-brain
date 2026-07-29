@@ -65,6 +65,10 @@ export const HELP_TOPICS = {
     zh: topic(concept("zh", "historyEvent").meaning, `例：${concept("zh", "historyEvent").example}`, "/help#concepts", zhLink, `里程碑是未來節點且${concept("zh", "milestone").progress}`),
     en: topic(concept("en", "historyEvent").meaning, `Example: ${concept("en", "historyEvent").example}`, "/help#concepts", enLink, `A milestone is a future checkpoint and is ${concept("en", "milestone").progress}`),
   },
+  milestonePeriods: {
+    zh: topic("里程碑或歷程事件持續的一段日期", "例：2026-02-06 至 2026-03-23；填結束日畫橫條，不填就是單點", "/help#feature-views", zhLink, "到期日／事件日是期間起點；結束日不得更早"),
+    en: topic("A date range covered by a milestone or history event", "Example: 2026-02-06 through 2026-03-23; set an end date for a bar, or leave it empty for a point", "/help#feature-views", enLink, "The due/event date is the start; the end date cannot be earlier"),
+  },
   projectDates: {
     zh: topic("整個專案允許安排工作的日期邊界", "例：起始 2026-07-01、目標 2027-03-31", "/help#quickstart-a", zhLink, "任務日期應落在此範圍；里程碑只需到期日"),
     en: topic("The date boundaries for scheduling project work", "Example: 2026-07-01 through 2027-03-31", "/help#quickstart-a", enLink, "Task dates should fit this range; milestones need only a due date"),
@@ -218,7 +222,7 @@ export const HELP_TOPICS = {
 export type TopicKey = keyof typeof HELP_TOPICS;
 
 export const HELP_TOPIC_PLACEMENTS = [
-  "projectGoal", "progressMode", "milestones", "historyEvents", "projectDates", "members", "visibility", "status", "objective", "keyResults", "aiRisk",
+  "projectGoal", "progressMode", "milestones", "historyEvents", "milestonePeriods", "projectDates", "members", "visibility", "status", "objective", "keyResults", "aiRisk",
   "stages", "taskCards", "taskDates", "dependencies", "viewKanban", "viewList", "viewCalendar", "viewGantt", "unscheduled",
   "progressUpdates", "aiQuickWrite", "aiLinkSuggestions",
   "clinicalEnrollment", "bdCaseStatus", "bdHistory", "bdFees", "qaLicenseExpiry", "ccr",

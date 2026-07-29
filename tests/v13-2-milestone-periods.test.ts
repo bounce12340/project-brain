@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { progressLinkDrafts } from "../src/progress-links";
-import type { Stage, Task } from "../src/types";
+import { buildGanttModel, milestoneOccursOnDate } from "../src/components/TaskViews";
+import { ganttLegendVisibility, getTaskGanttStyle, isGanttOverdue } from "../src/gantt";
+import { CHART } from "../src/chartTheme";
+import type { Milestone, Stage, Task } from "../src/types";
 import { milestoneDateRangeError } from "../worker/services/milestone-dates";
 import { buildProgressLinksPrompt, sanitizeProgressLinks } from "../worker/services/progress-links";
+import { taipeiDate } from "../worker/services/time";
 
 describe("SPEC-V13-2 milestone period schema and validation", () => {
   it("adds end_date in a new 0013 migration", () => {
@@ -28,6 +32,68 @@ describe("SPEC-V13-2 milestone period schema and validation", () => {
 
   it("allows end_date to be cleared", () => {
     expect(milestoneDateRangeError("2026-09-01", null)).toBeNull();
+  });
+});
+
+describe("SPEC-V13-2 period and task-state Gantt data", () => {
+  const period = {
+    id: "period",
+    title: "審查期",
+    due_date: "2026-09-01",
+    end_date: "2026-09-30",
+    done: 0,
+    position: 0,
+    kind: "milestone",
+  } as Milestone;
+  const point = { ...period, id: "point", title: "單點", end_date: null } as Milestone;
+
+  it("keeps period and point rendering branches distinct", () => {
+    const result = buildGanttModel({
+      tasks: [],
+      milestones: [period, point],
+      projectStart: null,
+      projectEnd: null,
+      currentDate: "2026-07-29",
+    });
+    expect(result.dated).toMatchObject([
+      { kind: "milestone", start: "2026-09-01", end: "2026-09-30" },
+      { kind: "milestone", start: "2026-09-01", end: "2026-09-01" },
+    ]);
+  });
+
+  it("marks every calendar day inside a milestone period", () => {
+    expect(milestoneOccursOnDate(period, "2026-09-01")).toBe(true);
+    expect(milestoneOccursOnDate(period, "2026-09-15")).toBe(true);
+    expect(milestoneOccursOnDate(period, "2026-09-30")).toBe(true);
+    expect(milestoneOccursOnDate(period, "2026-10-01")).toBe(false);
+  });
+
+  it("uses 30% task fill and a hatch flag for completed work", () => {
+    const style = getTaskGanttStyle({ stage_id: "missing", done: 1 }, []);
+    expect(style).toMatchObject({ fill: CHART.psi, fillOpacity: 0.3, donePattern: true });
+  });
+
+  it("uses the Taipei date boundary for overdue decisions", () => {
+    const currentDate = taipeiDate(new Date("2026-07-29T16:30:00Z"));
+    expect(currentDate).toBe("2026-07-30");
+    expect(isGanttOverdue({ done: 0, due_date: "2026-07-29" }, currentDate)).toBe(true);
+    expect(isGanttOverdue({ done: 0, due_date: "2026-07-30" }, currentDate)).toBe(false);
+    expect(isGanttOverdue({ done: 1, due_date: "2026-07-29" }, currentDate)).toBe(false);
+  });
+
+  it("generates legend branches only for content that exists", () => {
+    expect(ganttLegendVisibility(
+      [{ stage_id: "stage", done: 1, due_date: "2026-09-30" }],
+      [period],
+      "2026-07-29",
+    )).toEqual({
+      milestonePoint: false,
+      milestonePeriod: true,
+      eventPoint: false,
+      eventPeriod: false,
+      done: true,
+      overdue: false,
+    });
   });
 });
 

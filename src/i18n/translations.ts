@@ -1,4 +1,5 @@
 export const zh = {
+  "gantt.legend.milestonePeriod": "里程碑期間", "gantt.legend.eventPeriod": "歷程期間", "gantt.legend.done": "完成（斜紋）", "gantt.legend.overdue": "逾期（紅端標）",
   "help.fieldGuide": "欄位說明", "okr.objectiveLabel": "季度目標（Objective）", "okr.keyResultsLabel": "關鍵結果（Key Results）",
   "project.editUpdate": "編輯進度紀錄", "project.deleteUpdate": "刪除進度紀錄", "project.editedAt": "已於 {date} 編輯", "project.deleteUpdateConfirm": "刪除後無法復原，稽核紀錄仍會保留。確定刪除？", "project.autoDeleteHint": "此紀錄由完成項目自動產生；刪除紀錄不會回復任務或里程碑狀態。",
   "help.progressEditing": "編輯與刪除進度紀錄", "help.progressEditingText": "作者本人、專案 owner 或管理員可在進度紀錄右上角編輯或刪除。編輯會保留原本的進度快照並標示時間；刪除無法復原，但稽核紀錄仍保留。刪除自動產生的完成紀錄不會回復任務或里程碑狀態。",
@@ -50,6 +51,7 @@ export const zh = {
 export type TransKey = keyof typeof zh;
 
 export const en: Record<TransKey, string> = {
+  "gantt.legend.milestonePeriod": "Milestone period", "gantt.legend.eventPeriod": "History period", "gantt.legend.done": "Completed (hatched)", "gantt.legend.overdue": "Overdue (red end)",
   "help.fieldGuide": "Field help", "okr.objectiveLabel": "Quarterly Objective", "okr.keyResultsLabel": "Key Results",
   "project.editUpdate": "Edit progress update", "project.deleteUpdate": "Delete progress update", "project.editedAt": "Edited on {date}", "project.deleteUpdateConfirm": "This cannot be undone. The audit record will remain. Delete this update?", "project.autoDeleteHint": "This update was generated when an item was completed. Deleting it does not revert the task or milestone.",
   "help.progressEditing": "Edit and delete progress updates", "help.progressEditingText": "The author, project owner, or an administrator can edit or delete an update from its top-right controls. Editing preserves the original progress snapshot and shows the edit time. Deletion cannot be undone, but its audit record remains. Deleting an automatically generated completion update does not revert the task or milestone.",
