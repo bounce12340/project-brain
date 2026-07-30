@@ -15,8 +15,8 @@ export function daysBetween(start: string, end: string): number {
 
 export function startOfCalendarGrid(year: number, monthIndex: number): string {
   const first = new Date(Date.UTC(year, monthIndex, 1));
-  const mondayOffset = (first.getUTCDay() + 6) % 7;
-  return dateOnly(new Date(first.getTime() - mondayOffset * DAY));
+  const sundayOffset = first.getUTCDay();
+  return dateOnly(new Date(first.getTime() - sundayOffset * DAY));
 }
 
 export function calendarGrid(year: number, monthIndex: number): string[] {
