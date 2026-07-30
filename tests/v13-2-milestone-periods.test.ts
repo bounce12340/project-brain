@@ -87,13 +87,23 @@ describe("SPEC-V13-2 period and task-state Gantt data", () => {
       [period],
       "2026-07-29",
     )).toEqual({
-      milestonePoint: false,
-      milestonePeriod: true,
-      eventPoint: false,
-      eventPeriod: false,
+      milestone: true,
+      event: false,
       done: true,
       overdue: false,
     });
+  });
+
+  it("merges single-point and period entries into one legend entry per kind", () => {
+    const eventPoint = { ...point, id: "event-point", kind: "event" } as Milestone;
+    const eventPeriod = { ...period, id: "event-period", kind: "event" } as Milestone;
+    const visibility = (milestones: Milestone[]) => ganttLegendVisibility([], milestones, "2026-07-29");
+
+    expect(visibility([point])).toMatchObject({ milestone: true, event: false });
+    expect(visibility([period])).toMatchObject({ milestone: true, event: false });
+    expect(visibility([point, period])).toMatchObject({ milestone: true, event: false });
+    expect(visibility([eventPoint, eventPeriod])).toMatchObject({ milestone: false, event: true });
+    expect(visibility([])).toMatchObject({ milestone: false, event: false });
   });
 });
 

@@ -1,9 +1,11 @@
 import { CHART } from "./chartTheme";
+import { daysBetween } from "./utils/dates";
 
 export const GANTT_TASK_HEIGHT = 18;
 export const GANTT_ROW_HEIGHT = 52;
 export const GANTT_ACTIVE_OPACITY = 0.85;
 export const GANTT_DONE_OPACITY = 0.3;
+export const GANTT_YEAR_ROW_DAYS = 365;
 
 export interface GanttStage {
   id: string;
@@ -73,14 +75,23 @@ export function ganttDonePatternId(key: string): string {
 
 export function ganttLegendVisibility(tasks: GanttTask[], milestones: GanttLegendMilestone[], currentDate: string) {
   return {
-    milestonePoint: milestones.some((item) => item.kind === "milestone" && !item.end_date),
-    milestonePeriod: milestones.some((item) => item.kind === "milestone" && !!item.end_date),
-    eventPoint: milestones.some((item) => item.kind === "event" && !item.end_date),
-    eventPeriod: milestones.some((item) => item.kind === "event" && !!item.end_date),
+    milestone: milestones.some((item) => item.kind === "milestone"),
+    event: milestones.some((item) => item.kind === "event"),
     done: tasks.some((task) => !!task.done),
     overdue: tasks.some((task) => isGanttOverdue(task, currentDate))
       || milestones.some((item) => item.kind === "milestone" && isGanttOverdue(item, currentDate)),
   };
+}
+
+export function ganttYearMarkers(weeks: string[], start: string, end: string): Array<{ year: string; date: string }> {
+  if (daysBetween(start, end) <= GANTT_YEAR_ROW_DAYS) return [];
+  const seen = new Set<string>();
+  return weeks.flatMap((date) => {
+    const year = date.slice(0, 4);
+    if (seen.has(year)) return [];
+    seen.add(year);
+    return [{ year, date }];
+  });
 }
 
 export function buildGanttLegend<T extends Pick<GanttTask, "stage_id">>(stages: GanttStage[], tasks: T[]): GanttStage[] {
