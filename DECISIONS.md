@@ -114,3 +114,4 @@
 - 2026-07-29（v13.2）：批次匯入的 `milestones[]` 與 `events[]` 都使用既有 `due_date` 作為起始日並選填 `end_date`；progress-links 對外仍保留事件語意的 `event_date`，套用時再映射到 milestones API 的 `due_date`。AI 建議一律維持預設不勾。
 - 2026-07-29（v13.2）：期間端點延續單點菱形的視覺家族；里程碑期間用實心金色、歷程期間用半透明淡金虛線。完成斜紋與逾期紅端標圖例只在實際資料需要時出現，歷程事件不套完成斜紋。
 - 2026-07-29（v13.2）：remote 驗收只建立隨機 id 的 `is_demo=1` 專案與專用 demo user/session；正式資料 fingerprint 在建立前與清理後比對。功能、migration、deploy 與驗收沒有留下需資料擁有者裁決的 open decision。
+- 2026-07-30（日曆週起始）：專案任務日曆的月曆格線改以週日為每週第一天；`startOfCalendarGrid` 直接取 `getUTCDay()` 作為回推天數，`TaskCalendar` 的星期標頭順序同步調整為日～六，`views.week.*` 翻譯鍵沿用不變。仍維持 42 格六週格線；月初為週六時（回推 6 天＋31 日）最多佔 37 格，格線足以涵蓋整月。AI 週報與 `/reports` 期間仍為台北時間週一至週日，不隨此顯示調整變動，避免改變既有週期比較基準。
