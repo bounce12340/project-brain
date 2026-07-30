@@ -5,7 +5,7 @@ import { api, formatDate, patchBody, today } from "../api";
 import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import type { BdCase, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
-import { groupProjectsForSwitch, nextProjectId } from "../project-switcher";
+import { groupProjectsForSwitch, nextProjectId, type SwitchableProject } from "../project-switcher";
 import { TaskWorkspace } from "../components/TaskViews";
 import { ProjectFiles } from "../components/ProjectFiles";
 import { AutomationPanel } from "../components/AutomationPanel";
@@ -32,10 +32,10 @@ const bdFeeCategories: Array<[string, TransKey]> = [["規費", "bd.official"], [
 export function ProjectDetailPage() {
   const t = useT();
   const { id = "" } = useParams(); const navigate = useNavigate(); const [params] = useSearchParams(); const [data, setData] = useState<ProjectDetail | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [tab, setTab] = useState("overview"); const [error, setError] = useState("");
-  const [siblings, setSiblings] = useState<Project[]>([]);
+  const [siblings, setSiblings] = useState<SwitchableProject[]>([]);
   const load = () => api<ProjectDetail>(`/projects/${id}`).then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : t("error.load")));
   useEffect(() => { setData(null); setError(""); void load(); }, [id]); useEffect(() => { void api<Metadata>("/metadata").then(setMeta); }, []);
-  useEffect(() => { void api<{ projects: Project[] }>("/projects").then((result) => setSiblings(result.projects)).catch(() => setSiblings([])); }, []);
+  useEffect(() => { void api<{ projects: SwitchableProject[] }>("/projects?summary=1").then((result) => setSiblings(result.projects)).catch(() => setSiblings([])); }, []);
   const groupType = data?.project.group_type;
   useEffect(() => { if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview"); }, [groupType]);
   useEffect(() => {
@@ -60,7 +60,7 @@ export function ProjectDetailPage() {
   </>;
 }
 
-function ProjectSwitcher({ projects, current }: { projects: Project[]; current: Project }) {
+function ProjectSwitcher({ projects, current }: { projects: SwitchableProject[]; current: Project }) {
   const t = useT();
   const navigate = useNavigate();
   if (projects.length < 2) return null;

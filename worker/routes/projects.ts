@@ -47,15 +47,21 @@ export function accessFrom(row: ProjectRow): ProjectAccess {
   return { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] };
 }
 
+const PROJECT_ROW_SELECT = `
+  SELECT p.*, u.name AS owner_name, g.name AS group_name, g.type AS group_type,
+         GROUP_CONCAT(pm.user_id) AS member_ids_csv
+  FROM projects p JOIN users u ON u.id = p.owner_id JOIN groups g ON g.id = p.group_id
+  LEFT JOIN project_members pm ON pm.project_id = p.id
+`;
+
 export async function projectRows(db: D1Database): Promise<ProjectRow[]> {
-  const result = await db.prepare(`
-    SELECT p.*, u.name AS owner_name, g.name AS group_name, g.type AS group_type,
-           GROUP_CONCAT(pm.user_id) AS member_ids_csv
-    FROM projects p JOIN users u ON u.id = p.owner_id JOIN groups g ON g.id = p.group_id
-    LEFT JOIN project_members pm ON pm.project_id = p.id
-    GROUP BY p.id ORDER BY p.updated_at DESC
-  `).all<ProjectRow>();
+  const result = await db.prepare(`${PROJECT_ROW_SELECT} GROUP BY p.id ORDER BY p.updated_at DESC`).all<ProjectRow>();
   return result.results;
+}
+
+/** 單筆查詢；避免為了取一個專案而撈出全部專案再於 JS 端 find()。 */
+export async function projectRow(db: D1Database, id: string): Promise<ProjectRow | null> {
+  return await db.prepare(`${PROJECT_ROW_SELECT} WHERE p.id = ? GROUP BY p.id`).bind(id).first<ProjectRow>();
 }
 
 export const projectsRoutes = new Hono<AppContext>();
@@ -71,6 +77,11 @@ projectsRoutes.get("/", async (c) => {
     if (status && row.status !== status) return false;
     return !keyword || row.name.toLowerCase().includes(keyword) || row.description.toLowerCase().includes(keyword);
   });
+  // summary=1 只回切換器需要的欄位；完整列含 description／goal_summary／risk_summary／
+  // risk_suggestions（JSON blob），對只做下拉選單的呼叫端是純浪費。
+  if (c.req.query("summary")) {
+    return c.json({ projects: rows.map(({ id, name, group_id, group_name, status }) => ({ id, name, group_id, group_name, status })) });
+  }
   return c.json({ projects: rows.map(({ member_ids_csv, ...row }) => ({ ...row, member_ids: member_ids_csv?.split(",").filter(Boolean) ?? [] })) });
 });
 
@@ -108,7 +119,7 @@ projectsRoutes.post("/", async (c) => {
 
 projectsRoutes.get("/:id", async (c) => {
   const user = c.get("user");
-  const row = (await projectRows(c.env.DB)).find((item) => item.id === c.req.param("id"));
+  const row = await projectRow(c.env.DB, c.req.param("id"));
   if (!row) return c.json({ error: "找不到專案" }, 404);
   const access = accessFrom(row);
   if (!canViewProject(user, access)) return c.json({ error: "沒有檢視權限" }, 403);
