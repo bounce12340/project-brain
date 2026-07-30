@@ -29,10 +29,22 @@ export function GanttLegend({ stages, tasks, milestones, milestoneLabel, milesto
         {stage.name}
       </span>;
     })}
-    {visible.milestonePoint && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="h-3 w-3 rotate-45" style={{ backgroundColor: CHART.gold }} />{milestoneLabel}</span>}
-    {visible.milestonePeriod && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="h-3.5 w-7 border" style={{ backgroundColor: CHART.gold, borderColor: CHART.goldDim }} />{milestonePeriodLabel}</span>}
-    {visible.eventPoint && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="h-3 w-3 rotate-45 border-2" style={{ borderColor: CHART.goldDim }} />{eventLabel}</span>}
-    {visible.eventPeriod && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="h-3.5 w-7 border border-dashed" style={{ backgroundColor: CHART.goldDim, opacity: 0.5, borderColor: CHART.goldDim }} />{eventPeriodLabel}</span>}
+    {visible.milestone && <span className="inline-flex items-center gap-2 whitespace-nowrap" title={`${milestoneLabel}／${milestonePeriodLabel}`} data-gantt-legend-milestone>
+      <span className="relative inline-flex h-3.5 w-8 shrink-0 items-center">
+        <span className="absolute inset-x-1.5 h-2" style={{ backgroundColor: CHART.gold, border: `1px solid ${CHART.goldDim}` }} />
+        <span className="absolute left-0 h-2.5 w-2.5 rotate-45" style={{ backgroundColor: CHART.gold }} />
+        <span className="absolute right-0 h-2.5 w-2.5 rotate-45" style={{ backgroundColor: CHART.gold }} />
+      </span>
+      {milestoneLabel}
+    </span>}
+    {visible.event && <span className="inline-flex items-center gap-2 whitespace-nowrap" title={`${eventLabel}／${eventPeriodLabel}`} data-gantt-legend-event>
+      <span className="relative inline-flex h-3.5 w-8 shrink-0 items-center">
+        <span className="absolute inset-x-1.5 h-2 border border-dashed" style={{ backgroundColor: CHART.goldDim, opacity: 0.5, borderColor: CHART.goldDim }} />
+        <span className="absolute left-0 h-2.5 w-2.5 rotate-45 border-2" style={{ borderColor: CHART.goldDim }} />
+        <span className="absolute right-0 h-2.5 w-2.5 rotate-45 border-2" style={{ borderColor: CHART.goldDim }} />
+      </span>
+      {eventLabel}
+    </span>}
     {visible.done && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="h-3.5 w-7 border" style={{ opacity: GANTT_DONE_OPACITY, background: `repeating-linear-gradient(45deg, ${CHART.starDim} 0 2px, transparent 2px 6px)` }} />{doneLabel}</span>}
     {visible.overdue && <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="relative h-3.5 w-7 border border-nexus-line"><span className="absolute inset-y-0 right-0 w-[3px]" style={{ backgroundColor: CHART.danger }} /></span>{overdueLabel}</span>}
   </div>;

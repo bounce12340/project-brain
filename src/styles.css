@@ -22,6 +22,9 @@
   .gantt-week-label { fill: rgb(var(--color-star-dim)); }
   .gantt-month-label { fill: rgb(var(--color-gold-bright)); }
   :root[data-theme="light"] .gantt-month-label { fill: rgb(var(--color-gold-dim)); }
+  .gantt-year-label { fill: rgb(var(--color-gold-bright)); }
+  :root[data-theme="light"] .gantt-year-label { fill: rgb(var(--color-gold-dim)); }
+  .gantt-sticky-labels { position: sticky; left: 0; z-index: 1; flex: 0 0 auto; }
   html { font-size: 17px; line-height: 1.65; }
   html[data-fontsize="large"] { font-size: 18.5px; }
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }

@@ -7,7 +7,7 @@ import { addDays, daysBetween, ganttPosition } from "../utils/dates";
 import { useT } from "../i18n/LangContext";
 import { HelpTip } from "../components/HelpTip";
 import { GanttLegend } from "../components/GanttLegend";
-import { GANTT_TASK_HEIGHT, ganttDonePatternId, getTaskGanttStyle, isGanttOverdue } from "../gantt";
+import { GANTT_TASK_HEIGHT, ganttDonePatternId, ganttYearMarkers, getTaskGanttStyle, isGanttOverdue } from "../gantt";
 
 interface TimelineTask { id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }
 interface TimelineEvent { id: string; title: string; event_date: string; end_date: string | null; kind: "event"; done: number }
@@ -59,6 +59,9 @@ export function TimelinePage() {
   }, [visibleGroups, expanded]);
   const height = Math.max(170, (rows.at(-1)?.y ?? HEADER_HEIGHT) + (["task", "event"].includes(rows.at(-1)?.kind ?? "") ? TASK_HEIGHT : PROJECT_HEIGHT));
   const weeks = useMemo(() => Array.from({ length: Math.ceil((daysBetween(start, end) + 1) / 7) + 1 }, (_, index) => addDays(start, index * 7)), [start, end]);
+  const years = ganttYearMarkers(weeks, start, end);
+  const timeShift = years.length ? 14 : 0;
+  const pos = (date: string) => ganttPosition(date, start, end, width);
   const toggle = (projectId: string) => {
     const next = expanded.includes(projectId) ? expanded.filter((id) => id !== projectId) : [...expanded, projectId];
     setExpanded(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -69,27 +72,43 @@ export function TimelinePage() {
   return <>
     <PageHeader title={<span data-tour="timeline-lanes">{t("timeline.title")}<HelpTip topic="timelineLanes" /></span>} description={t("timeline.description")} />
     <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
-    <section className="panel overflow-x-auto"><div style={{ width: label + width }}><GanttLegend stages={legendStages} tasks={legendTasks} milestones={projects.flatMap((project) => project.events).map((event) => ({ kind: event.kind, due_date: event.event_date, end_date: event.end_date, done: event.done }))} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} /><svg className="chart-surface" width={label + width} height={height} role="img" aria-label={t("timeline.aria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-time-font-size="14" data-gantt-time-font-weight="600" data-gantt-label-font-size="14" data-gantt-label-width={label}><rect width="100%" height="100%" fill={CHART.nexus} />
-      {weeks.map((date, index) => { const x = label + ganttPosition(date, start, end, width); const monthTick = index === 0 || weeks[index - 1].slice(0, 7) !== date.slice(0, 7); return <g key={date}><line x1={x} x2={x} y1="30" y2={height} stroke={CHART.line} /><text className={monthTick ? "gantt-month-label" : "gantt-week-label"} data-gantt-time-label x={x + 3} y="20" fontSize="14" fontWeight="600">{date.slice(5)}</text></g>; })}
-      {rows.map((row) => {
-        if (row.kind === "group") return <g key={`group-${row.group.id}`}><rect x="0" y={row.y} width={label + width} height={GROUP_HEIGHT} fill={CHART.raised} opacity="0.92" /><text x="12" y={row.y + 27} fontSize="15" fontWeight="700" fill={CHART.goldBright}>{row.group.name}</text></g>;
-        if (row.kind === "project") {
-          const projectStart = row.project.start_date ?? start; const projectEnd = row.project.target_date ?? projectStart;
-          const x = label + ganttPosition(projectStart, start, end, width); const barWidth = Math.max(8, ganttPosition(projectEnd, start, end, width) - ganttPosition(projectStart, start, end, width)); const y = row.y + 16;
-          return <g key={`project-${row.project.id}`}><foreignObject x="4" y={row.y + 4} width={label - 12} height={PROJECT_HEIGHT - 4}><div className="flex items-start gap-2"><button className="no-print mt-0.5 text-sm text-psi" aria-label={t("timeline.expandTasks", { action: t(expanded.includes(row.project.id) ? "common.collapse" : "common.expand"), project: row.project.name })} onClick={() => toggle(row.project.id)}>{expanded.includes(row.project.id) ? "▼" : "▶"}</button><Link to={`/projects/${row.project.id}`} className="block min-w-0 text-sm font-semibold text-star hover:text-psi">{row.project.name}<span className="mt-0.5 block text-xs font-normal text-star-dim">{t("timeline.taskCount", { risk: riskLabel(row.project.risk_level, t), count: row.project.tasks.length })}</span></Link></div></foreignObject><Link to={`/projects/${row.project.id}`}><rect x={x} y={y} width={barWidth} height="16" rx="8" fill={CHART.raised}><title>{row.project.name}：{projectStart} ～ {projectEnd}</title></rect><rect x={x} y={y} width={barWidth * row.project.progress / 100} height="16" rx="8" fill={row.project.progress >= 100 ? CHART.gold : CHART.psi} style={{ filter: `drop-shadow(0 0 6px ${CHART.psiGlow})` }} /><text x={x + 6} y={y + 12} fill={CHART.star} fontSize="11">{row.project.progress}%</text></Link></g>;
-        }
-        if (row.kind === "event") {
-          const x = label + ganttPosition(row.event.event_date, start, end, width); const y = row.y + 10; const x2 = label + ganttPosition(row.event.end_date ?? row.event.event_date, start, end, width); const period = !!row.event.end_date; const barWidth = Math.max(8, x2 - x); const periodEnd = x + barWidth; const endpoint = (point: number) => `${point},${y + 4} ${point + 6},${y + 10} ${point},${y + 16} ${point - 6},${y + 10}`;
-          return <g key={`event-${row.event.id}`}><text x="38" y={row.y + 25} fontSize="14" fontWeight="500" fill={CHART.starDim}>{t("views.history")} · {row.event.title.slice(0, 24)}</text>{period ? <><rect data-gantt-event-period x={x} y={y + 1} width={barWidth} height={GANTT_TASK_HEIGHT} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} strokeWidth="2" strokeDasharray="6 4"><title>{t("views.history")}：{row.event.title}（{row.event.event_date} ～ {row.event.end_date}）</title></rect><polygon points={endpoint(x)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /><polygon points={endpoint(periodEnd)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /></> : <polygon points={`${x},${y} ${x + 10},${y + 10} ${x},${y + 20} ${x - 10},${y + 10}`} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{row.event.title}（{row.event.event_date}）</title></polygon>}</g>;
-        }
-        const taskStart = row.task.start_date ?? row.task.created_at.slice(0, 10); const taskEnd = row.task.due_date ?? taskStart;
-        const x = label + ganttPosition(taskStart, start, end, width); const barWidth = Math.max(8, ganttPosition(taskEnd, start, end, width) - ganttPosition(taskStart, start, end, width)); const y = row.y + 11;
-        const taskStyle = getTaskGanttStyle(row.task, legendStages);
-        const patternId = ganttDonePatternId(`timeline-${row.task.id}`);
-        return <g key={`task-${row.task.id}`}>{row.task.done && <defs><pattern id={patternId} data-gantt-done-pattern patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke={taskStyle.hatchColor} strokeWidth="2" /></pattern></defs>}<text x="38" y={row.y + 25} fontSize="14" fontWeight="500" fill={CHART.starDim}>{row.task.done ? "✓ " : ""}{row.task.title.slice(0, 28)}</text><rect data-stage-colored-task x={x} y={y} width={barWidth} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={taskStyle.fill} fillOpacity={taskStyle.fillOpacity} stroke={taskStyle.stroke} strokeWidth={taskStyle.strokeWidth}><title>{row.task.title}｜{taskStart} ～ {taskEnd}｜{t("timeline.assignee", { name: row.task.assignee_name || t("common.notAssigned") })}</title></rect>{row.task.done && <><rect x={x} y={y} width={barWidth} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={`url(#${patternId})`} /><text x={x + 3} y={y + 13} fill={taskStyle.textColor} fontSize="11">✓</text></>}{isGanttOverdue(row.task, currentDate) && <line data-gantt-overdue-end x1={x + barWidth} x2={x + barWidth} y1={y - 1} y2={y + GANTT_TASK_HEIGHT + 1} stroke={CHART.danger} strokeWidth="3" />}</g>;
-      })}
-      <line x1={label + ganttPosition(currentDate, start, end, width)} x2={label + ganttPosition(currentDate, start, end, width)} y1="30" y2={height} stroke={CHART.psi} strokeWidth="3" />
-    </svg></div></section>
+    <section className="panel overflow-x-auto !px-0"><div style={{ width: label + width }}>
+      <div className="pl-5"><GanttLegend stages={legendStages} tasks={legendTasks} milestones={projects.flatMap((project) => project.events).map((event) => ({ kind: event.kind, due_date: event.event_date, end_date: event.end_date, done: event.done }))} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} /></div>
+      <div className="flex">
+        <svg className="chart-surface gantt-sticky-labels" width={label} height={height} data-gantt-label-font-size="14" data-gantt-label-width={label}>
+          <rect width="100%" height="100%" fill={CHART.nexus} />
+          {rows.map((row) => {
+            if (row.kind === "group") return <g key={`group-label-${row.group.id}`}><rect x="0" y={row.y} width={label} height={GROUP_HEIGHT} fill={CHART.raised} opacity="0.92" /><text x="12" y={row.y + 27} fontSize="15" fontWeight="700" fill={CHART.goldBright}>{row.group.name}</text></g>;
+            if (row.kind === "project") return <foreignObject key={`project-label-${row.project.id}`} x="4" y={row.y + 4} width={label - 12} height={PROJECT_HEIGHT - 4}><div className="flex items-start gap-2"><button className="no-print mt-0.5 text-sm text-psi" aria-label={t("timeline.expandTasks", { action: t(expanded.includes(row.project.id) ? "common.collapse" : "common.expand"), project: row.project.name })} onClick={() => toggle(row.project.id)}>{expanded.includes(row.project.id) ? "▼" : "▶"}</button><Link to={`/projects/${row.project.id}`} className="block min-w-0 text-sm font-semibold text-star hover:text-psi">{row.project.name}<span className="mt-0.5 block text-xs font-normal text-star-dim">{t("timeline.taskCount", { risk: riskLabel(row.project.risk_level, t), count: row.project.tasks.length })}</span></Link></div></foreignObject>;
+            if (row.kind === "event") return <text key={`event-label-${row.event.id}`} x="38" y={row.y + 25} fontSize="14" fontWeight="500" fill={CHART.starDim}>{t("views.history")} · {row.event.title.slice(0, 24)}</text>;
+            return <text key={`task-label-${row.task.id}`} x="38" y={row.y + 25} fontSize="14" fontWeight="500" fill={CHART.starDim}>{row.task.done ? "✓ " : ""}{row.task.title.slice(0, 28)}</text>;
+          })}
+          <line x1={label - 0.5} x2={label - 0.5} y1="0" y2={height} stroke={CHART.line} />
+        </svg>
+        <svg className="chart-surface shrink-0" width={width} height={height} role="img" aria-label={t("timeline.aria")} data-gantt-task-height={GANTT_TASK_HEIGHT} data-gantt-time-font-size="14" data-gantt-time-font-weight="600"><rect width="100%" height="100%" fill={CHART.nexus} />
+          {years.map((marker) => <text className="gantt-year-label" data-gantt-year-label key={marker.year} x={pos(marker.date) + 3} y="16" fontSize="13" fontWeight="700">{marker.year}</text>)}
+          {weeks.map((date, index) => { const x = pos(date); const monthTick = index === 0 || weeks[index - 1].slice(0, 7) !== date.slice(0, 7); return <g key={date}><line x1={x} x2={x} y1={30 + timeShift} y2={height} stroke={CHART.line} /><text className={monthTick ? "gantt-month-label" : "gantt-week-label"} data-gantt-time-label x={x + 3} y={20 + timeShift} fontSize="14" fontWeight="600">{date.slice(5)}</text></g>; })}
+          {rows.map((row) => {
+            if (row.kind === "group") return <rect key={`group-${row.group.id}`} x="0" y={row.y} width={width} height={GROUP_HEIGHT} fill={CHART.raised} opacity="0.92" />;
+            if (row.kind === "project") {
+              const projectStart = row.project.start_date ?? start; const projectEnd = row.project.target_date ?? projectStart;
+              const x = pos(projectStart); const barWidth = Math.max(8, pos(projectEnd) - pos(projectStart)); const y = row.y + 16;
+              return <Link key={`project-${row.project.id}`} to={`/projects/${row.project.id}`}><rect x={x} y={y} width={barWidth} height="16" rx="8" fill={CHART.raised}><title>{row.project.name}：{projectStart} ～ {projectEnd}</title></rect><rect x={x} y={y} width={barWidth * row.project.progress / 100} height="16" rx="8" fill={row.project.progress >= 100 ? CHART.gold : CHART.psi} style={{ filter: `drop-shadow(0 0 6px ${CHART.psiGlow})` }} /><text x={x + 6} y={y + 12} fill={CHART.star} fontSize="11">{row.project.progress}%</text></Link>;
+            }
+            if (row.kind === "event") {
+              const x = pos(row.event.event_date); const y = row.y + 10; const x2 = pos(row.event.end_date ?? row.event.event_date); const period = !!row.event.end_date; const barWidth = Math.max(8, x2 - x); const periodEnd = x + barWidth; const endpoint = (point: number) => `${point},${y + 4} ${point + 6},${y + 10} ${point},${y + 16} ${point - 6},${y + 10}`;
+              return <g key={`event-${row.event.id}`}>{period ? <><rect data-gantt-event-period x={x} y={y + 1} width={barWidth} height={GANTT_TASK_HEIGHT} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} strokeWidth="2" strokeDasharray="6 4"><title>{t("views.history")}：{row.event.title}（{row.event.event_date} ～ {row.event.end_date}）</title></rect><polygon points={endpoint(x)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /><polygon points={endpoint(periodEnd)} fill={CHART.goldDim} fillOpacity="0.5" stroke={CHART.goldDim} /></> : <polygon points={`${x},${y} ${x + 10},${y + 10} ${x},${y + 20} ${x - 10},${y + 10}`} fill="none" stroke={CHART.goldDim} strokeWidth="2"><title>{t("views.history")}：{row.event.title}（{row.event.event_date}）</title></polygon>}</g>;
+            }
+            const taskStart = row.task.start_date ?? row.task.created_at.slice(0, 10); const taskEnd = row.task.due_date ?? taskStart;
+            const x = pos(taskStart); const barWidth = Math.max(8, pos(taskEnd) - pos(taskStart)); const y = row.y + 11;
+            const taskStyle = getTaskGanttStyle(row.task, legendStages);
+            const patternId = ganttDonePatternId(`timeline-${row.task.id}`);
+            return <g key={`task-${row.task.id}`}>{row.task.done && <defs><pattern id={patternId} data-gantt-done-pattern patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke={taskStyle.hatchColor} strokeWidth="2" /></pattern></defs>}<rect data-stage-colored-task x={x} y={y} width={barWidth} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={taskStyle.fill} fillOpacity={taskStyle.fillOpacity} stroke={taskStyle.stroke} strokeWidth={taskStyle.strokeWidth}><title>{row.task.title}｜{taskStart} ～ {taskEnd}｜{t("timeline.assignee", { name: row.task.assignee_name || t("common.notAssigned") })}</title></rect>{row.task.done && <><rect x={x} y={y} width={barWidth} height={GANTT_TASK_HEIGHT} rx={GANTT_TASK_HEIGHT / 2} fill={`url(#${patternId})`} /><text x={x + 3} y={y + 13} fill={taskStyle.textColor} fontSize="11">✓</text></>}{isGanttOverdue(row.task, currentDate) && <line data-gantt-overdue-end x1={x + barWidth} x2={x + barWidth} y1={y - 1} y2={y + GANTT_TASK_HEIGHT + 1} stroke={CHART.danger} strokeWidth="3" />}</g>;
+          })}
+          <line x1={pos(currentDate)} x2={pos(currentDate)} y1={30 + timeShift} y2={height} stroke={CHART.psi} strokeWidth="3" />
+        </svg>
+      </div>
+    </div></section>
     <div className="mt-4 flex gap-3 text-sm"><RiskBadge level="low" /><RiskBadge level="medium" /><RiskBadge level="high" /></div>
   </>;
 }
