@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { en, zh } from "../src/i18n/translations";
 
 const login = readFileSync(new URL("../src/pages/LoginPage.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 
 describe("app credit line", () => {
   it("names the author in both languages", () => {
@@ -10,8 +11,21 @@ describe("app credit line", () => {
     expect(en["app.credit"]).toContain("Tsai Chung-Hsu");
   });
 
-  it("renders bold at 15px, as specified", () => {
-    expect(login).toContain('className="mt-3 text-[15px] font-bold text-star"');
+  it("renders bold, sized from a relative unit so it follows the font-size preference", () => {
+    expect(login).toContain('className="app-credit mt-3 font-bold text-star"');
+    expect(login).not.toContain("text-[15px]");
+    expect(styles).toContain(".app-credit { font-size: calc(15rem / 17); }");
+  });
+
+  it("resolves to the requested 15px at the default root size", () => {
+    const root = /html \{ font-size: (\d+(?:\.\d+)?)px;/.exec(styles);
+    const large = /html\[data-fontsize="large"\] \{ font-size: (\d+(?:\.\d+)?)px;/.exec(styles);
+
+    expect(root).not.toBeNull();
+    expect(Number(root?.[1])).toBe(17);
+    expect(15 / 17 * Number(root?.[1])).toBeCloseTo(15, 10);
+    // 大字體偏好時等比放大，而非固定在 15px
+    expect(15 / 17 * Number(large?.[1])).toBeGreaterThan(15);
   });
 
   it("sits directly under the brand block, after the tagline", () => {

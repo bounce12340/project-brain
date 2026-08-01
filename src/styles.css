@@ -27,6 +27,8 @@
   .gantt-sticky-labels { position: sticky; left: 0; z-index: 1; flex: 0 0 auto; }
   html { font-size: 17px; line-height: 1.65; }
   html[data-fontsize="large"] { font-size: 18.5px; }
+  /* 署名字級：預設 root（17px）下剛好 15px，並隨大字體偏好一起放大。 */
+  .app-credit { font-size: calc(15rem / 17); }
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }
   html[data-fontsize="large"] .text-sm { font-size: 16px; line-height: 24px; }
   body { @apply min-h-screen bg-void font-sans text-star antialiased; font-variant-numeric: tabular-nums; }
