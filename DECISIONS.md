@@ -139,3 +139,6 @@
 - 2026-08-02（分頁按需載入）：`GET /projects/:id` 新增 `sections` 參數（`core`／`updates`／`clinical`／`bd`，逗號分隔）。**未指定時維持回傳全部**，舊前端與外部呼叫端不受影響；`core` 一律包含，因為 project 與 permissions 是所有分頁的前提。未被請求的區段完全不查資料庫，也不出現在回應中——刻意讓欄位「缺席」而非回空陣列，前端才分得出「載入中」與「真的沒資料」。
 - 2026-08-02（分頁按需載入）：前端每次請求「core ＋ 目前已載入區段」的聯集，回應永遠完整，因此直接取代 state 而不需合併舊資料；`reload()` 沿用同一組區段，變更後只重抓已開啟的部分。切回已載入過的分頁不再發請求（瀏覽器實測確認）。
 - 2026-08-02（分頁按需載入）：`ProjectDetail` 的 `progress_updates`／`enrollments`／`clinical_settings`／`bd_*` 改為 optional，三個分頁元件加上 `<Loading />` 守衛。Bd 元件另取區域常數 `bdCases`／`bdEvents`，因為 TypeScript 對 `data.x` 的 narrowing 在 `.map()` callback 內會失效；`CaseCard` 的 `events` prop 型別由 `ProjectDetail["bd_events"]` 改為 `BdEvent[]`，它本來就只收到已過濾的陣列。
+- 2026-08-02（時間軸圖例）：`buildGanttLegend` 的去重鍵由 `stage.id` 改為「名稱＋顏色」（`ganttLegendKey`，顏色去除前後空白並轉小寫）。全域時間軸的 legend stages 是把各專案任務攤平而來，每個專案有自己的 stages 表與 id，因此同名階段會依專案數重複；正式站畫面上「待辦」「進行中」「完成」各出現 6 次，圖例共 33 項、高 300px。改後同一種顏色只介紹一次。
+- 2026-08-02（時間軸圖例）：刻意不只用名稱去重——同名但顏色不同代表兩種視覺意義，合併會讓圖例說謊，因此仍分成兩項。單一專案的甘特不受影響：專案內階段名稱本來就唯一，去重結果與先前相同（已以測試鎖住）。
+- 2026-08-02（時間軸圖例）：色條顏色不受影響。`TimelinePage` 的 `getTaskGanttStyle(row.task, legendStages)` 仍使用未去重的完整清單以 stage_id 查色，只有 `GanttLegend` 內部呼叫 `buildGanttLegend`。瀏覽器實測改前後同為 30 條色條、3 種顏色。
