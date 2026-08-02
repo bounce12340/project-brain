@@ -34,7 +34,9 @@ export interface RegEntry { id: string; entry_date: string; entry_type: "announc
 export interface ProjectDetail {
   project: Project; permissions: { can_edit: boolean; can_manage: boolean; can_view_fees: boolean };
   members: Array<{ id: string; name: string; email: string; role: string; group_name: string }>;
-  stages: Stage[]; tasks: Task[]; milestones: Milestone[]; progress_updates: ProgressUpdate[];
-  clinical_settings: { project_id: string; target_n: number } | null; enrollments: Enrollment[];
-  bd_cases: BdCase[]; bd_events: BdEvent[]; bd_fees?: BdFee[];
+  stages: Stage[]; tasks: Task[]; milestones: Milestone[];
+  // 以下集合只在對應分頁開啟時才載入；undefined 代表「尚未載入」，與「載入後為空」不同。
+  progress_updates?: ProgressUpdate[];
+  clinical_settings?: { project_id: string; target_n: number } | null; enrollments?: Enrollment[];
+  bd_cases?: BdCase[]; bd_events?: BdEvent[]; bd_fees?: BdFee[];
 }

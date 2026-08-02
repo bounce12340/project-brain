@@ -78,7 +78,7 @@ describe("project detail wiring", () => {
     expect(page).toContain('if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview");');
   });
 
-  it("clears the previous project while the next one loads", () => {
-    expect(page).toContain("setData(null); setError(\"\"); void load();");
+  it("clears the previous project and resets to core while the next one loads", () => {
+    expect(page).toContain("setData(null); setError(\"\"); setSections([\"core\"]); void load([\"core\"]);");
   });
 });

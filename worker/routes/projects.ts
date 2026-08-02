@@ -64,6 +64,18 @@ export async function projectRow(db: D1Database, id: string): Promise<ProjectRow
   return await db.prepare(`${PROJECT_ROW_SELECT} WHERE p.id = ? GROUP BY p.id`).bind(id).first<ProjectRow>();
 }
 
+/** 專案內頁一次回傳全部資料，但只有總覽與任務分頁需要 core；其餘分頁開啟時才取。 */
+export const PROJECT_SECTIONS = ["core", "updates", "clinical", "bd"] as const;
+export type ProjectSection = typeof PROJECT_SECTIONS[number];
+
+export function requestedSections(raw: string | undefined | null): Set<ProjectSection> {
+  // 未指定＝維持既有行為全部回傳，舊前端與外部呼叫端不受影響。
+  if (!raw?.trim()) return new Set(PROJECT_SECTIONS);
+  const asked = raw.split(",").map((part) => part.trim()).filter((part): part is ProjectSection => (PROJECT_SECTIONS as readonly string[]).includes(part));
+  // core 永遠包含：project、permissions 等欄位是所有分頁的前提。
+  return new Set<ProjectSection>(["core", ...asked]);
+}
+
 export const projectsRoutes = new Hono<AppContext>();
 
 projectsRoutes.get("/", async (c) => {
@@ -124,7 +136,8 @@ projectsRoutes.get("/:id", async (c) => {
   const access = accessFrom(row);
   if (!canViewProject(user, access)) return c.json({ error: "沒有檢視權限" }, 403);
   const projectId = row.id;
-  const [members, stages, tasks, milestones, updates, clinicalSettings, enrollments, cases, events] = await Promise.all([
+  const sections = requestedSections(c.req.query("sections"));
+  const [members, stages, tasks, milestones] = await Promise.all([
     c.env.DB.prepare("SELECT u.id, u.name, u.email, u.role, g.name AS group_name FROM project_members pm JOIN users u ON u.id = pm.user_id JOIN groups g ON g.id = u.group_id WHERE pm.project_id = ?").bind(projectId).all(),
     c.env.DB.prepare("SELECT * FROM stages WHERE project_id = ? ORDER BY position").bind(projectId).all(),
     c.env.DB.prepare(`SELECT t.*,u.name AS assignee_name,
@@ -133,18 +146,35 @@ projectsRoutes.get("/:id", async (c) => {
       (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id=? ORDER BY t.stage_id,t.position`).bind(projectId).all<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY kind,due_date,position").bind(projectId).all(),
-    c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all<ProgressUpdateRow>(),
-    c.env.DB.prepare("SELECT * FROM clinical_settings WHERE project_id = ?").bind(projectId).first(),
-    c.env.DB.prepare("SELECT ce.*, u.name AS created_by_name FROM clinical_enrollments ce JOIN users u ON u.id = ce.created_by WHERE ce.project_id = ? ORDER BY ce.record_date").bind(projectId).all(),
-    c.env.DB.prepare("SELECT * FROM bd_cases WHERE project_id = ? ORDER BY created_at DESC").bind(projectId).all(),
-    c.env.DB.prepare("SELECT e.*, u.name AS created_by_name FROM bd_case_events e JOIN bd_cases bc ON bc.id = e.case_id JOIN users u ON u.id = e.created_by WHERE bc.project_id = ? ORDER BY e.event_date DESC").bind(projectId).all(),
   ]);
+  const updates = sections.has("updates")
+    ? await c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all<ProgressUpdateRow>()
+    : null;
+  const [clinicalSettings, enrollments] = sections.has("clinical")
+    ? await Promise.all([
+      c.env.DB.prepare("SELECT * FROM clinical_settings WHERE project_id = ?").bind(projectId).first(),
+      c.env.DB.prepare("SELECT ce.*, u.name AS created_by_name FROM clinical_enrollments ce JOIN users u ON u.id = ce.created_by WHERE ce.project_id = ? ORDER BY ce.record_date").bind(projectId).all(),
+    ])
+    : [undefined, null];
+  const [cases, events] = sections.has("bd")
+    ? await Promise.all([
+      c.env.DB.prepare("SELECT * FROM bd_cases WHERE project_id = ? ORDER BY created_at DESC").bind(projectId).all(),
+      c.env.DB.prepare("SELECT e.*, u.name AS created_by_name FROM bd_case_events e JOIN bd_cases bc ON bc.id = e.case_id JOIN users u ON u.id = e.created_by WHERE bc.project_id = ? ORDER BY e.event_date DESC").bind(projectId).all(),
+    ])
+    : [null, null];
   let fees: D1Result<Record<string, unknown>> | undefined;
-  if (canViewFees(user, access)) fees = await c.env.DB.prepare("SELECT * FROM bd_fees WHERE project_id = ? ORDER BY fee_date DESC").bind(projectId).all<Record<string, unknown>>();
+  if (sections.has("bd") && canViewFees(user, access)) fees = await c.env.DB.prepare("SELECT * FROM bd_fees WHERE project_id = ? ORDER BY fee_date DESC").bind(projectId).all<Record<string, unknown>>();
   const { member_ids_csv: _memberIds, ...project } = row;
   const taskRows = tasks.results.map((task) => ({ ...task, dependency_ids: typeof task.dependency_ids_csv === "string" ? task.dependency_ids_csv.split(",").filter(Boolean) : [] }));
-  const progressUpdates = updates.results.map((update) => ({ ...update, can_edit: canEditProgressUpdate(user, access, update.author_id) }));
-  return c.json({ project, permissions: { can_edit: canEditProgress(user, access), can_manage: canManageProject(user, access), can_view_fees: canViewFees(user, access) }, members: members.results, stages: stages.results, tasks: taskRows, milestones: milestones.results, progress_updates: progressUpdates, clinical_settings: clinicalSettings, enrollments: enrollments.results, bd_cases: cases.results, bd_events: events.results, ...(fees ? { bd_fees: fees.results } : {}) });
+  return c.json({
+    project,
+    permissions: { can_edit: canEditProgress(user, access), can_manage: canManageProject(user, access), can_view_fees: canViewFees(user, access) },
+    members: members.results, stages: stages.results, tasks: taskRows, milestones: milestones.results,
+    ...(updates ? { progress_updates: updates.results.map((update) => ({ ...update, can_edit: canEditProgressUpdate(user, access, update.author_id) })) } : {}),
+    ...(sections.has("clinical") ? { clinical_settings: clinicalSettings ?? null, enrollments: enrollments?.results ?? [] } : {}),
+    ...(cases ? { bd_cases: cases.results, bd_events: events?.results ?? [] } : {}),
+    ...(fees ? { bd_fees: fees.results } : {}),
+  });
 });
 
 projectsRoutes.patch("/:id", async (c) => {

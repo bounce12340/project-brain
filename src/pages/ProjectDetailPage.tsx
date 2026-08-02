@@ -4,7 +4,7 @@ import { Line, LineChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { api, formatDate, patchBody, today } from "../api";
 import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
-import type { BdCase, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
+import type { BdCase, BdEvent, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
 import { groupProjectsForSwitch, nextProjectId, type SwitchableProject } from "../project-switcher";
 import { TaskWorkspace } from "../components/TaskViews";
 import { ProjectFiles } from "../components/ProjectFiles";
@@ -26,6 +26,9 @@ function projectTabs(groupType: string): Array<[string, TransKey]> {
   return [...baseTabs, ...extra, ["files", "project.tab.files"], ["automation", "project.tab.automation"]];
 }
 
+/** 開啟這些分頁時才去取對應區段；其餘分頁只需要 core。 */
+const tabSection: Record<string, string | undefined> = { updates: "updates", clinical: "clinical", bd: "bd" };
+
 const bdStatuses: Array<[string, TransKey]> =[["準備文件", "bd.preparing"], ["已送件", "bd.submitted"], ["審查中", "bd.review"], ["補件中", "bd.supplement"], ["核准", "bd.approved"], ["結案", "bd.closed"]];
 const bdFeeCategories: Array<[string, TransKey]> = [["規費", "bd.official"], ["顧問費", "bd.consulting"], ["檢驗費", "bd.testing"], ["其他", "bd.other"]];
 
@@ -33,8 +36,17 @@ export function ProjectDetailPage() {
   const t = useT();
   const { id = "" } = useParams(); const navigate = useNavigate(); const [params] = useSearchParams(); const [data, setData] = useState<ProjectDetail | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [tab, setTab] = useState("overview"); const [error, setError] = useState("");
   const [siblings, setSiblings] = useState<SwitchableProject[]>([]);
-  const load = () => api<ProjectDetail>(`/projects/${id}`).then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : t("error.load")));
-  useEffect(() => { setData(null); setError(""); void load(); }, [id]); useEffect(() => { void api<Metadata>("/metadata").then(setMeta); }, []);
+  const [sections, setSections] = useState<string[]>(["core"]);
+  // 每次都請求「core ＋ 目前已載入的區段」，回應永遠是完整的，不需要合併舊資料。
+  const load = (list: string[] = sections) => api<ProjectDetail>(`/projects/${id}?sections=${list.join(",")}`)
+    .then((result) => { setData(result); setSections(list); })
+    .catch((cause) => setError(cause instanceof Error ? cause.message : t("error.load")));
+  useEffect(() => { setData(null); setError(""); setSections(["core"]); void load(["core"]); }, [id]);
+  useEffect(() => { void api<Metadata>("/metadata").then(setMeta); }, []);
+  useEffect(() => {
+    const need = tabSection[tab];
+    if (need && !sections.includes(need)) void load([...sections, need]);
+  }, [tab, sections]);
   useEffect(() => { void api<{ projects: SwitchableProject[] }>("/projects?summary=1").then((result) => setSiblings(result.projects)).catch(() => setSiblings([])); }, []);
   const groupType = data?.project.group_type;
   useEffect(() => { if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview"); }, [groupType]);
@@ -151,6 +163,7 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
     setToast(t("progressLinks.appliedToast", { completed, created, milestones, events, dates }));
     window.setTimeout(() => setToast(""), 3500);
   };
+  if (!data.progress_updates) return <Loading />;
   return <>{toast && <div className="fixed bottom-5 right-5 z-[60] border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div data-tour="progress-updates" className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}<HelpTip topic="progressUpdates" /></h2>{data.permissions.can_edit ? <><textarea className="mb-3 min-h-24 w-full" placeholder={t("project.rawPlaceholder")} value={raw} onChange={(e) => setRaw(e.target.value)} /><div className="mb-4 flex items-center gap-1"><button className="btn-secondary" disabled={busy} onClick={() => void draft()}>{t(busy ? "project.organizing" : "project.aiDraft")}</button><HelpTip topic="aiQuickWrite" /></div><textarea className="min-h-48 w-full" placeholder={t("project.updatePlaceholder")} value={content} onChange={(e) => setContent(e.target.value)} /><button className="btn mt-3" disabled={!content.trim()} onClick={() => void save()}>{t("project.publish")}</button></> : <p className="text-sm text-star-dim">{t("project.noEdit")}</p>}</section><section className="space-y-4 lg:col-span-3">{data.progress_updates.length ? data.progress_updates.map((item) => <ProgressUpdateCard item={item} reload={reload} key={item.id} />) : <Empty>{t("project.noUpdates")}</Empty>}</section></div>{links && <ProgressLinkDialog response={links} projectId={data.project.id} stages={data.stages} tasks={data.tasks} onClose={() => setLinks(null)} onApplied={applied} />}</>;
 }
 
@@ -193,6 +206,7 @@ function ProgressUpdateCard({ item, reload }: { item: ProgressUpdate; reload(): 
 function Clinical({ data, reload }: { data: ProjectDetail; reload(): void }) {
   const t = useT(); const { lang } = useLang();
   const [enrollmentSubmitting, setEnrollmentSubmitting] = useState(false);
+  if (!data.enrollments) return <Loading />;
   const target = data.clinical_settings?.target_n ?? 0; let total = 0; const chart = data.enrollments.map((item) => ({ date: item.record_date, 累計收案: total += Number(item.count), 目標: target })); const sites = data.enrollments.reduce<Record<string, number>>((result, item) => { const site = item.site || "未指定"; result[site] = (result[site] ?? 0) + Number(item.count); return result; }, {});
   const add = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = event.currentTarget; setEnrollmentSubmitting(true);
@@ -216,13 +230,15 @@ function Bd({ data, reload }: { data: ProjectDetail; reload(): void }) {
     try { await api(`/projects/${data.project.id}/bd/fees`, { method: "POST", body: JSON.stringify(submitData(event)) }); form.reset(); reload(); }
     finally { setFeeSubmitting(false); }
   };
+  const bdCases = data.bd_cases; const bdEvents = data.bd_events;
+  if (!bdCases || !bdEvents) return <Loading />;
   return <div className="space-y-6">{data.permissions.can_edit && <form className="panel grid gap-3 md:grid-cols-4" onSubmit={addCase}><h2 className="font-bold md:col-span-4">{t("bd.newCase")}<HelpTip topic="bdCaseStatus" /></h2><input name="case_name" placeholder={t("bd.caseName")} required /><input name="product_name" placeholder={t("bd.product")} required /><input name="case_type" placeholder={t("bd.caseType")} required /><input name="submission_no" placeholder={t("bd.submissionNo")} /><select name="current_status">{bdStatuses.map(([value, key]) => <option value={value} key={value}>{t(key)}</option>)}</select><input name="submitted_at" type="date" /><input name="expected_approval" type="date" /><button className="btn">{t("bd.addCase")}</button></form>}
-    <div className="grid gap-4 md:grid-cols-2">{data.bd_cases.map((item) => <CaseCard key={item.id} item={item} canEdit={data.permissions.can_edit} reload={reload} events={data.bd_events.filter((event) => event.case_id === item.id)} />)}</div>
-    {data.permissions.can_edit && data.bd_cases.length > 0 && <form className="panel grid gap-3 md:grid-cols-5" onSubmit={addEvent}><h2 className="font-bold md:col-span-5">{t("bd.newHistory")}<HelpTip topic="bdHistory" /></h2><select name="case_id">{data.bd_cases.map((item) => <option value={item.id} key={item.id}>{item.case_name}</option>)}</select><input name="event_date" type="date" defaultValue={today()} required /><input name="event_type" placeholder={t("bd.eventPlaceholder")} required /><input name="description" placeholder={t("common.description")} required /><button className="btn">{t("bd.addHistory")}</button></form>}
-    {data.permissions.can_view_fees && <section className="panel"><h2 className="mb-4 font-bold">{t("bd.fees")}<HelpTip topic="bdFees" /></h2>{data.permissions.can_edit && <form className="mb-4 grid gap-3 md:grid-cols-6" onSubmit={addFee}><input name="fee_date" type="date" defaultValue={today()} required /><select name="case_id"><option value="">{t("bd.noCase")}</option>{data.bd_cases.map((item) => <option value={item.id} key={item.id}>{item.case_name}</option>)}</select><select name="category">{bdFeeCategories.map(([value, key]) => <option value={value} key={value}>{t(key)}</option>)}</select><input name="amount" type="number" min="0" placeholder={t("bd.amount")} required /><input name="currency" defaultValue="TWD" /><button className="btn" disabled={feeSubmitting}>{t(feeSubmitting ? "common.processing" : "bd.addFee")}</button></form>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-nexus-line text-gold-bright"><th className="py-2">{t("common.date")}</th><th>{t("common.category")}</th><th>{t("bd.amount")}</th><th>{t("common.notes")}</th></tr></thead><tbody>{data.bd_fees?.map((fee) => <tr className="border-b border-nexus-line" key={fee.id}><td className="py-2">{fee.fee_date}</td><td>{t(bdFeeCategories.find(([value]) => value === fee.category)?.[1] ?? "bd.other")}</td><td>{fee.currency} {Number(fee.amount).toLocaleString(lang === "en" ? "en-US" : "zh-TW")}</td><td>{fee.note}</td></tr>)}</tbody></table></div><p className="mt-4 text-right font-bold">{t("bd.subtotal")}: TWD {(data.bd_fees ?? []).filter((fee) => fee.currency === "TWD").reduce((sum, fee) => sum + Number(fee.amount), 0).toLocaleString(lang === "en" ? "en-US" : "zh-TW")}</p></section>}</div>;
+    <div className="grid gap-4 md:grid-cols-2">{bdCases.map((item) => <CaseCard key={item.id} item={item} canEdit={data.permissions.can_edit} reload={reload} events={bdEvents.filter((event) => event.case_id === item.id)} />)}</div>
+    {data.permissions.can_edit && bdCases.length > 0 && <form className="panel grid gap-3 md:grid-cols-5" onSubmit={addEvent}><h2 className="font-bold md:col-span-5">{t("bd.newHistory")}<HelpTip topic="bdHistory" /></h2><select name="case_id">{bdCases.map((item) => <option value={item.id} key={item.id}>{item.case_name}</option>)}</select><input name="event_date" type="date" defaultValue={today()} required /><input name="event_type" placeholder={t("bd.eventPlaceholder")} required /><input name="description" placeholder={t("common.description")} required /><button className="btn">{t("bd.addHistory")}</button></form>}
+    {data.permissions.can_view_fees && <section className="panel"><h2 className="mb-4 font-bold">{t("bd.fees")}<HelpTip topic="bdFees" /></h2>{data.permissions.can_edit && <form className="mb-4 grid gap-3 md:grid-cols-6" onSubmit={addFee}><input name="fee_date" type="date" defaultValue={today()} required /><select name="case_id"><option value="">{t("bd.noCase")}</option>{bdCases.map((item) => <option value={item.id} key={item.id}>{item.case_name}</option>)}</select><select name="category">{bdFeeCategories.map(([value, key]) => <option value={value} key={value}>{t(key)}</option>)}</select><input name="amount" type="number" min="0" placeholder={t("bd.amount")} required /><input name="currency" defaultValue="TWD" /><button className="btn" disabled={feeSubmitting}>{t(feeSubmitting ? "common.processing" : "bd.addFee")}</button></form>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-nexus-line text-gold-bright"><th className="py-2">{t("common.date")}</th><th>{t("common.category")}</th><th>{t("bd.amount")}</th><th>{t("common.notes")}</th></tr></thead><tbody>{data.bd_fees?.map((fee) => <tr className="border-b border-nexus-line" key={fee.id}><td className="py-2">{fee.fee_date}</td><td>{t(bdFeeCategories.find(([value]) => value === fee.category)?.[1] ?? "bd.other")}</td><td>{fee.currency} {Number(fee.amount).toLocaleString(lang === "en" ? "en-US" : "zh-TW")}</td><td>{fee.note}</td></tr>)}</tbody></table></div><p className="mt-4 text-right font-bold">{t("bd.subtotal")}: TWD {(data.bd_fees ?? []).filter((fee) => fee.currency === "TWD").reduce((sum, fee) => sum + Number(fee.amount), 0).toLocaleString(lang === "en" ? "en-US" : "zh-TW")}</p></section>}</div>;
 }
 
-function CaseCard({ item, events, canEdit, reload }: { item: BdCase; events: ProjectDetail["bd_events"]; canEdit: boolean; reload(): void }) {
+function CaseCard({ item, events, canEdit, reload }: { item: BdCase; events: BdEvent[]; canEdit: boolean; reload(): void }) {
   const t = useT();
   const setStatus = async (status: string) => { await api(`/bd/cases/${item.id}`, patchBody({ current_status: status })); reload(); };
   return <article className="panel"><div className="flex justify-between gap-3"><div><p className="text-xs text-star-dim">{item.case_type} · {item.product_name}</p><h3 className="mt-1 font-bold">{item.case_name}</h3></div><select value={item.current_status} disabled={!canEdit} onChange={(e) => void setStatus(e.target.value)}>{bdStatuses.map(([value, key]) => <option value={value} key={value}>{t(key)}</option>)}</select></div><p className="mt-3 text-sm text-star-dim">{t("bd.submissionNo")}: {item.submission_no || "—"} · {t("bd.expectedApproval", { date: item.expected_approval || "—" })}</p><div className="mt-4 space-y-3 border-l-2 border-gold-dim pl-4">{events.map((event) => <div key={event.id}><p className="text-sm font-medium">{event.event_type} · {event.event_date}</p><p className="text-xs text-star-dim">{event.description}</p></div>)}</div></article>;
