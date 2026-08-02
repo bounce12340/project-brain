@@ -136,3 +136,6 @@
 - 2026-08-02（手機優化）：觸控尺寸規則只在 `max-width: 1023px` 生效，桌機密度不變。`nav a`／`.project-tabs button`／`.touch-target` 連同 `display: inline-flex` 一起設定；一般 `button` 與表單控制項只設 `min-height`／`min-width` 而**不動 display**，因為專案內有 `block w-full` 的按鈕，改成 inline-flex 會破版。checkbox／radio／range 排除在外。
 - 2026-08-02（手機優化）：`.help-tip-trigger` 維持 14px 視覺尺寸，改以 `::after { inset: -15px }` 外擴可點區域。瀏覽器實測：點正中央、點視覺邊界外 12px 都能開啟，30px 外則不會，確認擴張範圍約 44px 且不會誤觸。
 - 2026-08-02（手機優化）：儀表板 KPI 由手機 1 欄改為 2 欄並縮小內距與字級；原本 5 張卡在 844px 高的螢幕上要滑約 5 屏。另把「階段／任務」提示列與檢視切換列的 4 個 HelpTip 在手機隱藏（`sm:` 以上才顯示），減少任務內容之前的垂直佔用。
+- 2026-08-02（分頁按需載入）：`GET /projects/:id` 新增 `sections` 參數（`core`／`updates`／`clinical`／`bd`，逗號分隔）。**未指定時維持回傳全部**，舊前端與外部呼叫端不受影響；`core` 一律包含，因為 project 與 permissions 是所有分頁的前提。未被請求的區段完全不查資料庫，也不出現在回應中——刻意讓欄位「缺席」而非回空陣列，前端才分得出「載入中」與「真的沒資料」。
+- 2026-08-02（分頁按需載入）：前端每次請求「core ＋ 目前已載入區段」的聯集，回應永遠完整，因此直接取代 state 而不需合併舊資料；`reload()` 沿用同一組區段，變更後只重抓已開啟的部分。切回已載入過的分頁不再發請求（瀏覽器實測確認）。
+- 2026-08-02（分頁按需載入）：`ProjectDetail` 的 `progress_updates`／`enrollments`／`clinical_settings`／`bd_*` 改為 optional，三個分頁元件加上 `<Loading />` 守衛。Bd 元件另取區域常數 `bdCases`／`bdEvents`，因為 TypeScript 對 `data.x` 的 narrowing 在 `.map()` callback 內會失效；`CaseCard` 的 `events` prop 型別由 `ProjectDetail["bd_events"]` 改為 `BdEvent[]`，它本來就只收到已過濾的陣列。
