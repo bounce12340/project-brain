@@ -66,13 +66,13 @@ function ProjectSwitcher({ projects, current }: { projects: SwitchableProject[];
   if (projects.length < 2) return null;
   const groups = groupProjectsForSwitch(projects, current.group_id);
   const nextId = nextProjectId(projects, current);
-  return <div data-project-switcher className="flex items-center gap-2">
-    <select className="max-w-56 !py-1.5 text-sm" aria-label={t("project.switchLabel")} value={current.id} onChange={(event) => { if (event.target.value !== current.id) navigate(`/projects/${event.target.value}`); }}>
+  return <div data-project-switcher className="flex w-full items-center gap-2 sm:w-auto">
+    <select className="touch-target min-w-0 flex-1 !py-1.5 text-sm sm:max-w-56 sm:flex-none" aria-label={t("project.switchLabel")} value={current.id} onChange={(event) => { if (event.target.value !== current.id) navigate(`/projects/${event.target.value}`); }}>
       {groups.map((group) => <optgroup key={group.id} label={group.isCurrentGroup ? `${group.name}（${t("project.currentGroup")}）` : group.name}>
         {group.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
       </optgroup>)}
     </select>
-    {nextId && <button className="btn-secondary whitespace-nowrap !py-1.5" title={t("project.nextProjectHint")} onClick={() => navigate(`/projects/${nextId}`)}>{t("project.nextProject")}</button>}
+    {nextId && <button className="btn-secondary touch-target whitespace-nowrap !py-1.5" title={t("project.nextProjectHint")} onClick={() => navigate(`/projects/${nextId}`)}>{t("project.nextProject")}</button>}
   </div>;
 }
 
