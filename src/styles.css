@@ -29,6 +29,26 @@
   html[data-fontsize="large"] { font-size: 18.5px; }
   /* 署名字級：預設 root（17px）下剛好 15px，並隨大字體偏好一起放大。 */
   .app-credit { font-size: calc(15rem / 17); }
+  /* 手機上甘特／看板／時間軸都是很寬的橫向捲動區。沒有 contain 的話，滑到邊界
+     會把捲動傳遞給頁面或觸發瀏覽器的返回手勢，兩個方向的捲動互相打架。 */
+  .overflow-x-auto { overscroll-behavior-x: contain; }
+  /* 觸控目標：桌機維持原本密度，觸控裝置補到 44px（Apple HIG 建議值）。 */
+  @media (max-width: 1023px) {
+    nav a, nav button, .project-tabs button, .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* 表單控制項與按鈕補到建議尺寸。刻意不動 display：有些按鈕是 block/w-full，
+       改成 inline-flex 會破壞版面。button 預設 inline-block，min-height 本來就生效。 */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { min-height: 44px; }
+    button:not(.help-tip-trigger) { min-height: 44px; min-width: 44px; }
+    /* 說明鈕維持 14px 的視覺尺寸，只把可點區域向外擴張，不影響行內排版。 */
+    .help-tip-trigger { position: relative; }
+    .help-tip-trigger::after { content: ""; position: absolute; inset: -15px; }
+  }
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }
   html[data-fontsize="large"] .text-sm { font-size: 16px; line-height: 24px; }
   body { @apply min-h-screen bg-void font-sans text-star antialiased; font-variant-numeric: tabular-nums; }
