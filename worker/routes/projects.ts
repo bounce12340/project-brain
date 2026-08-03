@@ -5,6 +5,7 @@ import { booleanInt, boundedNumber, optionalString, requiredString } from "../se
 import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, canViewProject } from "../services/permissions";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
+import { stageColorFor } from "../services/stage-colors";
 
 interface ProjectRow {
   id: string;
@@ -120,7 +121,7 @@ projectsRoutes.post("/", async (c) => {
       const names: unknown = JSON.parse(template.stages_json);
       if (Array.isArray(names)) {
         const statements = names.filter((value): value is string => typeof value === "string").map((stageName, position) =>
-          c.env.DB.prepare("INSERT INTO stages (id, project_id, name, position) VALUES (?, ?, ?, ?)").bind(createId("stage"), id, stageName, position));
+          c.env.DB.prepare("INSERT INTO stages (id, project_id, name, color, position) VALUES (?, ?, ?, ?, ?)").bind(createId("stage"), id, stageName, stageColorFor(stageName), position));
         if (statements.length) await c.env.DB.batch(statements);
       }
     }

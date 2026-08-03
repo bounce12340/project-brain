@@ -3,6 +3,7 @@ import { createId } from "./db";
 import { isIsoDate, resolveImportUser } from "./importer";
 import { currentTaipeiQuarter, taipeiDate } from "./time";
 import { milestoneDateRangeError } from "./milestone-dates";
+import { stageColorFor } from "./stage-colors";
 
 type JsonObject = Record<string, unknown>;
 
@@ -146,7 +147,7 @@ export async function runAdminImport(db: D1Database, actor: AuthUser, payload: u
     for (const stageName of requestedStages) {
       if (stages.has(stageName)) continue;
       const stageId = createId("stage");
-      await db.prepare("INSERT INTO stages (id,project_id,name,position) VALUES (?,?,?,?)").bind(stageId, projectId, stageName, stages.size).run();
+      await db.prepare("INSERT INTO stages (id,project_id,name,color,position) VALUES (?,?,?,?,?)").bind(stageId, projectId, stageName, stageColorFor(stageName), stages.size).run();
       stages.set(stageName, stageId);
     }
 
@@ -157,7 +158,7 @@ export async function runAdminImport(db: D1Database, actor: AuthUser, payload: u
       let stageId = stages.get(stageName);
       if (!stageId) {
         stageId = createId("stage");
-        await db.prepare("INSERT INTO stages (id,project_id,name,position) VALUES (?,?,?,?)").bind(stageId, projectId, stageName, stages.size).run();
+        await db.prepare("INSERT INTO stages (id,project_id,name,color,position) VALUES (?,?,?,?,?)").bind(stageId, projectId, stageName, stageColorFor(stageName), stages.size).run();
         stages.set(stageName, stageId);
       }
       if (await db.prepare("SELECT id FROM tasks WHERE project_id=? AND stage_id=? AND title=?").bind(projectId, stageId, title).first()) { stats.tasks.skipped += 1; continue; }
