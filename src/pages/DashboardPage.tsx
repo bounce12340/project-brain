@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, formatDate } from "../api";
 import { CHART } from "../chartTheme";
 import { Empty, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { Project } from "../types";
+
+const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
 
 interface DashboardData {
   kpis: { active_projects: number; overdue_milestones: number; today_todos: number; week_updates: number };
@@ -26,10 +27,9 @@ export function DashboardPage() {
     <div className="grid gap-6 lg:grid-cols-3"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("dashboard.groupProgress")}</h2><div className="space-y-4">{data.projects.length ? data.projects.map((project) => <Link to={`/projects/${project.id}`} className="block border border-nexus-line p-3 transition hover:shadow-[0_0_14px_rgb(var(--color-psi)/.25)]" key={project.id}><div className="mb-2 flex justify-between gap-3"><span className="font-medium">{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex items-center gap-2 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div><ProgressBar value={project.progress} /></Link>) : <Empty>{t("dashboard.noProjects")}</Empty>}</div></section>
       <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}</h2><div className="space-y-4">{data.recent_updates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 text-sm text-star-dim">{item.content}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>)}</div></section>
     </div>
-    <div className="mt-6 grid gap-6 lg:grid-cols-3"><ChartCard title={t("dashboard.groupStatus")}><ResponsiveContainer width="100%" height={250}><BarChart data={data.charts.group_status}><CartesianGrid stroke={CHART.line} strokeDasharray="3 3" /><XAxis dataKey="group" tick={{ fill: CHART.starDim }} /><YAxis allowDecimals={false} tick={{ fill: CHART.starDim }} /><Tooltip /><Legend /><Bar dataKey="active" name={t("status.active")} stackId="a" fill={CHART.psi} /><Bar dataKey="paused" name={t("status.paused")} stackId="a" fill={CHART.gold} /><Bar dataKey="done" name={t("status.done")} stackId="a" fill={CHART.ok} /><Bar dataKey="archived" name={t("status.archived")} stackId="a" fill={CHART.warn} /></BarChart></ResponsiveContainer></ChartCard>
-      <ChartCard title={t("dashboard.clinicalChart")}><ResponsiveContainer width="100%" height={250}><LineChart data={clinical}><CartesianGrid stroke={CHART.line} strokeDasharray="3 3" /><XAxis dataKey="record_date" tick={{ fill: CHART.starDim }} /><YAxis tick={{ fill: CHART.starDim }} /><Tooltip /><Legend /><Line name={t("dashboard.enrollment")} type="monotone" dataKey="enrollment" stroke={CHART.psi} strokeWidth={2} /><Line name={t("dashboard.target")} type="monotone" dataKey="target" stroke={CHART.gold} strokeDasharray="4 4" /></LineChart></ResponsiveContainer></ChartCard>
-      <ChartCard title={t("dashboard.bdFees")}><ResponsiveContainer width="100%" height={250}><BarChart data={data.charts.bd_fees}><CartesianGrid stroke={CHART.line} strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fill: CHART.starDim }} /><YAxis tick={{ fill: CHART.starDim }} /><Tooltip /><Bar dataKey="total" name={t("dashboard.fees")} fill={CHART.psi} /></BarChart></ResponsiveContainer></ChartCard></div>
+    <Suspense fallback={<div className="mt-6 grid gap-6 lg:grid-cols-3">{[0, 1, 2].map((i) => <section className="panel h-[318px]" key={i} />)}</div>}>
+      <DashboardCharts groupStatus={data.charts.group_status} clinical={clinical} bdFees={data.charts.bd_fees} />
+    </Suspense>
   </>;
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) { return <section className="panel"><h2 className="mb-4 font-bold">{title}</h2>{children}</section>; }

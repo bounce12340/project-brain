@@ -146,3 +146,7 @@
 - 2026-08-02（階段配色）：不使用灰色代表「待辦」。`#64748b` 的 OKLCH 彩度 0.041 低於 0.10 下限，驗證器判定「讀起來是灰色」，會與格線及停用狀態混淆，因此未開始改用藍色 `#0284c7`。
 - 2026-08-02（階段配色）：根因是 `stages.color` 欄位預設 `#6366f1`，而 `projects.ts` 建立專案與 `import-data.ts` 兩條匯入路徑的 INSERT 都沒有帶 color——正式庫 168 筆 stages 有 155 筆同色。三條路徑都改為以 `stageColorFor(name)` 明確寫入，否則 migration 修好的資料會隨新專案再次劣化。`resources.ts` 的手動新增階段本來就由使用者指定顏色，不變。
 - 2026-08-02（階段配色）：`migrations/0015_stage_colors.sql` 依名稱比對批次更新，不動 id 與 position，因此不影響任務歸屬或排序；不在對照表內的自訂階段名稱維持原顏色不被覆蓋。未列名的階段在執行期一律取「未開始」，避免落回無法分辨的預設靛藍。
+- 2026-08-03（關鍵路徑）：recharts 打包後 377KB／gzip 110KB，是最大的 chunk，原本由 `DashboardPage` 與 `ProjectDetailPage` 靜態 import。專案內頁其實只有 `Clinical` 元件用得到，而臨床分頁只存在於 11／36 個專案且要點進去才顯示——等於每次開任何專案都先付這個成本。改為抽成 `DashboardCharts`／`EnrollmentChart` 兩個 lazy chunk。以建置產物的靜態相依閉包量測「渲染前必須下載的 JS」：儀表板 gzip 210KB → 95KB（−55%），專案內頁 250KB → 142KB（−43%）；全域時間軸不使用 recharts，維持 108KB 不變。
+- 2026-08-03（關鍵路徑）：兩個 lazy 邊界都給固定高度的 fallback（318px／300px），避免圖表載入時把下方內容往下推。
+- 2026-08-03（關鍵路徑）：`/dashboard` 原本除了一組 `Promise.all` 之外還有 4 個逐一 await 的查詢（fees、krCounts、licenseAlerts、todoCount、weekUpdates）。追過相依關係後確認它們只依賴第一步 `projectRows()` 算出的 ids／visible，彼此獨立，因此併成單一 `Promise.all`：序列往返由 6 次降為 2 次。空清單的守衛改以三元運算子放進批次內，維持原本「沒有可見專案就不查」的行為。
+- 2026-08-03（關鍵路徑）：先前建議的「加分頁」在此規模下屬過早優化，暫不執行。實測正式庫：projects 36、tasks 44、progress_updates 171、milestones 43、reg_entries 640、files 4。無上限查詢的成本目前遠低於前端 bundle 與 D1 往返次數。
