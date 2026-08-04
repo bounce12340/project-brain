@@ -26,28 +26,29 @@ generalRoutes.get("/dashboard", async (c) => {
   let licenseAlerts: Record<string, unknown>[] = [];
   const quarter = currentTaipeiQuarter();
   let keyResults = { completed: 0, total: 0 };
-  if (ids.length) {
-    const inList = placeholders(ids.length);
-    const [overdueResult, updateResult, enrollmentResult] = await Promise.all([
-      c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE kind='milestone' AND done=0 AND due_date < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value"),
-      c.env.DB.prepare(`SELECT pu.*,p.name AS project_name,u.name AS author_name FROM progress_updates pu JOIN projects p ON p.id=pu.project_id JOIN users u ON u.id=pu.author_id WHERE pu.project_id IN (${inList}) ORDER BY pu.created_at DESC LIMIT 12`).bind(...ids).all<Record<string, unknown>>(),
-      c.env.DB.prepare(`SELECT ce.record_date,ce.count,ce.project_id,p.name AS project_name,cs.target_n FROM clinical_enrollments ce JOIN projects p ON p.id=ce.project_id JOIN clinical_settings cs ON cs.project_id=p.id WHERE ce.project_id IN (${inList}) ORDER BY ce.record_date`).bind(...ids).all<Record<string, unknown>>(),
-    ]);
-    overdue = overdueResult ?? 0;
-    updates = updateResult.results;
-    enrollments = enrollmentResult.results;
-    const feeIds = visible.filter((row) => canViewFees(user, accessFrom(row))).map((row) => row.id);
-    if (feeIds.length) fees = (await c.env.DB.prepare(`SELECT substr(fee_date,1,7) AS month,currency,SUM(amount) AS total FROM bd_fees WHERE project_id IN (${placeholders(feeIds.length)}) GROUP BY month,currency ORDER BY month`).bind(...feeIds).all<Record<string, unknown>>()).results;
-    const krCounts = await c.env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN status='完成' THEN 1 ELSE 0 END) AS completed FROM key_results WHERE quarter=? AND project_id IN (${inList})`).bind(quarter, ...ids).first<{ completed: number | null; total: number }>();
-    keyResults = { completed: Number(krCounts?.completed ?? 0), total: Number(krCounts?.total ?? 0) };
-    if (user.role === "admin" || user.group_id === "grp_qa") {
-      const qaIds = visible.filter((row) => row.group_type === "qa").map((row) => row.id);
-      if (qaIds.length) licenseAlerts = (await c.env.DB.prepare(`SELECT l.id,l.name,l.subject,l.expires_at,l.status,p.id AS project_id,p.name AS project_name FROM licenses l JOIN projects p ON p.id=l.project_id WHERE l.status!='已停用' AND l.expires_at<=? AND l.project_id IN (${placeholders(qaIds.length)}) ORDER BY l.expires_at`).bind(addDaysForDashboard(today, 90), ...qaIds).all<Record<string, unknown>>()).results;
-    }
-  }
-  const todoCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM todos WHERE user_id=? AND done=0 AND due_date=?").bind(user.id, today).first<number>("value");
+  // 這些查詢彼此獨立，只依賴上面算出的 ids／visible，因此一次併發送出。
+  // 先前是逐一 await，等於每載入一次首頁就多付 4 趟 D1 往返的延遲。
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const weekUpdates = ids.length ? await c.env.DB.prepare(`SELECT COUNT(*) AS value FROM progress_updates WHERE created_at>=? AND project_id IN (${placeholders(ids.length)})`).bind(weekAgo, ...ids).first<number>("value") : 0;
+  const feeIds = ids.length ? visible.filter((row) => canViewFees(user, accessFrom(row))).map((row) => row.id) : [];
+  const qaIds = ids.length && (user.role === "admin" || user.group_id === "grp_qa")
+    ? visible.filter((row) => row.group_type === "qa").map((row) => row.id) : [];
+  const inList = placeholders(ids.length);
+  const [overdueResult, updateResult, enrollmentResult, feeResult, krCounts, licenseResult, todoCount, weekUpdates] = await Promise.all([
+    ids.length ? c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE kind='milestone' AND done=0 AND due_date < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value") : null,
+    ids.length ? c.env.DB.prepare(`SELECT pu.*,p.name AS project_name,u.name AS author_name FROM progress_updates pu JOIN projects p ON p.id=pu.project_id JOIN users u ON u.id=pu.author_id WHERE pu.project_id IN (${inList}) ORDER BY pu.created_at DESC LIMIT 12`).bind(...ids).all<Record<string, unknown>>() : null,
+    ids.length ? c.env.DB.prepare(`SELECT ce.record_date,ce.count,ce.project_id,p.name AS project_name,cs.target_n FROM clinical_enrollments ce JOIN projects p ON p.id=ce.project_id JOIN clinical_settings cs ON cs.project_id=p.id WHERE ce.project_id IN (${inList}) ORDER BY ce.record_date`).bind(...ids).all<Record<string, unknown>>() : null,
+    feeIds.length ? c.env.DB.prepare(`SELECT substr(fee_date,1,7) AS month,currency,SUM(amount) AS total FROM bd_fees WHERE project_id IN (${placeholders(feeIds.length)}) GROUP BY month,currency ORDER BY month`).bind(...feeIds).all<Record<string, unknown>>() : null,
+    ids.length ? c.env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN status='完成' THEN 1 ELSE 0 END) AS completed FROM key_results WHERE quarter=? AND project_id IN (${inList})`).bind(quarter, ...ids).first<{ completed: number | null; total: number }>() : null,
+    qaIds.length ? c.env.DB.prepare(`SELECT l.id,l.name,l.subject,l.expires_at,l.status,p.id AS project_id,p.name AS project_name FROM licenses l JOIN projects p ON p.id=l.project_id WHERE l.status!='已停用' AND l.expires_at<=? AND l.project_id IN (${placeholders(qaIds.length)}) ORDER BY l.expires_at`).bind(addDaysForDashboard(today, 90), ...qaIds).all<Record<string, unknown>>() : null,
+    c.env.DB.prepare("SELECT COUNT(*) AS value FROM todos WHERE user_id=? AND done=0 AND due_date=?").bind(user.id, today).first<number>("value"),
+    ids.length ? c.env.DB.prepare(`SELECT COUNT(*) AS value FROM progress_updates WHERE created_at>=? AND project_id IN (${inList})`).bind(weekAgo, ...ids).first<number>("value") : 0,
+  ]);
+  overdue = overdueResult ?? 0;
+  updates = updateResult?.results ?? [];
+  enrollments = enrollmentResult?.results ?? [];
+  fees = feeResult?.results ?? [];
+  licenseAlerts = licenseResult?.results ?? [];
+  keyResults = { completed: Number(krCounts?.completed ?? 0), total: Number(krCounts?.total ?? 0) };
   const groupStatus = new Map<string, Record<string, number | string>>();
   for (const project of visible) {
     const item = groupStatus.get(project.group_id) ?? { group: project.group_name, active: 0, paused: 0, done: 0, archived: 0 };
