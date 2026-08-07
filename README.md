@@ -2,9 +2,11 @@
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
+**What this is**: an in-house project-tracking system for the regulatory (RA/PV), clinical, QA, and BD teams at UIC, a Taiwanese pharmaceutical agency. Progress is tracked through a Kanban board, list, calendar, Gantt charts, and a global timeline, with AI weekly reports and a TFDA regulatory watch layered on top. Technically it is a single Cloudflare Worker (Hono + D1 + R2) serving a React + TypeScript front end, shipped with one `wrangler deploy`. It is not a general-purpose SaaS — the fields, permission tiers, and workflows are shaped around how those four teams actually work.
+
 > Like the Khala, it lets the team sense the pulse of every project together through the crystal.
 
-**Production**: <https://projects.uic-ai.com> | **Version**: v12.2 | **Tests**: 270/270 ✅ | **Platform**: Cloudflare Workers
+**Production**: <https://projects.uic-ai.com> | **Version**: v12.2 | **Tests**: 420/420 ✅ | **Platform**: Cloudflare Workers
 
 A shared project progress platform for the internal team of Taiwan-based pharmaceutical agency UIC. It replaces a fragmented workflow spread across six Excel files—where BD, RA, QA, and Clinical each worked in isolation and multiple people recorded the same project—with a single crystal for projects, progress, OKRs, regulatory updates, license expirations, and change control: real-time teamwide awareness, tiered permissions, AI assistance, and automated reminders.
 

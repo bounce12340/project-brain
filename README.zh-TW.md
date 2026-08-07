@@ -2,9 +2,11 @@
 
 [English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
+**專案定位**：這是一套內部自用的專案追蹤系統，服務台灣醫藥代理商 UIC 的法規（RA／PV）、臨床、QA、BD 四個團隊。以看板、清單、日曆、甘特圖與全域時間軸追蹤進度，再疊上 AI 週報與 TFDA 法規監控。技術上是單一 Cloudflare Worker（Hono ＋ D1 ＋ R2）供應 React ＋ TypeScript 前端，一次 `wrangler deploy` 即完成部署。它不是通用型 SaaS——欄位、權限分級與流程都貼著上述四個團隊的實際作業設計。
+
 > 如同卡拉，讓團隊在水晶中共同感知每個專案的脈動。
 
-**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.2｜**測試**：270/270 ✅｜**平台**：Cloudflare Workers
+**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.2｜**測試**：420/420 ✅｜**平台**：Cloudflare Workers
 
 給台灣醫藥代理商（UIC）內部團隊的共享專案進度平台。取代原先分散在六份 Excel 的追蹤方式（BD／RA／QA／臨床各自為政、同一專案被多人重複記錄），把專案、進度、OKR、法規動態、證照效期、變更管制收進同一顆水晶：全員即時共感、權限分級、AI 輔助、自動提醒。
 

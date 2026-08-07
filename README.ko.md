@@ -2,6 +2,8 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **한국어**
 
+**프로젝트 포지셔닝**: 대만 의약품 대리점 UIC의 규제(RA/PV), 임상, QA, BD 네 팀이 사내에서 사용하는 프로젝트 추적 시스템입니다. 칸반 보드, 목록, 캘린더, 간트 차트, 전체 타임라인으로 진행 상황을 추적하고 그 위에 AI 주간 보고서와 TFDA 규제 모니터링을 얹었습니다. 기술적으로는 단일 Cloudflare Worker(Hono + D1 + R2)가 React + TypeScript 프런트엔드를 제공하며 `wrangler deploy` 한 번으로 배포됩니다. 범용 SaaS가 아니라 필드, 권한 등급, 워크플로가 모두 이 네 팀의 실제 업무에 맞춰 설계되어 있습니다.
+
 > 칼라처럼, 팀 모두가 크리스털 안에서 각 프로젝트의 맥박을 함께 느낄 수 있습니다.
 
 **운영 사이트**: <https://projects.uic-ai.com>｜**버전**: v11.2｜**테스트**: 206/206 ✅｜**플랫폼**: Cloudflare Workers

@@ -2,6 +2,8 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
+**项目定位**：这是一套内部自用的项目追踪系统，服务台湾医药代理商 UIC 的法规（RA／PV）、临床、QA、BD 四个团队。以看板、列表、日历、甘特图与全局时间轴追踪进度，再叠上 AI 周报与 TFDA 法规监控。技术上是单一 Cloudflare Worker（Hono ＋ D1 ＋ R2）供应 React ＋ TypeScript 前端，一次 `wrangler deploy` 即完成部署。它不是通用型 SaaS——字段、权限分级与流程都贴着上述四个团队的实际作业设计。
+
 > 如同卡拉，让团队在水晶中共同感知每个项目的脉动。
 
 **正式站点**：<https://projects.uic-ai.com>｜**版本**：v11.2｜**测试**：206/206 ✅｜**平台**：Cloudflare Workers
