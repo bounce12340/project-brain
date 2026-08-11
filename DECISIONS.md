@@ -157,3 +157,6 @@
 - 2026-08-11（檢視權限）：放寬範圍嚴格限於 owner 與成員，其餘規則逐條不變——admin 全看、可見性 all 全看、group 限同組、private 限 owner 與成員。既有 16 條權限矩陣測試全數沿用未改，另補 6 條鎖住修正行為。
 - 2026-08-11（檢視權限）：intern 的 owner 判斷一併生效。其餘五個權限函式（`canEditProgress`／`canManageProject`／`canViewFees`／`canManageAutomation`／`canEditProgressUpdate`）本來就無條件認 owner，唯獨檢視不認，會出現「intern 擁有者能刪專案卻不能開專案」的矛盾。目前無 intern 擁有者（建立專案擋 intern，且無變更 owner 的端點，僅 `import-data.ts` 可寫入任意 owner），因此屬防禦性修正而非行為變更。
 - 2026-08-11（檢視權限）：intern「只看得到被指派進去的專案、不吃可見性規則」維持不變，改以獨立一行 `if (user.role === "intern") return false;` 表達，語意比原本夾在開頭的 `return isMember(...)` 明確。
+- 2026-08-11（管理權移轉）：`successorEligibilityError` 增加「接班人必須是正職成員」。原本只擋掉「已是 admin／未啟用／未核准」，實習生是合格候選人——選下去直接升 admin，若用完全移轉還會同時把現任管理員降為 member，等於一步跨過整套權限分級。`GET /admin/transfer/candidates` 的條件同步由 `role!='admin'` 收斂為 `role='member'`，讓下拉選單不再列出不可能通過驗證的人選。
+- 2026-08-11（管理權移轉）：前端 `TransferCandidate` 的 `role` 型別保留 `"member" | "intern"` 不收斂。後端已不再回傳 intern，收窄型別會讓既有的角色顯示三元式變成 TypeScript 恆偽比較錯誤，留著當防禦成本較低。
+- 2026-08-11（示範資料）：正式庫清除 `is_demo=1` 的 4 個帳號與 4 個專案，依 `/admin/clear-demo` 的既有語意先刪專案再刪帳號。刪除前逐一清點 14 個對 `users` 沒有 CASCADE／SET NULL 的外鍵欄位，確認 `bd_case_events.created_by`(2)、`task_comments.author_id`(1) 這三筆殘留全部落在示範專案「新藥查驗登記案」底下，會隨專案 CASCADE 一併清除，因此不會擋住帳號刪除。實際刪除 54 ＋ 25 列，留下 5 個真實帳號與 32 個真實專案。

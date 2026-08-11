@@ -35,7 +35,7 @@ adminRoutes.get("/transfer/candidates", async (c) => {
   const result = await c.env.DB.prepare(`
     SELECT u.id,u.name,u.email,u.role,g.name AS group_name
     FROM users u JOIN groups g ON g.id=u.group_id
-    WHERE u.is_active=1 AND u.approval_status='approved' AND u.role!='admin'
+    WHERE u.is_active=1 AND u.approval_status='approved' AND u.role='member'
     ORDER BY u.name,u.email
   `).all();
   return c.json({ candidates: result.results });

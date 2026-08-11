@@ -54,9 +54,12 @@ describe("v4 admin transfer", () => {
     expect(removesActiveApprovedAdmin(account("admin"), "member", 1)).toBe(true);
     expect(removesActiveApprovedAdmin(account("admin"), "admin", 0)).toBe(true);
   });
-  it("accepts an active approved member or intern as successor", () => {
+  it("accepts an active approved member as successor", () => {
     expect(successorEligibilityError(account("member"), "usr_current")).toBeNull();
-    expect(successorEligibilityError(account("intern"), "usr_current")).toBeNull();
+  });
+  it("rejects an intern successor", () => {
+    // 實習生只看得到被指派的專案；讓他直接接下管理權等於一步跳過整套權限分級。
+    expect(successorEligibilityError(account("intern"), "usr_current")).toContain("正職成員");
   });
   it("rejects pending, inactive, and existing-admin successors", () => {
     expect(successorEligibilityError(account("member", { approval_status: "pending" }), "usr_current")).toContain("核准");
