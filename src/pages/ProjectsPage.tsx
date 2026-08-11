@@ -2,19 +2,22 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorBox, Loading, PageHeader, ProgressBar } from "../components/UI";
+import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
+import { ProjectCard } from "../components/ProjectCard";
 import { useT } from "../i18n/LangContext";
+import { statusQuery } from "../project-archive";
 import type { Metadata, Project } from "../types";
 
 export function ProjectsPage() {
   const { user } = useAuth(); const t = useT(); const [projects, setProjects] = useState<Project[] | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [showNew, setShowNew] = useState(false); const [filters, setFilters] = useState({ group: "", status: "", keyword: "" });
-  const load = () => { const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value)); api<{ projects: Project[] }>(`/projects?${query}`).then((data) => setProjects(data.projects)); };
+  // status 一律帶值：不帶的話後端回傳全部狀態，已完成與已歸檔的專案會漏進這份清單。
+  const load = () => { const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([key, value]) => value && key !== "status")), status: statusQuery("active", filters.status) }); api<{ projects: Project[] }>(`/projects?${query}`).then((data) => setProjects(data.projects)); };
   useEffect(load, [filters]); useEffect(() => { api<Metadata>("/metadata").then(setMeta); }, []);
-  const statusLabel = { active: t("status.active"), paused: t("status.paused"), done: t("status.done"), archived: t("status.archived") };
   return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={user?.role !== "intern" && <button className="btn" onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>} />
     {showNew && meta && <NewProject metadata={meta} onDone={() => { setShowNew(false); load(); }} />}
-    <div className="panel mb-5 grid gap-3 md:grid-cols-3"><select value={filters.group} onChange={(e) => setFilters({ ...filters, group: e.target.value })}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allStatuses")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option><option value="done">{t("status.done")}</option><option value="archived">{t("status.archived")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} /></div>
-    {!projects ? <Loading /> : projects.length ? <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{projects.map((project, index) => <Link data-tour={index === 0 ? "project-card" : undefined} to={`/projects/${project.id}`} className="panel transition hover:shadow-[0_0_16px_rgb(var(--color-psi)/.28)]" key={project.id}><div className="mb-4 flex items-start justify-between gap-2"><div><span className="badge mb-2">{project.group_name}</span><h2 className="font-bold">{project.visibility === "private" && "🔒 "}{project.name}</h2></div><span className="text-xs text-star-dim">{statusLabel[project.status]}</span></div><p className="mb-4 line-clamp-2 min-h-10 text-sm text-star-dim">{project.description || t("projects.noDescription")}</p><ProgressBar value={project.progress} /><div className="mt-4 flex justify-between text-xs text-star-dim"><span>{t("common.owner", { name: project.owner_name })}</span><span>{t("common.target", { date: project.target_date || t("common.none") })}</span></div></Link>)}</div> : <Empty>{t("projects.notFound")}</Empty>}
+    <div className="panel mb-5 grid gap-3 md:grid-cols-3"><select value={filters.group} onChange={(e) => setFilters({ ...filters, group: e.target.value })}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} /></div>
+    {!projects ? <Loading /> : projects.length ? <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{projects.map((project, index) => <ProjectCard key={project.id} project={project} tour={index === 0} />)}</div> : <Empty>{t("projects.notFound")}</Empty>}
+    <p className="mt-6 text-sm text-star-dim">{t("projects.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>
   </>;
 }
 
