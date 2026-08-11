@@ -44,6 +44,15 @@ interface ProgressUpdateRow {
 const visibilityValues = new Set(["all", "group", "private"]);
 const statusValues = new Set(["active", "paused", "done", "archived"]);
 
+/**
+ * `?status=` 接受逗號分隔的多個狀態，讓「進行中專區」與「歸檔專區」各自一次取回自己那一籃，
+ * 不必為 done 與 archived 發兩次請求。單一值的行為與先前完全相同。
+ */
+export function requestedStatuses(raw: string | undefined | null): Set<string> {
+  const asked = (raw ?? "").split(",").map((part) => part.trim()).filter((part) => statusValues.has(part));
+  return new Set(asked);
+}
+
 export function accessFrom(row: ProjectRow): ProjectAccess {
   return { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] };
 }
@@ -82,12 +91,12 @@ export const projectsRoutes = new Hono<AppContext>();
 projectsRoutes.get("/", async (c) => {
   const user = c.get("user");
   const group = c.req.query("group");
-  const status = c.req.query("status");
+  const statuses = requestedStatuses(c.req.query("status"));
   const keyword = c.req.query("keyword")?.trim().toLowerCase();
   const rows = (await projectRows(c.env.DB)).filter((row) => {
     if (!canViewProject(user, accessFrom(row))) return false;
     if (group && row.group_id !== group) return false;
-    if (status && row.status !== status) return false;
+    if (statuses.size && !statuses.has(row.status)) return false;
     return !keyword || row.name.toLowerCase().includes(keyword) || row.description.toLowerCase().includes(keyword);
   });
   // summary=1 只回切換器需要的欄位；完整列含 description／goal_summary／risk_summary／
