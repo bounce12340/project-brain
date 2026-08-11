@@ -29,6 +29,40 @@ describe("canViewProject 權限矩陣", () => {
   it.each(cases)("%s", (_name, actor, target, expected) => expect(canViewProject(actor, target)).toBe(expected));
 });
 
+describe("擁有者一律看得到自己的專案", () => {
+  // 正式站實況：Michael／Dennis 屬 RA/PV 組，卻擁有 7 個「同組可見」的 BD 組專案，
+  // 且專案成員名單是空的。修正前 owner 判斷只寫在 private 分支，group 分支先 return，
+  // 導致他們開自己的專案得到 403「沒有檢視權限」。
+  const bdProject = (visibility: Visibility): ProjectAccess =>
+    ({ id: "p_bd", owner_id: "michael", group_id: "g_bd", visibility, member_ids: [] });
+  const michael = user("michael", "member", "g_rapv");
+
+  it.each(["all", "group", "private"] as const)("跨組 owner 可看 visibility=%s 的專案", (visibility) => {
+    expect(canViewProject(michael, bdProject(visibility))).toBe(true);
+  });
+
+  it("owner 身分不因角色是 intern 而失效", () => {
+    // 其餘五個權限函式（編輯／管理／費用／自動化）本來就認 owner，
+    // 唯獨檢視不認，會出現「能刪專案卻不能開專案」的矛盾。
+    expect(canViewProject(user("michael", "intern", "g_rapv"), bdProject("group"))).toBe(true);
+  });
+
+  it("放寬僅限 owner 與成員，其他人不受影響", () => {
+    const outsider = user("outsider", "member", "g_rapv");
+    expect(canViewProject(outsider, bdProject("group"))).toBe(false);
+    expect(canViewProject(outsider, bdProject("private"))).toBe(false);
+    expect(canViewProject(user("i", "intern", "g_bd"), bdProject("group"))).toBe(false);
+  });
+
+  it("五個權限函式對 owner 的認定一致", () => {
+    const target = bdProject("group");
+    expect([
+      canViewProject(michael, target), canEditProgress(michael, target),
+      canManageProject(michael, target), canViewFees(michael, target),
+    ]).toEqual([true, true, true, true]);
+  });
+});
+
 describe("修改與管理權限", () => {
   it("admin 可修改與管理", () => { expect(canEditProgress(user("a", "admin"), project("private"))).toBe(true); expect(canManageProject(user("a", "admin"), project("private"))).toBe(true); });
   it("owner 可修改與管理", () => { expect(canEditProgress(user("owner", "member", "g2"), project("private"))).toBe(true); expect(canManageProject(user("owner", "member", "g2"), project("private"))).toBe(true); });
