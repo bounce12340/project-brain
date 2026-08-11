@@ -153,3 +153,7 @@
 - 2026-08-07（README 定位說明）：五份語系 README 在語言切換列下方、卡拉引言上方各加一段「專案定位」。刻意放在既有敘述段落之前而非取代它——定位說明回答「這是什麼、給誰用、怎麼建的、不是什麼」，既有段落講的是「取代六份 Excel」的沿革，兩者用途不同。內容與 GitHub About 的描述對齊，讓倉庫首頁與 README 說同一件事。
 - 2026-08-07（README 定位說明）：定位說明明確寫出邊界「不是通用型 SaaS」。欄位、權限分級與流程都貼著 RA／PV、臨床、QA、BD 四組的實際作業，寫清楚可避免日後被當成通用產品評估。
 - 2026-08-07（README 定位說明）：只更新 `README.md` 與 `README.zh-TW.md` 的測試數（270 → 420，實測 41 檔 420 筆）。`README.zh-CN.md`／`README.ja.md`／`README.ko.md` 的徽章仍寫 v11.2／206，但這三份的內文本來就停在 v11.2（無任何 v12 段落），徽章與內文一致，單獨改數字反而會說謊。三份翻譯補到 v12.2 是另一件事，未在此處進行。
+- 2026-08-11（檢視權限）：`canViewProject` 把「擁有者或成員」提到所有可見性分支之前。原本 `owner_id === user.id` 只寫在 private 那一行，`visibility='group'` 的分支會先 `return`，因此「專案屬 A 組、擁有者屬 B 組、成員名單為空」的組合會把擁有者自己擋在門外。正式站中招 7 件：Michael 2 件、Dennis 5 件，全是 RA/PV 組的人擁有的 BD 組專案，開自己的專案得到 403。
+- 2026-08-11（檢視權限）：放寬範圍嚴格限於 owner 與成員，其餘規則逐條不變——admin 全看、可見性 all 全看、group 限同組、private 限 owner 與成員。既有 16 條權限矩陣測試全數沿用未改，另補 6 條鎖住修正行為。
+- 2026-08-11（檢視權限）：intern 的 owner 判斷一併生效。其餘五個權限函式（`canEditProgress`／`canManageProject`／`canViewFees`／`canManageAutomation`／`canEditProgressUpdate`）本來就無條件認 owner，唯獨檢視不認，會出現「intern 擁有者能刪專案卻不能開專案」的矛盾。目前無 intern 擁有者（建立專案擋 intern，且無變更 owner 的端點，僅 `import-data.ts` 可寫入任意 owner），因此屬防禦性修正而非行為變更。
+- 2026-08-11（檢視權限）：intern「只看得到被指派進去的專案、不吃可見性規則」維持不變，改以獨立一行 `if (user.role === "intern") return false;` 表達，語意比原本夾在開頭的 `return isMember(...)` 明確。
