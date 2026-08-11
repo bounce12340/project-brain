@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTIVE_STATUSES, ARCHIVE_STATUSES, archiveDate, archiveSummary,
-  bucketOf, bucketStatuses, groupArchiveByYear, statusQuery,
+  archivableSelection, bucketOf, bucketStatuses, canArchive, groupArchiveByYear, ongoingOnly, statusQuery,
 } from "../src/project-archive";
 import { requestedStatuses } from "../worker/routes/projects";
 import type { Project } from "../src/types";
@@ -117,4 +117,37 @@ describe("bucketStatuses", () => {
     expect([...bucketStatuses("active")]).toEqual(["active", "paused"]);
     expect([...bucketStatuses("archive")]).toEqual(["done", "archived"]);
   });
+});
+
+describe("儀表板只列進行中的專案", () => {
+  it("濾掉已完成與已歸檔，兩者都收在歸檔專區", () => {
+    // 先前只改了專案清單，儀表板走 /dashboard 另一條路徑，歸檔後的專案還留在進度條裡。
+    const rows = (["active", "paused", "done", "archived"] as const).map((status) => project({ id: status, status }));
+    expect(ongoingOnly(rows).map((item) => item.id)).toEqual(["active", "paused"]);
+  });
+
+  it("空清單回空陣列", () => expect(ongoingOnly([])).toEqual([]));
+});
+
+describe("封存權限與勾選", () => {
+  const owned = project({ id: "mine", owner_id: "me" });
+  const others = project({ id: "theirs", owner_id: "someone" });
+
+  it("admin 可封存任何專案", () => expect(canArchive(others, { id: "a", role: "admin" })).toBe(true));
+  it("owner 可封存自己的專案", () => expect(canArchive(owned, { id: "me", role: "member" })).toBe(true));
+  it("非 owner 的一般成員不可封存", () => expect(canArchive(others, { id: "me", role: "member" })).toBe(false));
+  it("未登入時一律不可封存", () => expect(canArchive(owned, null)).toBe(false));
+
+  it("勾選清單會濾掉沒有權限的專案，不送出注定被擋的請求", () => {
+    const selected = new Set(["mine", "theirs"]);
+    expect(archivableSelection([owned, others], selected, { id: "me", role: "member" })).toEqual(["mine"]);
+    expect(archivableSelection([owned, others], selected, { id: "a", role: "admin" })).toEqual(["mine", "theirs"]);
+  });
+
+  it("勾選了已不在清單上的 id 會被忽略", () => {
+    // 封存完成後重新載入，舊的勾選狀態可能還指向已經離開清單的專案。
+    expect(archivableSelection([owned], new Set(["mine", "gone"]), { id: "a", role: "admin" })).toEqual(["mine"]);
+  });
+
+  it("沒有勾選時回空陣列", () => expect(archivableSelection([owned, others], new Set(), { id: "a", role: "admin" })).toEqual([]));
 });

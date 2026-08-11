@@ -56,6 +56,26 @@ export function groupArchiveByYear(projects: Project[]): ArchiveYear[] {
     }));
 }
 
+/**
+ * 儀表板「各組專案進度」與專案清單看同一籃。先前只改了專案清單，儀表板仍直接列出
+ * `/dashboard` 回傳的全部專案，於是歸檔後的專案還留在進度條裡。
+ */
+export function ongoingOnly<T extends Pick<Project, "status">>(projects: T[]): T[] {
+  return projects.filter((project) => bucketOf(project.status) === "active");
+}
+
+/** 封存會改動專案狀態，因此與後端 `POST /projects/:id/archive` 一樣只開放給管理員與 owner。 */
+export function canArchive(project: Pick<Project, "owner_id">, user: { id: string; role: string } | null): boolean {
+  return !!user && (user.role === "admin" || project.owner_id === user.id);
+}
+
+/** 過濾出勾選清單中確實可封存的 id，避免送出注定被擋下的請求。 */
+export function archivableSelection<T extends Pick<Project, "id" | "owner_id">>(
+  projects: T[], selected: Set<string>, user: { id: string; role: string } | null,
+): string[] {
+  return projects.filter((project) => selected.has(project.id) && canArchive(project, user)).map((project) => project.id);
+}
+
 /** 專區標頭的統計：總數，以及已完成與已歸檔各自幾件。 */
 export function archiveSummary(projects: Project[]): { total: number; done: number; archived: number } {
   return {
