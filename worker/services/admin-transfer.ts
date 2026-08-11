@@ -21,6 +21,8 @@ export function successorEligibilityError(candidate: TransferCandidateState | nu
   if (candidate.is_active !== 1) return "接班人必須是啟用中的帳號";
   if (candidate.approval_status !== "approved") return "接班人必須已通過核准";
   if (candidate.role === "admin") return "接班人必須是尚未擔任管理員的使用者";
+  // 實習生的權限本來就限縮到「只看得到被指派的專案」，直接升為管理員等於一步跨過整套分級。
+  if (candidate.role !== "member") return "接班人必須是正職成員";
   return null;
 }
 
