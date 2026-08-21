@@ -100,7 +100,9 @@ describe("SPEC-V12-2 quick-create UI contracts", () => {
   });
 
   it.each([
-    ["milestone, enrollment, and fee", "../src/pages/ProjectDetailPage.tsx", ["milestoneSubmitting", "enrollmentSubmitting", "feeSubmitting"]],
+    ["enrollment and fee", "../src/pages/ProjectDetailPage.tsx", ["enrollmentSubmitting", "feeSubmitting"]],
+    // 里程碑與歷程事件已併入 ProjectTimeline，共用單一 busy 旗標。
+    ["project timeline", "../src/components/ProjectTimeline.tsx", ["busy"]],
     ["task and stage", "../src/components/Kanban.tsx", ["taskSubmitting", "stageSubmitting"]],
     ["KR", "../src/components/OkrPanel.tsx", ["krSubmitting"]],
     ["todo", "../src/pages/TodosPage.tsx", ["todoSubmitting"]],
