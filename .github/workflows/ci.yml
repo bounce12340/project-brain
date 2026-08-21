@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,3 +26,54 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # 只有 main 上通過 verify 的 push 才部署。deploy 與 verify 同一個 workflow，
+  # 才能用 needs 把關——跨 workflow 沒辦法保證順序。
+  deploy:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # 部署不設 cancel-in-progress：中途取消會留下上傳一半的狀態。
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Fail fast when the deploy credentials are missing
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::缺少 CLOUDFLARE_API_TOKEN secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::缺少 CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
+
+      - name: Build
+        run: npm run build
+
+      # 先套 migration 再部署：反過來的話，新程式會在欄位還不存在時就開始服務。
+      - name: Apply database migrations
+        run: npx wrangler d1 migrations apply project-brain-db --remote
+
+      - name: Deploy
+        run: npx wrangler deploy
+
+      # wrangler 回報成功不代表正式站真的換版，實際抓一次入口檔比對。
+      - name: Verify production serves this build
+        run: |
+          expected=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1)
+          echo "本次 build 的入口：$expected"
+          for attempt in 1 2 3 4 5; do
+            served=$(curl -fsS -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+              https://projects.uic-ai.com/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+            echo "第 $attempt 次抓到：$served"
+            [ "$served" = "$expected" ] && { echo "✅ 正式站已是本次 build"; exit 0; }
+            sleep 10
+          done
+          echo "::error::部署後正式站仍提供 $served，與本次 build 的 $expected 不符"
+          exit 1

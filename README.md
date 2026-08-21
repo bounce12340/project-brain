@@ -92,6 +92,17 @@ npm run build
 
 ## ☁️ Deployment
 
+Merging to `main` deploys through GitHub Actions: tests pass, migrations apply, `wrangler deploy` runs, and the workflow then fetches the live entry chunk and compares it against the build — a deploy only counts as successful once production actually serves it.
+
+Two repository secrets are required (Settings → Secrets and variables → Actions):
+
+| Secret | Contents |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Needs Account → Workers Scripts → Edit, Account → D1 → Edit, and Zone → Workers Routes → Edit (for the custom domain; without it the final deploy step fails) |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+
+The workflow can also be triggered by hand from the Actions tab. To deploy locally instead:
+
 ```powershell
 npx wrangler d1 migrations apply project-brain-db --remote
 npx wrangler deploy

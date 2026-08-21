@@ -92,6 +92,17 @@ npm run build
 
 ## ☁️ 部署
 
+合併到 `main` 後由 GitHub Actions 自動部署：測試通過 → 套用 migration → `wrangler deploy` → 實際抓正式站入口檔比對，確認真的換版才算成功。
+
+需要兩個 repo secret（Settings → Secrets and variables → Actions）：
+
+| Secret | 內容 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | 需含 Account → Workers Scripts → Edit、Account → D1 → Edit、Zone → Workers Routes → Edit（自訂網域用，缺了會在部署最後一步失敗） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 帳號 ID |
+
+也可以在 Actions 頁面手動觸發（workflow_dispatch）。要在本機部署則是：
+
 ```powershell
 npx wrangler d1 migrations apply project-brain-db --remote
 npx wrangler deploy
