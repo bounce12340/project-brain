@@ -184,3 +184,9 @@
 - 2026-08-21（時間流合併）：里程碑與歷程事件合併成單一「專案時間流」面板。兩者本來就存在同一張 `milestones` 表、只差 `kind` 欄位，卻被拆成兩個面板各自新增，同一件事常被記兩次。排序由未來到過去，並在跨越今天處插入分隔線，讓「接下來要做什麼」留在視線最先到的位置。
 - 2026-08-21（時間流合併）：沒有日期的項目沉到最後但不隱藏，否則使用者會找不到自己建過的東西。逾期只標未完成的里程碑——歷程事件是既成事實，沒有逾期的概念。
 - 2026-08-21（時間流合併）：`ProjectDetailPage` 內原本的 `addMilestone`／`toggleMilestone`／`addHistoryEvent`／`deleteHistoryEvent` 與四個 state 一併刪除，未留孤兒程式碼。導覽的里程碑與歷程事件兩步併為一步（14 → 13 步，仍在 12–16 的規格範圍內），掃描來源清單的三個測試同步更新。
+- 2026-08-21（自動部署）：部署改由 GitHub Actions 執行，token 存成 repo secret，不再需要把憑證貼進對話或留在本機環境變數。deploy job 放在既有的 `ci.yml` 內並以 `needs: verify` 把關——跨 workflow 的 `workflow_run` 無法保證順序，同一個檔案才擋得住「測試沒過就部署」。
+- 2026-08-21（自動部署）：觸發條件同時檢查 `github.event_name != 'pull_request'` 與 `github.ref == 'refs/heads/main'`。少了任一個，功能分支的 push 或 fork 的 PR 就會打到正式站。另保留 `workflow_dispatch` 供手動重跑。
+- 2026-08-21（自動部署）：`concurrency` 用獨立的 `deploy-production` 群組且 `cancel-in-progress: false`。CI 可以被後續 commit 取消，部署不行——上傳到一半被砍會留下不完整的資產狀態。
+- 2026-08-21（自動部署）：順序固定為 build → migration → deploy。migration 排在 deploy 之前，否則新程式會在欄位還不存在時就開始服務；build 排在 migration 之前，壞掉的程式就不會先動到正式資料庫。
+- 2026-08-21（自動部署）：部署後實際抓正式站的入口檔比對本次 build 的檔名，最多重試 5 次（每次間隔 10 秒）。`wrangler deploy` 回報成功不代表邊緣真的換版，本 session 就遇過快取提供舊 index.html 的情況；不比對等於把「部署成功」建立在 CLI 的自我宣告上。
+- 2026-08-21（自動部署）：token 需含 Zone → Workers Routes → Edit。缺這項時 Worker 其實已上傳成功，但 wrangler 會在設定自訂網域路由的最後一步以非零結束——在 Actions 裡會整個 job 變紅。這一點寫進 README 的部署段，避免下次有人以為部署失敗。
