@@ -190,3 +190,10 @@
 - 2026-08-21（自動部署）：順序固定為 build → migration → deploy。migration 排在 deploy 之前，否則新程式會在欄位還不存在時就開始服務；build 排在 migration 之前，壞掉的程式就不會先動到正式資料庫。
 - 2026-08-21（自動部署）：部署後實際抓正式站的入口檔比對本次 build 的檔名，最多重試 5 次（每次間隔 10 秒）。`wrangler deploy` 回報成功不代表邊緣真的換版，本 session 就遇過快取提供舊 index.html 的情況；不比對等於把「部署成功」建立在 CLI 的自我宣告上。
 - 2026-08-21（自動部署）：token 需含 Zone → Workers Routes → Edit。缺這項時 Worker 其實已上傳成功，但 wrangler 會在設定自訂網域路由的最後一步以非零結束——在 Actions 裡會整個 job 變紅。這一點寫進 README 的部署段，避免下次有人以為部署失敗。
+- 2026-08-27（CI 匯入）：`/api/admin/import` 只吃 `sid` session cookie，CI 沒有也不該有任何人的密碼，因此 `scripts/import-remote.ts` 改走 D1 REST API，並以 `CLOUDFLARE_API_TOKEN` 認證（該 token 已含 D1 → Edit）。沒有為此新增機器帳號或 API key——多一條長期有效的認證路徑，風險大於它省下的麻煩。
+- 2026-08-27（CI 匯入）：腳本把 D1 REST API 包成 `D1Database` 介面後直接呼叫 `runAdminImport`，不另外手寫一份 SQL。匯入規則、冪等鍵與 Email fallback 只有一份實作，正式站端點與 CI 不會漂移。
+- 2026-08-27（CI 匯入）：REST API 沒有 `batch()` 的單一交易語意，shim 改為依序執行。可以這樣做的前提是匯入合約本身冪等——中途失敗直接重跑即可，不需要 all-or-nothing。
+- 2026-08-27（CI 匯入）：匯入前先驗執行者是 active／approved 的 admin，再驗 payload 內每個 Email 都存在，缺了就中止。不擋的話整批資料會靜靜地改掛管理員並在專案目標與任務描述前面加上「【原負責人：…】」，事後要清很麻煩；真要接受 fallback 得明確勾 `allow_owner_fallback`。
+- 2026-08-27（CI 匯入）：workflow 只有 `workflow_dispatch`，且第一個步驟就檢查 `confirm` 字串，排在 checkout 與 `npm ci` 之前。`concurrency` 用 `import-production` 且 `cancel-in-progress: false`，理由同部署——寫到一半被砍會留下不完整狀態。`tests/import-workflow.test.ts` 把「不得有自動觸發條件」寫成測試，避免日後有人順手加上 push。
+- 2026-08-27（CI 匯入）：`imports/` 進版控、`migration/*.json` 維持排除。會被 CI 寫進正式資料庫的 payload 必須經過 PR 審閱並留下歷史；`migration/` 則保留給一次性、不需要留存的臨時資料。repo 為 private，確認過才把含往來內容的 payload 納入版控。
+- 2026-08-27（Salagen 包材變更專案）：`josh@uicgroup.com.tw` 是公司信箱、不是艾爾水晶帳號，payload 內的 Email 一律用登入帳號 `bounceto12340@gmail.com`。填公司信箱會讓 31 個欄位全部走 fallback，結果一樣掛在同一個人身上，卻多了滿版的「【原負責人：…】」前綴。

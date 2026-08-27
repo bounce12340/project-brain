@@ -1,0 +1,96 @@
+{
+  "projects": [
+    {
+      "external_key": "ra-2026-salagen-hdpe-bottle-variation",
+      "name": "Salagen 5 mg 錠 － HDPE 瓶樹脂／色料及供應商變更登記（TFDA）",
+      "group": "grp_general",
+      "owner_email": "bounceto12340@gmail.com",
+      "visibility": "group",
+      "status": "active",
+      "progress": 24,
+      "goal_summary": "Salagen 5 mg 錠（CMO：Patheon；MAH：Advanz Pharma）之 HDPE 瓶包材變更登記案。原包材停供，Amcor 瓶身供應商與瓶身尺寸不變，變更項目為樹脂（Equistar Petrothene LR 734001 → Marlex HDPE HHM5502BN）與色料（Ampacet M HDPE 110080 WHT → PEC17530）及其各自供應商（Equistar → Marlex、Ampacet → Plastics Color Corp）。目標：依 2024/10/04 雙方議定之「效期前一年通知」承諾，於 2026/09/12 前完成 TFDA 變更登記送件，並於審查期間完成補件，避免因原包材停供造成缺貨（OOS）。",
+      "start_date": "2024-08-12",
+      "target_date": "2027-03-31",
+      "stages": ["準備文件", "送件", "審查中", "補件", "核准領證", "結案"],
+      "quarter_goals": [
+        { "quarter": "2026Q3", "objective": "完成 Advanz 2026/08 提供之 Module 3、變更理由書與 Annexure 審閱，回覆對方暫定送件時程，並於 2026/09/12 期限前完成 TFDA 變更登記送件。" },
+        { "quarter": "2026Q4", "objective": "追蹤 TFDA 審查進度，備妥 24 個月長期安定性數據作為補充資料，並於期限內完成缺失回覆。" }
+      ],
+      "key_results": [
+        { "title": "完成 Module 3（含美國版 3.2.P.7）與變更理由書審閱並回覆 Advanz", "quarter": "2026Q3", "status": "進行中", "owner_email": "bounceto12340@gmail.com" },
+        { "title": "向 Advanz 提供暫定送件時程（tentative submission plan）", "quarter": "2026Q3", "status": "未開始", "owner_email": "bounceto12340@gmail.com" },
+        { "title": "取得製造商正式且已簽署之變更通知函", "quarter": "2026Q3", "status": "未開始", "owner_email": "bounceto12340@gmail.com" },
+        { "title": "於 2026/09/12 前完成 TFDA 變更登記送件", "quarter": "2026Q3", "status": "未開始", "owner_email": "bounceto12340@gmail.com" },
+        { "title": "TFDA 審查期間之補充資料與缺失回覆如期送出", "quarter": "2026Q4", "status": "未開始", "owner_email": "bounceto12340@gmail.com" }
+      ],
+      "tasks": [
+        { "title": "回覆 Advanz 變更代碼、變更類別、所需文件與核准時程評估", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2024-08-13", "done": true },
+        { "title": "提出樹脂材質、相容性／溶出試驗與加速安定性三項疑問並取得 CMO 回覆", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2024-08-15", "done": true },
+        { "title": "完成 Resin change request form 逐項填寫與註記", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2024-10-04", "done": true },
+        { "title": "評估 18 個月長期安定性數據（25°C/60%RH）是否足以送件", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-04-09", "done": true },
+        { "title": "確認 6 個月加速安定性數據（40°C/75%RH）並更新需求檢核表", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-06-02", "done": true },
+        { "title": "議定台灣版 3.2.P.7 不可得之處理方式（改採美國版內容並於理由書聲明）", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-06-15", "done": true },
+        { "title": "回覆 Advanz 8/17 與 8/24 來信，並提供暫定送件時程", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-08-29", "done": false },
+        { "title": "確認可否向 TFDA 調閱原登記之 3.2.P.7 章節並回覆 Advanz", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-08-31", "done": false },
+        { "title": "審閱 Advanz 提供之 Module 3 文件（TW - Salagen - Registered dossier - Aug 2026）", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-01", "done": false },
+        { "title": "審閱變更理由書（Justification letter）與 Annexure，確認已載明台灣版 3.2.P.7 不可得之聲明", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-01", "done": false },
+        { "title": "核對 Advanz 需求檢核表（Excel）狀態，列出仍缺文件並回覆", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-01", "done": false },
+        { "title": "取得製造商正式變更通知函（含簽署）", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-05", "done": false },
+        { "title": "確認樹脂與色料變更驗證方案（含加速與長期安定性計畫）已納入送件資料", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-05", "done": false },
+        { "title": "彙整安定性資料：18 個月長期（25°C/60%RH）＋6 個月加速（40°C/75%RH）", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-05", "done": false },
+        { "title": "編製中文變更登記申請表與相關切結、比對表文件", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-08", "done": false },
+        { "title": "送件版本內部最終審查（RA 主管覆核）", "stage": "準備文件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-10", "done": false },
+        { "title": "於 2026/09/12 期限前完成 TFDA 變更登記送件", "stage": "送件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-09-11", "done": false },
+        { "title": "追蹤 TFDA 審查進度（120 曆天）", "stage": "審查中", "assignee_email": "bounceto12340@gmail.com", "due_date": "2027-01-12", "done": false },
+        { "title": "備妥 24 個月長期安定性數據作為審查期間補充資料", "stage": "審查中", "assignee_email": "bounceto12340@gmail.com", "due_date": "2026-12-31", "done": false },
+        { "title": "回覆 TFDA 缺失通知（60 曆天內）", "stage": "補件", "assignee_email": "bounceto12340@gmail.com", "due_date": "2027-03-12", "done": false },
+        { "title": "取得變更核准函並更新產品主檔與包材規格", "stage": "核准領證", "assignee_email": "bounceto12340@gmail.com", "due_date": "2027-03-31", "done": false },
+        { "title": "通知 Advanz 與 Patheon 核准結果，確認新包材產品可正常供貨", "stage": "結案", "assignee_email": "bounceto12340@gmail.com", "due_date": "2027-04-15", "done": false }
+      ],
+      "milestones": [
+        { "title": "安定性資料備齊（18 個月長期＋6 個月加速）", "due_date": "2026-05-29", "done": true },
+        { "title": "Advanz 交付 Module 3、變更理由書與 Annexure", "due_date": "2026-08-17", "done": true },
+        { "title": "TFDA 變更登記送件期限（效期前一年通知承諾）", "due_date": "2026-09-12", "done": false },
+        { "title": "TFDA 審查期（120 曆天）", "due_date": "2026-09-15", "end_date": "2027-01-12", "done": false },
+        { "title": "缺失補件期（60 曆天）", "due_date": "2027-01-13", "end_date": "2027-03-13", "done": false },
+        { "title": "預計取得變更核准", "due_date": "2027-03-31", "done": false }
+      ],
+      "events": [
+        { "title": "Advanz 提出內部變更管制，請 UIC 評估台灣變更類別與時程", "due_date": "2024-08-12" },
+        { "title": "UIC 回覆：屬一次包材變更，需變更理由書、包材規格比對、6 個月加速與 12 個月長期安定性；時程 120＋60 曆天", "due_date": "2024-08-13" },
+        { "title": "Advanz 澄清：瓶身供應商 Amcor 與瓶身尺寸不變，僅樹脂／色料及其供應商變更", "due_date": "2024-08-14" },
+        { "title": "UIC 提出三項疑問：樹脂是否仍為 HDPE、是否完成相容性／溶出試驗、是否有 6 個月加速安定性", "due_date": "2024-08-15" },
+        { "title": "雙方 Teams 會議：討論文件需求與送件策略（缺貨風險：庫存僅至 2025/03）", "due_date": "2024-09-25" },
+        { "title": "Advanz 提供技術性變更理由（technical justification）", "due_date": "2024-09-25" },
+        { "title": "雙方議定於效期前一年（2026/09/12）前通知 TFDA，並確認最終資料需求檢核表", "due_date": "2024-10-04" },
+        { "title": "UIC 完成 Resin change request form 回覆（因凱米颱風停電延後）", "due_date": "2024-10-04" },
+        { "title": "Advanz 提供 18 個月長期安定性數據（25°C/60%RH）", "due_date": "2026-04-07" },
+        { "title": "UIC 回覆：長期數據不能取代加速數據，仍需 3 個月以上加速安定性與製造商簽署之變更通知函", "due_date": "2026-04-09" },
+        { "title": "Advanz 提供 6 個月加速安定性數據（40°C/75%RH）", "due_date": "2026-05-29" },
+        { "title": "UIC 確認安定性資料已足以送件，24 個月長期數據列為審查期間補充資料", "due_date": "2026-06-02" },
+        { "title": "Advanz 告知無台灣版 3.2.P.7，提供美國版 3.2.P.7 並承諾 2026/07 前交付可得文件", "due_date": "2026-06-12" },
+        { "title": "Advanz 提供樹脂與色料變更之驗證方案（含加速與長期安定性試驗計畫）", "due_date": "2026-06-12" },
+        { "title": "UIC 回覆：不需完整 CTD，理由書須聲明台灣版 3.2.P.7 雙方皆不可得，請 TFDA 依現行包材狀態審查", "due_date": "2026-06-15" },
+        { "title": "Advanz 交付 Module 3 文件連結、變更理由書與 Annexure、需求檢核表，並詢問可否向 TFDA 調閱 3.2.P.7", "due_date": "2026-08-17" },
+        { "title": "Advanz 來信催覆，等待 UIC 審閱結果與暫定送件時程", "due_date": "2026-08-24" }
+      ],
+      "progress_updates": [
+        {
+          "date": "2026-06-15",
+          "content": "**與 Advanz 議定 3.2.P.7 處理方式**\n\n- 雙方確認台灣版 3.2.P.7 皆不可得：本品多年前登記，歷經數次產品移轉，UIC 未持有原始 CTD；Advanz 記錄中亦無台灣版。\n- 同意改以美國版 3.2.P.7 內容作為變更理由書之依據（美國包裝過去曾供應台灣）。\n- 已請 Advanz 於變更理由書中明載上述聲明，並請 TFDA 依一次包材現行狀態審查核准。\n- 不要求提供完整 CTD 卷宗，Advanz 依其內部時程提供可得文件即可。",
+          "author_email": "bounceto12340@gmail.com"
+        },
+        {
+          "date": "2026-08-17",
+          "content": "**Advanz 交付主要送件文件**\n\n- Module 3 文件連結（TW - Salagen - Registered dossier - Aug 2026）。\n- 變更理由書（Justification letter）＋Annexure，內容取自美國版 3.2.P.7。\n- 需求檢核表（Excel）現況更新。\n\n**對方待回覆事項**\n1. UIC 可否向 TFDA 調閱原登記之 3.2.P.7 章節。\n2. 本變更之暫定送件時程（tentative submission plan）。",
+          "author_email": "bounceto12340@gmail.com"
+        },
+        {
+          "date": "2026-08-27",
+          "content": "**目前狀態：待 UIC 回覆，送件期限逼近**\n\n- Advanz 已於 8/24 來信催覆（原信 8/17 發出），尚未回覆。\n- 距 2024/10/04 議定之 TFDA 通知期限 **2026/09/12 僅剩約 2 週**，屬本案最關鍵時程風險。\n\n**下一步**\n1. 本週內完成 Module 3、變更理由書與 Annexure 審閱，並核對需求檢核表缺項。\n2. 回覆 Advanz：3.2.P.7 調閱可行性＋暫定送件時程。\n3. 確認製造商簽署之變更通知函是否已在 QR_769161 文件包中，若無則儘速索取。\n4. 完成中文申請表與比對表，9/10 前內部覆核，9/11 送件。\n\n**已備妥資料**：18 個月長期安定性（25°C/60%RH）、6 個月加速安定性（40°C/75%RH）、技術性變更理由、樹脂與色料驗證方案。\n**待補**：製造商簽署之變更通知函、24 個月長期安定性（審查期間補充）。",
+          "author_email": "bounceto12340@gmail.com"
+        }
+      ]
+    }
+  ]
+}

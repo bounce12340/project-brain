@@ -118,3 +118,20 @@
   }]
 }
 ```
+
+## 從 CI 匯入正式站
+
+管理員手上沒有 Cloudflare 憑證、或不想在瀏覽器裡貼大段 JSON 時，可以改用 GitHub Actions 匯入：
+
+1. 把審閱過的 payload 放進 `imports/`（這個目錄會進 Git，`migration/*.json` 則維持不進版控）。
+2. Actions → **Import to production** → Run workflow，填入檔名與執行者 Email，`confirm` 輸入 `import-to-production`。
+3. workflow 會依序：驗確認字串 → 驗 secret 與檔案存在 → 跑 `tests/import-payload.test.ts`（在記憶體資料庫上套真實 migrations 完整匯入一次並重送驗冪等）→ typecheck → bundle → 匯入正式 D1。
+
+`scripts/import-remote.ts` 走 D1 REST API，跑的是 `/api/admin/import` 端點同一支 `runAdminImport`，所以匯入規則、冪等鍵與 Email fallback 行為完全一致，並在寫入後補一筆 `audit_log`。
+
+兩道匯入前的把關：
+
+- **執行者**必須是 active、approved 且 `role='admin'` 的帳號，否則中止。
+- **payload 內所有 Email**都必須在正式站存在且已核准，否則中止並列出缺哪些。真的要讓資料改掛管理員（會在專案目標與任務描述加上「【原負責人：…】」）時，才勾選 `allow_owner_fallback`。
+
+失敗可以直接重跑：匯入合約冪等，重送只會累計 `skipped`。
