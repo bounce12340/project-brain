@@ -53,6 +53,40 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::缺少 CLOUDFLARE_API_TOKEN secret"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::缺少 CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
 
+      # 權限一次驗完再開始跑。前兩次自動部署各只暴露一個缺的權限——第一次卡在
+      # Zone → Workers Routes，補上之後才發現 Account → D1 也不通——每補一項就得
+      # 再等一輪 CI 才知道下一項缺什麼。這裡把每項權限分開探，一次列出全部。
+      - name: Check the API token carries every permission this deploy needs
+        run: |
+          host=$(grep -o '"pattern": *"[^"]*"' wrangler.jsonc | head -1 | cut -d'"' -f4)
+          zone_name=${host#*.}
+          probe() {
+            curl -sS -o /tmp/cf-probe.json -w '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/$1" || echo 000
+          }
+          missing=0
+          need() {
+            if [ "$(probe "$1")" = "200" ]; then echo "✅ $2"
+            else echo "::error::API token 缺少「$2」"; missing=1; fi
+          }
+          need "user/tokens/verify" "有效且未過期的 API token"
+          need "accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?per_page=1" "Account → D1（套 migration 用）"
+          need "accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" "Account → Workers Scripts（上傳 Worker 用）"
+          if [ "$(probe "zones?name=$zone_name")" = "200" ]; then
+            echo "✅ Zone → Zone 讀得到 $zone_name"
+            zone_id=$(grep -o '"id":"[0-9a-f]\{32\}"' /tmp/cf-probe.json | head -1 | cut -d'"' -f4) || true
+            need "zones/$zone_id/workers/routes" "Zone → Workers Routes（自訂網域 $host 用）"
+          else
+            echo "::error::API token 讀不到 zone $zone_name，Zone → Workers Routes 必定也不通"
+            missing=1
+          fi
+          if [ "$missing" != 0 ]; then
+            echo "::error::請到 Cloudflare → My Profile → API Tokens 編輯同一個 token 補齊上列權限。改權限不會改變 token 字串，repo secret 不用重設。"
+            exit 1
+          fi
+          echo "權限齊全。注意這裡只驗到「讀得到」；若某項之後仍在部署時失敗，代表那項給的是 Read 而不是 Edit。"
+
       - name: Build
         run: npm run build
 

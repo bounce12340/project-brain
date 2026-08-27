@@ -98,7 +98,7 @@ npm run build
 
 | Secret | 內容 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | 需含 Account → Workers Scripts → Edit、Account → D1 → Edit、Zone → Workers Routes → Edit（自訂網域用，缺了會在部署最後一步失敗） |
+| `CLOUDFLARE_API_TOKEN` | 需含 Account → Workers Scripts → Edit、Account → D1 → Edit、Zone → Zone → Read、Zone → Workers Routes → Edit（後兩項給自訂網域用）。部署工作會在 build 之前把四項全部探一次，一輪列出所有缺的，不必失敗一次才知道缺一項 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 帳號 ID |
 
 也可以在 Actions 頁面手動觸發（workflow_dispatch）。要在本機部署則是：

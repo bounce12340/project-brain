@@ -197,3 +197,6 @@
 - 2026-08-27（CI 匯入）：workflow 只有 `workflow_dispatch`，且第一個步驟就檢查 `confirm` 字串，排在 checkout 與 `npm ci` 之前。`concurrency` 用 `import-production` 且 `cancel-in-progress: false`，理由同部署——寫到一半被砍會留下不完整狀態。`tests/import-workflow.test.ts` 把「不得有自動觸發條件」寫成測試，避免日後有人順手加上 push。
 - 2026-08-27（CI 匯入）：`imports/` 進版控、`migration/*.json` 維持排除。會被 CI 寫進正式資料庫的 payload 必須經過 PR 審閱並留下歷史；`migration/` 則保留給一次性、不需要留存的臨時資料。repo 為 private，確認過才把含往來內容的 payload 納入版控。
 - 2026-08-27（Salagen 包材變更專案）：`josh@uicgroup.com.tw` 是公司信箱、不是艾爾水晶帳號，payload 內的 Email 一律用登入帳號 `bounceto12340@gmail.com`。填公司信箱會讓 31 個欄位全部走 fallback，結果一樣掛在同一個人身上，卻多了滿版的「【原負責人：…】」前綴。
+- 2026-08-27（部署權限預檢）：deploy job 在 build 之前先逐項探測 API token 權限（`user/tokens/verify`、Account D1、Account Workers Scripts、Zone 查詢與 Zone Workers Routes），全部探完才決定要不要中止。前兩次自動部署各只暴露一個缺的權限——第一次卡在 Zone → Workers Routes，補上之後才發現 Account → D1 也不通——每補一項就得再等一輪 CI 才知道下一項缺什麼。探到第一個就中斷等於保留這個問題，所以用 `missing` 旗標累積後一次列出。
+- 2026-08-27（部署權限預檢）：預檢只用 GET，因此只證明「讀得到」，不證明是 Edit。步驟結尾明講這件事，避免預檢全綠但部署仍失敗時，有人以為權限已經確認過而往別的方向找。
+- 2026-08-27（部署權限預檢）：zone id 不寫死在 workflow 裡，改由 `wrangler.jsonc` 的 route pattern 去掉最左邊一段得到 zone 名稱後查出來。寫死的話換網域就會變成一個沒人記得要改的常數，而且 zone 名稱本來就已經在設定檔裡了。
