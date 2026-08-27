@@ -200,3 +200,4 @@
 - 2026-08-27（部署權限預檢）：deploy job 在 build 之前先逐項探測 API token 權限（`user/tokens/verify`、Account D1、Account Workers Scripts、Zone 查詢與 Zone Workers Routes），全部探完才決定要不要中止。前兩次自動部署各只暴露一個缺的權限——第一次卡在 Zone → Workers Routes，補上之後才發現 Account → D1 也不通——每補一項就得再等一輪 CI 才知道下一項缺什麼。探到第一個就中斷等於保留這個問題，所以用 `missing` 旗標累積後一次列出。
 - 2026-08-27（部署權限預檢）：預檢只用 GET，因此只證明「讀得到」，不證明是 Edit。步驟結尾明講這件事，避免預檢全綠但部署仍失敗時，有人以為權限已經確認過而往別的方向找。
 - 2026-08-27（部署權限預檢）：zone id 不寫死在 workflow 裡，改由 `wrangler.jsonc` 的 route pattern 去掉最左邊一段得到 zone 名稱後查出來。寫死的話換網域就會變成一個沒人記得要改的常數，而且 zone 名稱本來就已經在設定檔裡了。
+- 2026-08-27（部署權限預檢修正）：預檢移除 `/user/tokens/verify` 這道探測。該端點只認 user-owned token，account-owned token 要走 `/accounts/{id}/tokens/verify`；本專案用的是後者，於是在四項權限全部通過的情況下，這道多餘的檢查仍讓 deploy job 失敗並擋掉一次正式部署。不改成分支判斷 token 種類，而是直接拿掉——四項能力探測本來就涵蓋「token 有效」這件事：token 失效的話那四項會一起失敗，多這一道沒有增加任何資訊，只增加了一種失敗模式。`tests/deploy-workflow.test.ts` 加一條迴歸測試釘住「不得再出現 user/tokens/verify」。
