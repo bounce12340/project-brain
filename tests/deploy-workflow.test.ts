@@ -43,13 +43,21 @@ describe("部署步驟的順序與把關", () => {
 
   it("開跑前一次驗完所有權限，不是失敗一次才知道缺一項", () => {
     // 前兩次自動部署各只暴露一個缺的權限，每補一項就得再等一輪 CI。
-    const preflight = deployJob.slice(order("user/tokens/verify"), order("npm run build"));
+    const preflight = deployJob.slice(order("d1/database"), order("npm run build"));
     for (const permission of ["d1/database", "workers/scripts", "workers/routes"]) {
       expect(preflight, permission).toContain(permission);
     }
     // 探到第一個缺的就中斷的話，就退回一輪只驗一項了。
     expect(preflight).toContain("missing=1");
-    expect(order("user/tokens/verify")).toBeLessThan(order("migrations apply"));
+    expect(order("d1/database")).toBeLessThan(order("migrations apply"));
+  });
+
+  it("不去打 /user/tokens/verify——那個端點只認 user-owned token", () => {
+    // 這道多餘的檢查曾經在四項權限全通過的情況下擋掉一次正式部署：
+    // token 是 account-owned，/user/tokens/verify 不回 200，於是變成假警報。
+    // 比對加引號的探測參數，不是整份文字——ci.yml 裡留有一段說明「為什麼不驗它」
+    // 的註解，那段註解正是防止有人再加回去的東西，不該被這條測試逼著刪掉。
+    expect(deployJob).not.toMatch(/"user\/tokens\/verify"/);
   });
 
   it("部署後實際抓正式站比對，不只信 wrangler 的回報", () => {
