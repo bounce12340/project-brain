@@ -1,0 +1,73 @@
+name: Import to production
+
+# 手動觸發專用：把 imports/ 底下已審閱的 payload 寫進正式 D1。
+# 沒有任何自動觸發條件——push、PR、排程都不會跑這支。
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: "imports/ 底下的檔名"
+        required: true
+        default: salagen-packaging-variation.json
+      actor_email:
+        description: "執行匯入的管理員 Email（會記入 audit_log）"
+        required: true
+        default: bounceto12340@gmail.com
+      confirm:
+        description: "確認寫入正式資料庫，請輸入 import-to-production"
+        required: true
+      allow_owner_fallback:
+        description: "payload 內的 Email 在正式站不存在時仍繼續（資料會改掛管理員）"
+        type: boolean
+        default: false
+
+# 匯入不設 cancel-in-progress：中途取消會留下寫一半的狀態。重跑是安全的
+# （匯入合約冪等），但同時跑兩份沒有意義。
+concurrency:
+  group: import-production
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check the confirmation phrase
+        run: |
+          test "${{ inputs.confirm }}" = "import-to-production" || {
+            echo "::error::confirm 必須是 import-to-production，這次收到的是「${{ inputs.confirm }}」"; exit 1; }
+
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Fail fast when the credentials or the payload are missing
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::缺少 CLOUDFLARE_API_TOKEN secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::缺少 CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
+          test -f "imports/${{ inputs.payload }}" || { echo "::error::找不到 imports/${{ inputs.payload }}"; exit 1; }
+
+      # 先在本機記憶體資料庫套上真實 migrations 跑完整匯入＋重送，證明這份 payload
+      # 合約正確且冪等，再去碰正式資料。
+      - name: Validate the payload against the real migrations
+        run: npm test -- tests/import-payload.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # scripts/import-remote.ts 會 import worker/ 底下的 TypeScript，node 無法直接
+      # 執行，先 bundle 成單一 ESM 檔。
+      - name: Bundle the importer
+        run: npx esbuild scripts/import-remote.ts --bundle --platform=node --format=esm --target=node22 --outfile=.import/import-remote.mjs
+
+      - name: Import into production D1
+        run: |
+          node .import/import-remote.mjs \
+            --payload "imports/${{ inputs.payload }}" \
+            --actor "${{ inputs.actor_email }}" \
+            ${{ inputs.allow_owner_fallback && '--allow-owner-fallback' || '' }}
