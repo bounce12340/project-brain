@@ -98,7 +98,7 @@ Two repository secrets are required (Settings → Secrets and variables → Acti
 
 | Secret | Contents |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Needs Account → Workers Scripts → Edit, Account → D1 → Edit, and Zone → Workers Routes → Edit (for the custom domain; without it the final deploy step fails) |
+| `CLOUDFLARE_API_TOKEN` | Needs Account → Workers Scripts → Edit, Account → D1 → Edit, Zone → Zone → Read and Zone → Workers Routes → Edit (the last two serve the custom domain). The deploy job probes all four before it builds and reports every missing one in a single run, so permissions are not discovered one failure at a time |
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
 
 The workflow can also be triggered by hand from the Actions tab. To deploy locally instead:

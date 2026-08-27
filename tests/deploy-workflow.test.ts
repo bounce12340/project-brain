@@ -41,6 +41,17 @@ describe("部署步驟的順序與把關", () => {
     expect(order("缺少 CLOUDFLARE_API_TOKEN")).toBeLessThan(order("npm run build"));
   });
 
+  it("開跑前一次驗完所有權限，不是失敗一次才知道缺一項", () => {
+    // 前兩次自動部署各只暴露一個缺的權限，每補一項就得再等一輪 CI。
+    const preflight = deployJob.slice(order("user/tokens/verify"), order("npm run build"));
+    for (const permission of ["d1/database", "workers/scripts", "workers/routes"]) {
+      expect(preflight, permission).toContain(permission);
+    }
+    // 探到第一個缺的就中斷的話，就退回一輪只驗一項了。
+    expect(preflight).toContain("missing=1");
+    expect(order("user/tokens/verify")).toBeLessThan(order("migrations apply"));
+  });
+
   it("部署後實際抓正式站比對，不只信 wrangler 的回報", () => {
     expect(order("projects.uic-ai.com")).toBeGreaterThan(order("wrangler deploy"));
     expect(deployJob).toContain("Cache-Control: no-cache");
