@@ -59,16 +59,17 @@ export function ProjectTimeline({ projectId, milestones, canEdit, reload }: {
         <span className={`min-w-0 flex-1 text-sm ${row.item.done ? "text-star-dim line-through" : ""}`}>
           {row.item.title}
           <span className="ml-2 text-xs text-star-dim">{t(row.item.kind === "milestone" ? "timeline.kindMilestone" : "timeline.kindEvent")}</span>
+          {row.isOverdue && <span className="ml-2 text-xs font-semibold text-danger">{t("timeline.overdueBadge")}</span>}
         </span>
         <span className="shrink-0 text-xs text-star-dim">{row.date ? `${row.date}${row.item.end_date ? ` ~ ${row.item.end_date}` : ""}` : t("common.notScheduled")}</span>
-        {canEdit && <button className="shrink-0 text-xs text-danger" type="button" disabled={busy}
+        {canEdit && <button aria-label={t("a11y.deleteNamed", { title: row.item.title })} className="shrink-0 text-xs text-danger" type="button" disabled={busy}
           onClick={() => { if (window.confirm(t("timeline.deleteConfirm", { title: row.item.title }))) void run(() => api(`/milestones/${row.item.id}`, { method: "DELETE" }), "error.operation"); }}>{t("common.delete")}</button>}
       </div>
     </div>) : <p className="empty-inline text-sm text-star-dim">{t("timeline.empty")}</p>}</div>
 
     {canEdit && <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={add}>
       <label><span className="label">{t("compose.kind")}<HelpTip topic="historyEvents" /></span>
-        <select value={kind} onChange={(event) => setKind(event.target.value as Milestone["kind"])}>
+        <select aria-label={t("a11y.timelineKind")} value={kind} onChange={(event) => setKind(event.target.value as Milestone["kind"])}>
           <option value="event">{t("timeline.kindEvent")}</option>
           <option value="milestone">{t("timeline.kindMilestone")}</option>
         </select></label>

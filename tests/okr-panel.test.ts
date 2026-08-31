@@ -49,10 +49,39 @@ describe("儲存目標看得出來有沒有成功", () => {
     expect(panel).toContain("setSaved(false); void load();");
   });
 
-  it("送出中按鈕停用，兩種語言都有提示字串", () => {
-    expect(panel).toContain('disabled={busy}>{t(busy ? "common.processing" : "okr.saveObjective")}');
-    for (const language of ["zh", "en"] as const) {
-      expect(translations[language]["okr.saved"], language).toBeTruthy();
+  it("送出中按鈕停用並顯示處理中", () => {
+    expect(panel).toContain("disabled={busy}");
+    expect(panel).toContain('busy ? "common.processing"');
+  });
+
+  it("每個新字串兩種語言都有", () => {
+    for (const key of ["okr.saved", "okr.updateObjective", "okr.objectiveCurrent", "okr.onePerQuarter"] as const) {
+      for (const language of ["zh", "en"] as const) expect(translations[language][key], `${language}.${key}`).toBeTruthy();
     }
+  });
+});
+
+describe("季度目標的版面說明「一季只有一個」", () => {
+  it("已有目標時把它當成一句陳述顯示，不是只躺在輸入框裡", () => {
+    // 使用者回報「按了儲存卻沒有新增一個項目出來」。目標一季只有一個
+    // （project_quarter_goals 有 UNIQUE(project_id, quarter)），但版面跟下方
+    // 的「新增 KR」表單長得一樣，於是被讀成新增。
+    expect(panel).toContain('t("okr.objectiveCurrent", { quarter })');
+    expect(panel).toContain("{data.objective.objective}");
+  });
+
+  it("按鈕在已有目標時說「更新」，沒有時才說「儲存」", () => {
+    expect(panel).toContain('data.objective?.objective ? "okr.updateObjective" : "okr.saveObjective"');
+  });
+
+  it("已有目標時說明再次儲存會覆蓋", () => {
+    expect(panel).toContain('t("okr.onePerQuarter")');
+  });
+
+  it("沒有編輯權限時仍看得到目標本身", () => {
+    // 目標的顯示不綁在 can_edit 上，只有編輯表單綁。
+    const display = panel.slice(panel.indexOf('t("okr.objectiveLabel")'), panel.indexOf("{data.can_edit && <>"));
+    expect(display).toContain("data.objective?.objective");
+    expect(display).not.toContain("can_edit");
   });
 });

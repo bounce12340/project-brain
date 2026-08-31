@@ -29,8 +29,8 @@ export function ArchivePage() {
 
   return <><PageHeader title={t("archive.title")} description={t("archive.description")} />
     <div className="panel mb-5 grid gap-3 md:grid-cols-3">
-      <select value={filters.group} onChange={(e) => setFilters({ ...filters, group: e.target.value })}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-      <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("archive.allArchived")}</option><option value="done">{t("status.done")}</option><option value="archived">{t("status.archived")}</option></select>
+      <select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => setFilters({ ...filters, group: e.target.value })}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+      <select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("archive.allArchived")}</option><option value="done">{t("status.done")}</option><option value="archived">{t("status.archived")}</option></select>
       <input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} />
     </div>
     {summary && summary.total > 0 && <p className="mb-5 text-sm text-star-dim">{t("archive.summary", { total: summary.total, done: summary.done, archived: summary.archived })}</p>}
