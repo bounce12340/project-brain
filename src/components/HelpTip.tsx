@@ -88,7 +88,9 @@ export function HelpTip({ topic }: { topic: TopicKey }) {
       role="button"
       tabIndex={0}
       className="help-tip-trigger"
-      aria-label={lang === "zh" ? "顯示欄位說明" : "Show field help"}
+      // 同一頁最多有 13 個說明按鈕。名稱全部相同時，靠可存取名稱定位的工具無法
+      // 分辨要點哪一個，所以帶上該欄位的定義。
+      aria-label={lang === "zh" ? `顯示欄位說明：${content.what}` : `Show field help: ${content.what}`}
       aria-describedby={open ? id : undefined}
       aria-expanded={open}
       onClick={() => setOpen(true)}

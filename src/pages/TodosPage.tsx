@@ -60,7 +60,7 @@ export function TodosPage() {
     <form className="panel mb-6 grid gap-3 md:grid-cols-4" onSubmit={add}>
       <input name="title" placeholder={t("todos.placeholder")} required />
       <input name="due_date" type="date" />
-      <select name="project_id">
+      <select aria-label={t("a11y.todoProject")} name="project_id">
         <option value="">{t("todos.noProject")}</option>
         {projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
       </select>
@@ -72,7 +72,7 @@ export function TodosPage() {
         <input type="checkbox" checked={!!item.done} onChange={(event) => void toggle(item, event.target.checked)} />
         <span className={`flex-1 text-sm ${item.done ? "line-through text-star-dim" : ""}`}>{item.title}{item.project_name && <small className="ml-2 text-psi">{item.project_name}</small>}</span>
         <span className="text-xs text-star-dim">{item.due_date}</span>
-        <button aria-label={t("common.delete")} className="text-danger" onClick={(event) => { event.preventDefault(); void api(`/todos/${item.id}`, { method: "DELETE" }).then(load); }}>×</button>
+        <button aria-label={t("a11y.deleteNamed", { title: item.title })} className="text-danger" onClick={(event) => { event.preventDefault(); void api(`/todos/${item.id}`, { method: "DELETE" }).then(load); }}>×</button>
       </label>)}</div> : <Empty>{t("common.noItems")}</Empty>}
     </section>)}</div>
   </>;

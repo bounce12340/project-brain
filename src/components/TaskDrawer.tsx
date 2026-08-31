@@ -157,15 +157,15 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
       <div className="space-y-4">
         <div>
           <label className="label">{t("common.title")}</label>
-          <input className="w-full" value={form.title} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, title: event.target.value })} />
+          <input aria-label={t("common.title")} className="w-full" value={form.title} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, title: event.target.value })} />
         </div>
         <div>
           <label className="label">{t("common.description")}</label>
-          <textarea className="min-h-24 w-full" value={form.description} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          <textarea aria-label={t("common.description")} className="min-h-24 w-full" value={form.description} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </div>
         <div>
           <label className="label">{t("task.assignee")}</label>
-          <select className="w-full" value={form.assignee_id ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, assignee_id: event.target.value || null })}>
+          <select aria-label={t("task.assignee")} className="w-full" value={form.assignee_id ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, assignee_id: event.target.value || null })}>
             <option value="">{t("common.notAssigned")}</option>
             {metadata?.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}
           </select>
@@ -190,7 +190,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
         <div data-task-drawer-section="dates" className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="label">{t("task.start")}<HelpTip topic="taskDates" /></label>
-            <input className="w-full" type="date" value={form.start_date ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => changeStartDate(event.target.value || null)} />
+            <input aria-label={t("task.start")} className="w-full" type="date" value={form.start_date ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => changeStartDate(event.target.value || null)} />
             {dateStatus === "auto-applied" && <p className="mt-1 text-xs text-psi">{t("task.autoStartApplied")}</p>}
             {dateStatus === "suggestion" && suggestedStartDate && <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gold-bright">
               <span>{t("task.suggestedStart", { date: suggestedStartDate })}</span>
@@ -200,7 +200,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
           </div>
           <div>
             <label className="label">{t("task.end")}</label>
-            <input className="w-full" type="date" value={form.due_date ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, due_date: event.target.value || null })} />
+            <input aria-label={t("task.end")} className="w-full" type="date" value={form.due_date ?? ""} disabled={!data.permissions.can_edit} onChange={(event) => setForm({ ...form, due_date: event.target.value || null })} />
           </div>
         </div>
 
