@@ -104,7 +104,8 @@ describe("SPEC-V12-2 quick-create UI contracts", () => {
     // 里程碑與歷程事件已併入 ProjectTimeline，共用單一 busy 旗標。
     ["project timeline", "../src/components/ProjectTimeline.tsx", ["busy"]],
     ["task and stage", "../src/components/Kanban.tsx", ["taskSubmitting", "stageSubmitting"]],
-    ["KR", "../src/components/OkrPanel.tsx", ["krSubmitting"]],
+    // OKR 面板的四個寫入動作已收斂到共用的 run()，同樣共用單一 busy 旗標。
+    ["KR", "../src/components/OkrPanel.tsx", ["busy"]],
     ["todo", "../src/pages/TodosPage.tsx", ["todoSubmitting"]],
     ["CCR and license", "../src/components/QaPanel.tsx", ["ccrSubmitting", "licenseSubmitting"]],
   ])("%s forms expose disabled processing states", (_label, path, submittingStates) => {
