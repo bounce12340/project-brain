@@ -3,6 +3,8 @@ export interface SwitchableProject {
   name: string;
   group_id: string;
   group_name: string;
+  /** 同產品的專案常跨組別——BD 的 `Plenvu` 與一般組的 `RA：啟動Plenvu註冊` 是同一個產品。 */
+  product: string;
 }
 
 export interface SwitchGroup<T extends SwitchableProject> {

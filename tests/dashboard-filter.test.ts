@@ -8,7 +8,7 @@ import type { Project } from "../src/types";
 const project = (id: string, groupId: string, groupName: string): Project => ({
   id, name: id, description: "", group_id: groupId, group_name: groupName, group_type: "general",
   owner_id: "u", owner_name: "U", visibility: "group", status: "active", progress: 0,
-  progress_mode: "manual", goal_summary: "", start_date: null, target_date: null,
+  progress_mode: "manual", goal_summary: "", product: "", site: "", start_date: null, target_date: null,
   auto_archive: 1, archived_at: null, last_activity_at: "2026-01-01 00:00:00",
   risk_level: null, risk_summary: null, risk_suggestions: null, risk_updated_at: null,
 });

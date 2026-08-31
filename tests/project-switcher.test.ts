@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { groupProjectsForSwitch, nextProjectId, orderProjectsForSwitch, type SwitchableProject } from "../src/project-switcher";
 
-const project = (id: string, name: string, groupId: string, groupName: string): SwitchableProject => ({ id, name, group_id: groupId, group_name: groupName });
+const project = (id: string, name: string, groupId: string, groupName: string, product = ""): SwitchableProject => ({ id, name, group_id: groupId, group_name: groupName, product });
 
 // 名稱刻意用 A/B/C 前綴：定序不受繁中筆劃規則影響，測的才是分組與接續邏輯本身。
 const projects = [
