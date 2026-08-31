@@ -17,6 +17,8 @@ interface ProjectRow {
   status: "active" | "paused" | "done" | "archived";
   progress: number;
   goal_summary: string;
+  product: string;
+  site: string;
   start_date: string | null;
   target_date: string | null;
   auto_archive: number;
@@ -102,7 +104,7 @@ projectsRoutes.get("/", async (c) => {
   // summary=1 只回切換器需要的欄位；完整列含 description／goal_summary／risk_summary／
   // risk_suggestions（JSON blob），對只做下拉選單的呼叫端是純浪費。
   if (c.req.query("summary")) {
-    return c.json({ projects: rows.map(({ id, name, group_id, group_name, status }) => ({ id, name, group_id, group_name, status })) });
+    return c.json({ projects: rows.map(({ id, name, group_id, group_name, status, product }) => ({ id, name, group_id, group_name, status, product })) });
   }
   return c.json({ projects: rows.map(({ member_ids_csv, ...row }) => ({ ...row, member_ids: member_ids_csv?.split(",").filter(Boolean) ?? [] })) });
 });
@@ -120,9 +122,9 @@ projectsRoutes.post("/", async (c) => {
   const id = createId("prj");
   const now = new Date().toISOString();
   await c.env.DB.prepare(`
-    INSERT INTO projects (id, name, description, group_id, owner_id, visibility, goal_summary, start_date, target_date, auto_archive, progress_mode, last_activity_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto', ?)
-  `).bind(id, name, optionalString(body, "description") ?? "", groupId, user.id, visibility, optionalString(body, "goal_summary") ?? "", optionalString(body, "start_date"), optionalString(body, "target_date"), booleanInt(body, "auto_archive", 1), now).run();
+    INSERT INTO projects (id, name, description, group_id, owner_id, visibility, goal_summary, product, site, start_date, target_date, auto_archive, progress_mode, last_activity_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto', ?)
+  `).bind(id, name, optionalString(body, "description") ?? "", groupId, user.id, visibility, optionalString(body, "goal_summary") ?? "", optionalString(body, "product") ?? "", optionalString(body, "site") ?? "", optionalString(body, "start_date"), optionalString(body, "target_date"), booleanInt(body, "auto_archive", 1), now).run();
   const templateId = optionalString(body, "template_id");
   if (templateId) {
     const template = await c.env.DB.prepare("SELECT stages_json FROM stage_templates WHERE id = ?").bind(templateId).first<{ stages_json: string }>();
@@ -196,7 +198,7 @@ projectsRoutes.patch("/:id", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const progress = boundedNumber(body, "progress", 0, 100);
   const manager = canManageProject(user, access);
-  const hasSettings = ["name", "description", "goal_summary", "visibility", "status", "start_date", "target_date", "auto_archive", "progress_mode"].some((key) => key in body);
+  const hasSettings = ["name", "description", "goal_summary", "product", "site", "visibility", "status", "start_date", "target_date", "auto_archive", "progress_mode"].some((key) => key in body);
   if (hasSettings && !manager) return c.json({ error: "只有 owner 或管理員可修改專案設定" }, 403);
   const current = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(id).first<ProjectRow>();
   if (!current) return c.json({ error: "找不到專案" }, 404);
@@ -206,8 +208,8 @@ projectsRoutes.patch("/:id", async (c) => {
   const visibility = optionalString(body, "visibility") ?? current.visibility;
   const status = optionalString(body, "status") ?? current.status;
   if (!visibilityValues.has(visibility) || !statusValues.has(status)) return c.json({ error: "狀態或可見性不正確" }, 422);
-  await c.env.DB.prepare(`UPDATE projects SET name=?, description=?, goal_summary=?, visibility=?, status=?, progress=?, start_date=?, target_date=?, auto_archive=?,progress_mode=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .bind(optionalString(body, "name") ?? current.name, optionalString(body, "description") ?? current.description, optionalString(body, "goal_summary") ?? current.goal_summary, visibility, status, progress ?? current.progress, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "target_date" in body ? optionalString(body, "target_date") : current.target_date, "auto_archive" in body ? booleanInt(body, "auto_archive", current.auto_archive) : current.auto_archive, progressMode, id).run();
+  await c.env.DB.prepare(`UPDATE projects SET name=?, description=?, goal_summary=?, product=?, site=?, visibility=?, status=?, progress=?, start_date=?, target_date=?, auto_archive=?,progress_mode=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .bind(optionalString(body, "name") ?? current.name, optionalString(body, "description") ?? current.description, optionalString(body, "goal_summary") ?? current.goal_summary, optionalString(body, "product") ?? current.product, optionalString(body, "site") ?? current.site, visibility, status, progress ?? current.progress, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "target_date" in body ? optionalString(body, "target_date") : current.target_date, "auto_archive" in body ? booleanInt(body, "auto_archive", current.auto_archive) : current.auto_archive, progressMode, id).run();
   if (progress !== null && progress !== current.progress) {
     await c.env.DB.prepare("INSERT INTO progress_updates (id, project_id, author_id, content, progress_snapshot) VALUES (?, ?, ?, ?, ?)")
       .bind(createId("upd"), id, user.id, `專案進度更新為 ${progress}%`, progress).run();

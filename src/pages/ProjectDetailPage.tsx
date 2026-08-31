@@ -1,9 +1,10 @@
 import { Suspense, lazy, useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, formatDate, patchBody, today } from "../api";
 import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import type { BdCase, BdEvent, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
+import { relatedProjects } from "../project-grouping";
 import { groupProjectsForSwitch, nextProjectId, type SwitchableProject } from "../project-switcher";
 import { TaskWorkspace } from "../components/TaskViews";
 import { ProjectFiles } from "../components/ProjectFiles";
@@ -64,6 +65,7 @@ export function ProjectDetailPage() {
   const remove = async () => { if (window.confirm(t("project.deleteConfirm"))) { await api(`/projects/${id}`, { method: "DELETE" }); navigate("/projects"); } };
   const status = { active: t("status.active"), paused: t("status.paused"), done: t("status.done"), archived: t("status.archived") };
   return <><PageHeader title={`${data.project.visibility === "private" ? "🔒 " : ""}${data.project.name}`} description={`${data.project.group_name} · ${t("common.owner", { name: data.project.owner_name })}`} actions={<div className="flex flex-wrap items-center gap-2"><ProjectSwitcher projects={siblings} current={data.project} /><span className="badge">{status[data.project.status]}</span>{data.permissions.can_manage && <button className="btn-danger !py-1.5" onClick={() => void remove()}>{t("common.delete")}</button>}</div>} />
+    <RelatedStrip current={data.project} siblings={siblings} />
     <div data-tour="project-tabs" className="project-tabs mb-5 flex gap-1">{tabs.map(([key, label]) => <button key={key} className={`border-b-2 px-4 py-3 text-sm font-medium ${tab === key ? "border-psi text-psi" : "border-transparent text-star-dim"}`} onClick={() => setTab(key)}>{t(label)}</button>)}</div>
     {tab === "overview" && <Overview data={data} metadata={meta} reload={load} />}
     {tab === "tasks" && <TaskWorkspace data={data} metadata={meta} reload={load} />}
@@ -111,7 +113,7 @@ function Overview({ data, metadata, reload }: { data: ProjectDetail; metadata: M
     <ProjectTimeline projectId={data.project.id} milestones={data.milestones} canEdit={data.permissions.can_edit} reload={reload} /></div>
     <aside className="space-y-6"><section className="panel"><h2 className="mb-3 font-bold">{t("project.info")}<HelpTip topic="projectDates" /></h2><dl className="space-y-3 text-sm"><div><dt className="text-star-dim">{t("project.startDate")}</dt><dd>{data.project.start_date || t("common.none")}</dd></div><div><dt className="text-star-dim">{t("project.targetDate")}</dt><dd>{data.project.target_date || t("common.none")}</dd></div><div><dt className="text-star-dim">{t("project.recentActivity")}</dt><dd>{formatDate(data.project.last_activity_at, true, lang)}</dd></div></dl></section>
     <section className="panel"><h2 className="mb-3 font-bold">{t("project.members")}<HelpTip topic="members" /></h2><div className="space-y-2">{data.members.map((member) => <div className="flex justify-between text-sm" key={member.id}><span>{member.name}<span className="ml-1 text-xs text-star-dim">{member.role}</span></span>{data.permissions.can_manage && <button aria-label={t("a11y.removeMember", { name: member.name })} className="text-xs text-danger" onClick={() => void api(`/projects/${data.project.id}/members/${member.id}`, { method: "DELETE" }).then(reload)}>{t("common.remove")}</button>}</div>)}</div>{data.permissions.can_manage && metadata && <form className="mt-4 flex gap-2" onSubmit={addMember}><select aria-label={t("a11y.addMember")} className="min-w-0 flex-1" name="user_id">{metadata.users.filter((user) => !data.members.some((member) => member.id === user.id) && user.id !== data.project.owner_id).map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select><button className="btn !px-3">{t("project.join")}</button></form>}</section>
-    {data.permissions.can_manage && <form className="panel space-y-3" onSubmit={saveSettings}><h2 className="font-bold">{t("project.settings")}</h2><label className="label">{t("project.visibility")}<HelpTip topic="visibility" /></label><select aria-label={t("a11y.visibility")} className="w-full" name="visibility" defaultValue={data.project.visibility}><option value="all">{t("projects.visibility.all")}</option><option value="group">{t("projects.visibility.group")}</option><option value="private">{t("projects.visibility.private")}</option></select><label className="label">{t("common.status")}<HelpTip topic="status" /></label><select aria-label={t("a11y.projectStatus")} className="w-full" name="status" defaultValue={data.project.status}><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option><option value="done">{t("status.done")}</option><option value="archived">{t("status.archived")}</option></select><button className="btn w-full">{t("project.saveSettings")}</button><button type="button" className="btn-secondary w-full" onClick={() => void archive()}>{t(data.project.status === "archived" ? "project.restore" : "project.archiveNow")}</button></form>}</aside></div><OkrPanel projectId={data.project.id} metadata={metadata} onChanged={reload} /></>;
+    {data.permissions.can_manage && <form className="panel space-y-3" onSubmit={saveSettings}><h2 className="font-bold">{t("project.settings")}</h2><label className="label">{t("projects.product")}</label><input aria-label={t("projects.product")} className="w-full" name="product" defaultValue={data.project.product} placeholder={t("projects.productPlaceholder")} /><label className="label">{t("projects.site")}</label><input aria-label={t("projects.site")} className="w-full" name="site" defaultValue={data.project.site} placeholder={t("projects.sitePlaceholder")} /><label className="label">{t("project.visibility")}<HelpTip topic="visibility" /></label><select aria-label={t("a11y.visibility")} className="w-full" name="visibility" defaultValue={data.project.visibility}><option value="all">{t("projects.visibility.all")}</option><option value="group">{t("projects.visibility.group")}</option><option value="private">{t("projects.visibility.private")}</option></select><label className="label">{t("common.status")}<HelpTip topic="status" /></label><select aria-label={t("a11y.projectStatus")} className="w-full" name="status" defaultValue={data.project.status}><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option><option value="done">{t("status.done")}</option><option value="archived">{t("status.archived")}</option></select><button className="btn w-full">{t("project.saveSettings")}</button><button type="button" className="btn-secondary w-full" onClick={() => void archive()}>{t(data.project.status === "archived" ? "project.restore" : "project.archiveNow")}</button></form>}</aside></div><OkrPanel projectId={data.project.id} metadata={metadata} onChanged={reload} /></>;
 }
 
 function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
@@ -252,4 +254,19 @@ function CaseCard({ item, events, canEdit, reload }: { item: BdCase; events: BdE
   const t = useT();
   const setStatus = async (status: string) => { await api(`/bd/cases/${item.id}`, patchBody({ current_status: status })); reload(); };
   return <article className="panel"><div className="flex justify-between gap-3"><div><p className="text-xs text-star-dim">{item.case_type} · {item.product_name}</p><h3 className="mt-1 font-bold">{item.case_name}</h3></div><select value={item.current_status} disabled={!canEdit} onChange={(e) => void setStatus(e.target.value)}>{bdStatuses.map(([value, key]) => <option value={value} key={value}>{t(key)}</option>)}</select></div><p className="mt-3 text-sm text-star-dim">{t("bd.submissionNo")}: {item.submission_no || "—"} · {t("bd.expectedApproval", { date: item.expected_approval || "—" })}</p><div className="mt-4 space-y-3 border-l-2 border-gold-dim pl-4">{events.map((event) => <div key={event.id}><p className="text-sm font-medium">{event.event_type} · {event.event_date}</p><p className="text-xs text-star-dim">{event.description}</p></div>)}</div></article>;
+}
+
+/**
+ * 同產品的其他專案，做成一條快速切換帶。放在標題下方而不是側欄，因為切換是導覽動作，
+ * 應該與分頁列在同一個視線落點，不必先捲到頁尾。沒有相關專案時整條不出現。
+ */
+function RelatedStrip({ current, siblings }: { current: Project; siblings: SwitchableProject[] }) {
+  const t = useT();
+  const related = relatedProjects(siblings, current);
+  if (!related.length) return null;
+  return <div className="mb-4 flex flex-wrap items-center gap-2 border border-nexus-line bg-nexus-raised px-3 py-2">
+    <span className="text-xs font-semibold text-gold-bright">{t("projects.productCount", { product: current.product, count: related.length + 1 })}</span>
+    {related.map((item) => <Link key={item.id} to={`/projects/${item.id}`}
+      className="border border-nexus-line px-2 py-1 text-sm hover:border-psi hover:text-psi">{item.name}</Link>)}
+  </div>;
 }

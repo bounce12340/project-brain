@@ -3,7 +3,7 @@ export interface User {
 }
 
 export interface Project {
-  id: string; name: string; description: string; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; owner_id: string; owner_name: string; visibility: "all" | "group" | "private"; status: "active" | "paused" | "done" | "archived"; progress: number; progress_mode: "manual" | "auto"; goal_summary: string; start_date: string | null; target_date: string | null; auto_archive: number; archived_at: string | null; last_activity_at: string; risk_level: "low" | "medium" | "high" | null; risk_summary: string | null; risk_suggestions: string | null; risk_updated_at: string | null;
+  id: string; name: string; description: string; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; owner_id: string; owner_name: string; visibility: "all" | "group" | "private"; status: "active" | "paused" | "done" | "archived"; progress: number; progress_mode: "manual" | "auto"; goal_summary: string; product: string; site: string; start_date: string | null; target_date: string | null; auto_archive: number; archived_at: string | null; last_activity_at: string; risk_level: "low" | "medium" | "high" | null; risk_summary: string | null; risk_suggestions: string | null; risk_updated_at: string | null;
 }
 
 export interface Metadata {
