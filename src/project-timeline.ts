@@ -6,9 +6,13 @@ import type { Milestone } from "./types";
  */
 export interface TimelineItem {
   item: Milestone;
-  /** 沒有日期的排在最後，仍然看得到。 */
+  /** 排序用的日期，也就是期間的開始。沒有日期的排在最後，仍然看得到。 */
   date: string;
+  /** 真正的期限：有結束日就是結束日，否則就是那一天。逾期一律以此判斷。 */
+  deadline: string;
   isFuture: boolean;
+  /** 期間已經開始、還沒結束。這種項目不是逾期，也不是已發生，而是進行中。 */
+  isActive: boolean;
   isOverdue: boolean;
 }
 
@@ -20,11 +24,16 @@ export function buildProjectTimeline(milestones: Milestone[], today: string): Ti
   return [...milestones]
     .map((item) => {
       const date = item.due_date ?? "";
+      // 有結束日的里程碑是一段期間，期限在結束日。先前拿開始日跟今天比，
+      // 於是「8/27 執行到 9/28」在 8/31 就被判逾期——期間才剛過四天。
+      const deadline = item.end_date ?? date;
       return {
         item,
         date,
+        deadline,
         isFuture: !!date && date > today,
-        isOverdue: item.kind === "milestone" && !item.done && !!date && date < today,
+        isActive: !!item.end_date && !item.done && !!date && date <= today && today <= item.end_date,
+        isOverdue: item.kind === "milestone" && !item.done && !!deadline && deadline < today,
       };
     })
     .sort((left, right) => {
@@ -40,10 +49,13 @@ export function todayDividerIndex(items: TimelineItem[]): number {
   return items.some((row) => row.isFuture) && firstPast > 0 ? firstPast : -1;
 }
 
-export function timelineCounts(items: TimelineItem[]): { upcoming: number; past: number; overdue: number } {
+export function timelineCounts(items: TimelineItem[]): { upcoming: number; past: number; overdue: number; active: number } {
   return {
+    // 三者互斥：尚未開始、期間內、已結束。進行中的若也算進「已發生」，
+    // 摘要會說一件還在跑的事已經發生了。
     upcoming: items.filter((row) => row.isFuture).length,
-    past: items.filter((row) => !row.isFuture).length,
+    active: items.filter((row) => row.isActive).length,
+    past: items.filter((row) => !row.isFuture && !row.isActive).length,
     overdue: items.filter((row) => row.isOverdue).length,
   };
 }

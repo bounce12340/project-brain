@@ -34,7 +34,7 @@ generalRoutes.get("/dashboard", async (c) => {
     ? visible.filter((row) => row.group_type === "qa").map((row) => row.id) : [];
   const inList = placeholders(ids.length);
   const [overdueResult, updateResult, enrollmentResult, feeResult, krCounts, licenseResult, todoCount, weekUpdates] = await Promise.all([
-    ids.length ? c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE kind='milestone' AND done=0 AND due_date < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value") : null,
+    ids.length ? c.env.DB.prepare(`SELECT COUNT(*) AS value FROM milestones WHERE kind='milestone' AND done=0 AND COALESCE(end_date, due_date) < ? AND project_id IN (${inList})`).bind(today, ...ids).first<number>("value") : null,
     ids.length ? c.env.DB.prepare(`SELECT pu.*,p.name AS project_name,u.name AS author_name FROM progress_updates pu JOIN projects p ON p.id=pu.project_id JOIN users u ON u.id=pu.author_id WHERE pu.project_id IN (${inList}) ORDER BY pu.created_at DESC LIMIT 12`).bind(...ids).all<Record<string, unknown>>() : null,
     ids.length ? c.env.DB.prepare(`SELECT ce.record_date,ce.count,ce.project_id,p.name AS project_name,cs.target_n FROM clinical_enrollments ce JOIN projects p ON p.id=ce.project_id JOIN clinical_settings cs ON cs.project_id=p.id WHERE ce.project_id IN (${inList}) ORDER BY ce.record_date`).bind(...ids).all<Record<string, unknown>>() : null,
     feeIds.length ? c.env.DB.prepare(`SELECT substr(fee_date,1,7) AS month,currency,SUM(amount) AS total FROM bd_fees WHERE project_id IN (${placeholders(feeIds.length)}) GROUP BY month,currency ORDER BY month`).bind(...feeIds).all<Record<string, unknown>>() : null,
