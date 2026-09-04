@@ -7,13 +7,15 @@ import { ProjectListRow } from "../components/ProjectListRow";
 import { groupByProduct, hasClusters, relatedProjects } from "../project-grouping";
 import { useT } from "../i18n/LangContext";
 import { statusQuery } from "../project-archive";
-import { defaultProjectGroup, readProjectGroup, writeProjectGroup } from "../project-list-filter";
+import { SITE_UNSET, defaultProjectGroup, filterProjectsBySite, hasUnsetSite, projectSites, readProjectGroup, resolveSite, writeProjectGroup } from "../project-list-filter";
 import type { Metadata, Project } from "../types";
 
 export function ProjectsPage() {
   const { user } = useAuth(); const t = useT(); const [projects, setProjects] = useState<Project[] | null>(null); const [meta, setMeta] = useState<Metadata | null>(null); const [showNew, setShowNew] = useState(false); // Protected 保證 user 已載入才渲染這頁，因此初始化時就能讀到組別。
   const [filters, setFilters] = useState(() => ({ group: defaultProjectGroup(readProjectGroup(), user), status: "", keyword: "" }));
   const [autoGroup, setAutoGroup] = useState(() => readProjectGroup() === null);
+  // 廠區不放進 filters：filters 會被序列化成查詢字串送給後端，而廠區是在前端篩的。
+  const [chosenSite, setChosenSite] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
   // status 一律帶值：不帶的話後端回傳全部狀態，已完成與已歸檔的專案會漏進這份清單。
   const load = () => { const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([key, value]) => value && key !== "status")), status: statusQuery("active", filters.status) }); api<{ projects: Project[] }>(`/projects?${query}`).then((data) => {
@@ -23,10 +25,21 @@ export function ProjectsPage() {
     setProjects(data.projects);
   }); };
   useEffect(load, [filters]); useEffect(() => { api<Metadata>("/metadata").then(setMeta); }, []);
+  // 廠區選單只列出目前這份清單裡有的值；選過的若因其他篩選而消失則退回「全部」。
+  const sites = projectSites(projects ?? []);
+  const unset = hasUnsetSite(projects ?? []);
+  const site = resolveSite(chosenSite, sites, unset);
+  const visible = filterProjectsBySite(projects ?? [], site);
   return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={user?.role !== "intern" && <button className="btn" onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>} />
     {showNew && meta && <NewProject metadata={meta} onDone={() => { setShowNew(false); load(); }} />}
-    <div className="panel mb-5 grid gap-3 md:grid-cols-3"><select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => { setAutoGroup(false); writeProjectGroup(e.target.value); setFilters({ ...filters, group: e.target.value }); }}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} /></div>
-    {!projects ? <Loading /> : projects.length ? <ProjectSections projects={projects} open={open} onToggle={(id) => setOpen((current) => {
+    <div className={`panel mb-5 grid gap-3 ${sites.length ? "md:grid-cols-4" : "md:grid-cols-3"}`}><select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => { setAutoGroup(false); writeProjectGroup(e.target.value); setFilters({ ...filters, group: e.target.value }); }}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} />
+      {/* 沒有人填過廠區時整個不顯示——一個只有「全部」可選的下拉只是噪音。 */}
+      {sites.length > 0 && <select aria-label={t("a11y.filterSite")} value={site} onChange={(e) => setChosenSite(e.target.value)}>
+        <option value="">{t("projects.allSites")}</option>
+        {sites.map((value) => <option value={value} key={value}>{value}</option>)}
+        {unset && <option value={SITE_UNSET}>{t("projects.siteUnset")}</option>}
+      </select>}</div>
+    {!projects ? <Loading /> : visible.length ? <ProjectSections projects={visible} open={open} onToggle={(id) => setOpen((current) => {
       const next = new Set(current); if (!next.delete(id)) next.add(id); return next;
     })} /> : <Empty>{t("projects.notFound")}</Empty>}
     <p className="mt-6 text-sm text-star-dim">{t("projects.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>
