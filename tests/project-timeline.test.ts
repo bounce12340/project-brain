@@ -60,6 +60,56 @@ describe("todayDividerIndex", () => {
 
 describe("timelineCounts", () => {
   it("分別數未來、過去與逾期", () => {
-    expect(timelineCounts(buildProjectTimeline(rows, today))).toEqual({ upcoming: 1, past: 4, overdue: 1 });
+    expect(timelineCounts(buildProjectTimeline(rows, today))).toEqual({ upcoming: 1, active: 0, past: 4, overdue: 1 });
+  });
+});
+
+describe("有結束日的里程碑是一段期間", () => {
+  // 使用者回報：8/27 執行到 9/28 的里程碑，在 8/31 就被標成逾期。
+  const period = (id: string, due: string, end: string | null, done = 0): Milestone =>
+    ({ id, title: id, due_date: due, end_date: end, done, position: 0, kind: "milestone" });
+
+  it("期間還沒結束就不算逾期，即使開始日已過", () => {
+    const [row] = buildProjectTimeline([period("ctd", "2026-08-27", "2026-09-28")], "2026-08-31");
+    expect(row.isOverdue).toBe(false);
+    expect(row.deadline).toBe("2026-09-28");
+  });
+
+  it("期間已開始未結束標成進行中", () => {
+    const [row] = buildProjectTimeline([period("ctd", "2026-08-27", "2026-09-28")], "2026-08-31");
+    expect(row.isActive).toBe(true);
+    // 三者互斥：進行中的不會同時被算進「已發生」。
+    expect(timelineCounts([row])).toEqual({ upcoming: 0, active: 1, past: 0, overdue: 0 });
+  });
+
+  it("結束日當天仍在期間內", () => {
+    const [row] = buildProjectTimeline([period("ctd", "2026-08-27", "2026-09-28")], "2026-09-28");
+    expect(row.isOverdue).toBe(false);
+    expect(row.isActive).toBe(true);
+  });
+
+  it("過了結束日才算逾期", () => {
+    const [row] = buildProjectTimeline([period("ctd", "2026-08-27", "2026-09-28")], "2026-09-29");
+    expect(row.isOverdue).toBe(true);
+    expect(row.isActive).toBe(false);
+  });
+
+  it("完成了就不算逾期也不算進行中", () => {
+    const [row] = buildProjectTimeline([period("ctd", "2026-08-27", "2026-09-28", 1)], "2026-09-29");
+    expect(row.isOverdue).toBe(false);
+    expect(row.isActive).toBe(false);
+  });
+
+  it("沒有結束日時期限就是那一天，行為與先前相同", () => {
+    const [row] = buildProjectTimeline([period("m", "2026-08-01", null)], "2026-08-31");
+    expect(row.deadline).toBe("2026-08-01");
+    expect(row.isOverdue).toBe(true);
+    expect(row.isActive).toBe(false);
+  });
+
+  it("尚未開始的期間不算進行中", () => {
+    const [row] = buildProjectTimeline([period("m", "2026-09-01", "2026-09-30")], "2026-08-31");
+    expect(row.isActive).toBe(false);
+    expect(row.isFuture).toBe(true);
   });
 });

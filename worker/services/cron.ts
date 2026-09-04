@@ -37,7 +37,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const addFor = async (source: ReminderSource, title: string, body: string, sameGroup = false) => {
     for (const recipient of await projectRecipients(env.DB, source, sameGroup)) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${source.project_id}` });
   };
-  const milestones = await env.DB.prepare(`SELECT m.title,m.due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND m.due_date<=? AND p.status!='archived'`).bind(next3).all<ReminderSource & { title: string; due_date: string }>();
+  const milestones = await env.DB.prepare(`SELECT m.title,COALESCE(m.end_date, m.due_date) AS due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND COALESCE(m.end_date, m.due_date)<=? AND p.status!='archived'`).bind(next3).all<ReminderSource & { title: string; due_date: string }>();
   for (const row of milestones.results) await addFor(row, row.due_date < today ? "里程碑已逾期" : "里程碑即將到期", `${row.project_name}：${row.title}（${row.due_date}）`);
 
   const todos = await env.DB.prepare("SELECT t.user_id,t.title,t.due_date,u.email,u.email_notifications FROM todos t JOIN users u ON u.id=t.user_id WHERE t.done=0 AND t.due_date<=? AND u.is_active=1").bind(today).all<{ user_id: string; title: string; due_date: string; email: string; email_notifications: number }>();

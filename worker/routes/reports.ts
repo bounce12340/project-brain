@@ -192,7 +192,7 @@ aiRoutes.post("/project-risk", async (c) => {
   const [project, overdueTasks, overdueMilestones, updates] = await Promise.all([
     c.env.DB.prepare("SELECT id,name,progress,start_date,target_date,last_activity_at FROM projects WHERE id=?").bind(projectId).first<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT COUNT(*) AS value FROM tasks WHERE project_id=? AND done=0 AND due_date<date('now')").bind(projectId).first<number>("value"),
-    c.env.DB.prepare("SELECT COUNT(*) AS value FROM milestones WHERE project_id=? AND kind='milestone' AND done=0 AND due_date<date('now')").bind(projectId).first<number>("value"),
+    c.env.DB.prepare("SELECT COUNT(*) AS value FROM milestones WHERE project_id=? AND kind='milestone' AND done=0 AND COALESCE(end_date, due_date)<date('now')").bind(projectId).first<number>("value"),
     c.env.DB.prepare("SELECT content,created_at FROM progress_updates WHERE project_id=? ORDER BY created_at DESC LIMIT 5").bind(projectId).all(),
   ]);
   if (!project) return c.json({ error: "找不到專案" }, 404);

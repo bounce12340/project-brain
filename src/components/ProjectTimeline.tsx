@@ -60,6 +60,8 @@ export function ProjectTimeline({ projectId, milestones, canEdit, reload }: {
           {row.item.title}
           <span className="ml-2 text-xs text-star-dim">{t(row.item.kind === "milestone" ? "timeline.kindMilestone" : "timeline.kindEvent")}</span>
           {row.isOverdue && <span className="ml-2 text-xs font-semibold text-danger">{t("timeline.overdueBadge")}</span>}
+          {/* 期間已開始未結束：既不是逾期也不是已發生，要講出來，否則看起來像沒動靜。 */}
+          {row.isActive && <span className="ml-2 text-xs font-semibold text-psi">{t("timeline.activeBadge")}</span>}
         </span>
         <span className="shrink-0 text-xs text-star-dim">{row.date ? `${row.date}${row.item.end_date ? ` ~ ${row.item.end_date}` : ""}` : t("common.notScheduled")}</span>
         {canEdit && <button aria-label={t("a11y.deleteNamed", { title: row.item.title })} className="shrink-0 text-xs text-danger" type="button" disabled={busy}
