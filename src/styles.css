@@ -74,10 +74,17 @@
   }
   .panel h1, .panel h2, .panel h3 { @apply text-gold-bright; }
   .has-unread::after { content: ""; @apply absolute right-1 top-1 h-2 w-2 rounded-full bg-psi; box-shadow: 0 0 8px rgb(var(--color-psi) / .75); }
-  .kanban-task { @apply transition duration-150; }
-  .kanban-task:hover { box-shadow: 0 0 16px rgb(var(--color-psi) / .28); }
-  .kanban-task:hover { transform: translateY(-2px); }
-  .kanban-task.is-dragging { @apply border-gold; box-shadow: 0 0 16px rgb(var(--color-gold-bright) / .3); }
+  /* 只讓外觀類的屬性過場。transform 千萬不能列進來：拖曳時 dnd-kit 每一幀都在改
+     transform 讓卡片跟著游標，CSS 若再把每次改動平滑 150ms，卡片就會一路落在手後面。
+     hover 的浮起因此改用 translate，它獨立於 transform，不會被拖曳的位移覆蓋。 */
+  .kanban-task { transition: box-shadow .15s ease, border-color .15s ease, opacity .15s ease, translate .15s ease; }
+  .kanban-task:hover { box-shadow: 0 0 16px rgb(var(--color-psi) / .28); translate: 0 -2px; }
+  .kanban-task.is-lifted { @apply border-gold; box-shadow: 0 12px 28px rgb(0 0 0 / .45), 0 0 16px rgb(var(--color-gold-bright) / .35); rotate: 1.5deg; cursor: grabbing; }
+  /* 舉起來之後原位留一個淡掉的框，看得出卡片是從哪裡拿走的。 */
+  .kanban-task.is-placeholder { opacity: .25; box-shadow: none; }
+  .kanban-task.is-placeholder:hover { translate: none; box-shadow: none; }
+  /* 拖曳中不要讓游標經過的卡片一張張亮起來，那會讓整個版面看起來在閃。 */
+  .kanban-board-dragging .kanban-task:hover { box-shadow: none; translate: none; }
   .btn { @apply inline-flex items-center justify-center bg-psi-deep px-4 py-2 text-sm font-semibold text-white; clip-path: polygon(0 4px, 4px 0, 100% 0, 100% 100%, 0 100%); }
   .btn:hover { box-shadow: 0 0 18px rgb(var(--color-psi) / .35); }
   .btn-secondary { @apply inline-flex items-center justify-center border border-gold bg-transparent px-4 py-2 text-sm font-semibold text-star hover:bg-nexus-raised; clip-path: polygon(0 4px, 4px 0, 100% 0, 100% 100%, 0 100%); }
