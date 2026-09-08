@@ -6,10 +6,12 @@ const sidebar = readFileSync(new URL("../src/components/AiSidebar.tsx", import.m
 
 /** 取出某個端點的處理函式內容，避免掃到隔壁端點的字串。 */
 function handler(source: string, path: string): string {
-  const start = source.indexOf(`aiRoutes.post("${path}"`);
+  const start = source.search(new RegExp(`aiRoutes\\.(post|get)\\("${path.replace("/", "\\/")}"`));
   expect(start, `找不到 ${path}`).toBeGreaterThan(-1);
-  const next = source.indexOf("aiRoutes.post(", start + 1);
-  return source.slice(start, next === -1 ? source.length : next);
+  // 切到下一個 aiRoutes.<任何方法>，不是只切 .post——新增一個 .get 端點時，
+  // 只認 .post 會讓前一個處理函式的切片一路吃到檔尾，掃描範圍悄悄失準。
+  const next = source.slice(start + 1).search(/aiRoutes\.(post|get|put|patch|delete)\(/);
+  return source.slice(start, next === -1 ? source.length : start + 1 + next);
 }
 
 describe("AI 小幫手不能自己改資料", () => {
@@ -48,6 +50,19 @@ describe("建立內容與時程在任何頁面都要能用", () => {
     // 兩者在專案內頁相同，但從選單選的時候必須是選單那個。
     expect(sidebar).not.toMatch(/api\(`\/projects\/\$\{openProjectId\}/);
     expect(sidebar).toMatch(/project_id: projectId/);
+  });
+});
+
+describe("連線診斷", () => {
+  it("只有管理員能用", () => {
+    const body = handler(routes, "/diagnostics");
+    expect(body).toMatch(/user\.role !== "admin"/);
+  });
+
+  it("只回報金鑰在不在，不回報金鑰本身", () => {
+    const body = handler(routes, "/diagnostics");
+    expect(body).toContain("key_present: !!c.env.LLM_API_KEY");
+    expect(body).not.toMatch(/reply: c\.env\.LLM_API_KEY|result\.key =|api_key:/);
   });
 });
 
