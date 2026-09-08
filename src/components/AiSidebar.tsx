@@ -92,7 +92,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
   </div>;
 }
 
-function PlanPane({ projectId, lang }: { projectId: string; lang: string }) {
+function PlanPane({ projectId: openProjectId, lang }: { projectId: string; lang: string }) {
   const t = useT();
   const [brief, setBrief] = useState("");
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
@@ -101,8 +101,16 @@ function PlanPane({ projectId, lang }: { projectId: string; lang: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
-
-  if (!projectId) return <div className="flex-1 overflow-y-auto p-4"><p className="text-sm text-star-dim">{t("ai.planNeedsProject")}</p></div>;
+  // 不在專案內頁時讓使用者在面板裡選一個。第一版只顯示「請先開啟一個專案」，
+  // 於是這個分頁在其他頁面連一個輸入框都沒有——被回報成「不能輸入任何東西」。
+  const [options, setOptions] = useState<Array<{ id: string; name: string; group_name: string }>>([]);
+  const [chosen, setChosen] = useState("");
+  useEffect(() => {
+    if (openProjectId) return;
+    api<{ projects: Array<{ id: string; name: string; group_name: string }> }>("/projects?summary=1")
+      .then((data) => setOptions(data.projects)).catch(() => setOptions([]));
+  }, [openProjectId]);
+  const projectId = openProjectId || chosen;
 
   const key = (kind: string, index: number) => `${kind}:${index}`;
   const toggle = (id: string) => setSkipped((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
@@ -144,12 +152,22 @@ function PlanPane({ projectId, lang }: { projectId: string; lang: string }) {
 
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      {!openProjectId && <label className="mb-3 block"><span className="label">{t("ai.planPick")}</span>
+        <select className="w-full" value={chosen} onChange={(event) => { setChosen(event.target.value); setPlan(null); setError(""); setDone(""); }}>
+          <option value="">{t("ai.planPickPlaceholder")}</option>
+          {options.map((option) => <option key={option.id} value={option.id}>{option.name}（{option.group_name}）</option>)}
+        </select>
+      </label>}
+      {!projectId
+        ? <p className="text-sm text-star-dim">{t(options.length ? "ai.planNeedsProject" : "ai.planNoProjects")}</p>
+        : <>
       <label className="label" htmlFor="ai-brief">{t("ai.briefLabel")}</label>
       <textarea id="ai-brief" className="w-full" rows={5} placeholder={t("ai.briefPlaceholder")} value={brief} onChange={(e) => setBrief(e.target.value)} />
       <button className="btn mt-2 w-full" disabled={busy || !brief.trim()} onClick={() => void draft()}>{t(busy ? "ai.thinking" : "ai.draft")}</button>
       {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
       {done && <p className="mt-3 text-sm text-psi" role="status">{done}</p>}
 
+      </>}
       {plan && planCount(plan) > 0 && <div className="mt-4 space-y-3">
         <p className="text-xs text-star-dim">{t("ai.planReview")}</p>
         {plan.tasks.length > 0 && <Section title={t("views.task")}>
