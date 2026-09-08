@@ -41,7 +41,7 @@
   "routes": [{ "pattern": "projects.uic-ai.com", "custom_domain": true }],
   "vars": {
     "APP_BASE_URL": "https://projects.uic-ai.com",
-    "LLM_BASE_URL": "https://ollama.com/v1",
+    "LLM_BASE_URL": "https://api.deepseek.com/v1",
     "LLM_MODEL": "deepseek-v4-pro",
     "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
     "MAIL_FROM_NAME": "專案進度大腦"
@@ -123,7 +123,7 @@
 
 ## 7. AI 功能（worker/services/llm.ts 統一入口）
 
-- `llmChat(env, messages, {json?})`：若 `env.LLM_API_KEY` 存在 → POST `${LLM_BASE_URL}/chat/completions`（OpenAI 相容，model=`LLM_MODEL`，`Authorization: Bearer`）。否則 fallback `env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', ...)`。逾時 60s、失敗重試 1 次。需要 JSON 時用寬鬆解析（剝 ```json fence、取第一個 `{` 到最後一個 `}`），解析失敗要優雅降級，不可 crash。
+- `llmChat(env, messages, {json?})`：若 `env.LLM_API_KEY` 存在 → POST `${LLM_BASE_URL}/chat/completions`（OpenAI 相容，model=`LLM_MODEL`，`Authorization: Bearer`）。否則 fallback `env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', ...)`。逾時 60s、失敗重試 1 次。需要 JSON 時用寬鬆解析（剝 ```json fence、取第一個 `{` 到最後一個 `}`），解析失敗要優雅降級，不可 crash。 送 `json: true` 的提詞裡一律要出現「json」這個字——DeepSeek 的 JSON 模式硬性要求，缺了會偶爾回空內容，而空內容在這裡是拋例外不是降級。
 - AI 快寫：POST `/api/ai/draft-update` {raw_text, project_id} → 以繁中整理成「本期進展／風險或阻礙／下一步」條列 markdown 回前端，使用者可編輯後才存成 progress_update。
 - AI 週報：週一 cron（`30 0 * * 1` UTC＝台北週一 08:30）彙整上週（台北時間週一 00:00 至週日 24:00）：各專案進度變化、progress_updates 摘要、完成任務數、臨床新增收案、BD 案件事件與費用小計 → 產生全公司＋每組的繁中 markdown 週報 → 存 ai_reports → 通知全員。/reports 可讀。admin 有「立即重新產生」鈕。**LLM 失敗時存純數據版週報（無 AI 摘要文字），照樣通知。**
 - 每日提醒文案用模板字串即可，不必每封過 LLM（省額度、避免延遲）。

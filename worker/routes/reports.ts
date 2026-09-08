@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppContext } from "../types";
 import { getProjectAccess } from "../services/db";
-import { requiredString } from "../services/http";
+import { optionalString, requiredString } from "../services/http";
 import { llmChat, parseLooseJson } from "../services/llm";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
@@ -10,6 +10,8 @@ import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
 import { aiLanguageInstruction, draftFallback, normalizeAiLang, riskFallback, scheduleReason, taskFallback } from "../services/ai-language";
 import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkEvent, type ProgressLinkTask } from "../services/progress-links";
+import { MAX_CONTEXT_PROJECTS, MAX_HISTORY_TURNS, buildAssistantPrompt, buildPlanPrompt, type AssistantProjectSummary } from "../services/assistant";
+import { sanitizePlan } from "../../src/ai-plan";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -105,7 +107,7 @@ aiRoutes.post("/progress-links", async (c) => {
         WHERE t.project_id=? AND t.done=0
         ORDER BY s.position,t.position,t.created_at
       `).bind(projectId).all<ProgressLinkTask>(),
-      c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
+      c.env.DB.prepare("SELECT id,name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ id: string; name: string }>(),
       c.env.DB.prepare("SELECT title,due_date AS event_date,end_date FROM milestones WHERE project_id=? AND kind='event' ORDER BY due_date").bind(projectId).all<ProgressLinkEvent>(),
     ]);
     const stages = stageRows.results.map((stage) => stage.name);
@@ -287,4 +289,84 @@ aiRoutes.post("/schedule-suggest", async (c) => {
     console.error(JSON.stringify({ message: "排程建議降級", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
   }
   return c.json({ suggestions, fallback });
+});
+
+// 側邊欄的問答。唯讀：只把使用者「看得到」的專案摘要餵進去，範圍與 /projects 完全同一條判斷。
+aiRoutes.post("/assistant", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const question = requiredString(body, "question");
+  if (!question) return c.json({ error: "請輸入問題" }, 422);
+  const lang = normalizeAiLang(body.lang);
+  const user = c.get("user");
+  const visible = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row)));
+  const projects: AssistantProjectSummary[] = visible.slice(0, MAX_CONTEXT_PROJECTS).map((row) => ({
+    name: row.name, group: row.group_name, product: row.product ?? "", site: row.site ?? "",
+    status: row.status, progress: row.progress, target_date: row.target_date, last_activity: row.last_activity_at,
+  }));
+
+  // 開著某個專案時附上它的細節。專案 id 由前端帶，但一定要重新確認可見性——
+  // 不能因為前端說得出 id 就相信它看得到。
+  const projectId = optionalString(body, "project_id");
+  const current = projectId ? visible.find((row) => row.id === projectId) : undefined;
+  let detail: Record<string, unknown> | null = null;
+  if (current) {
+    const [tasks, milestones, updates] = await Promise.all([
+      c.env.DB.prepare("SELECT t.title,t.due_date,t.done,s.name AS stage FROM tasks t JOIN stages s ON s.id=t.stage_id WHERE t.project_id=? ORDER BY s.position,t.position LIMIT 120").bind(current.id).all<Record<string, unknown>>(),
+      c.env.DB.prepare("SELECT title,due_date,end_date,done,kind FROM milestones WHERE project_id=? ORDER BY due_date LIMIT 60").bind(current.id).all<Record<string, unknown>>(),
+      c.env.DB.prepare("SELECT content,created_at FROM progress_updates WHERE project_id=? ORDER BY created_at DESC LIMIT 5").bind(current.id).all<Record<string, unknown>>(),
+    ]);
+    detail = { name: current.name, description: current.description, goal: current.goal_summary, progress: current.progress, tasks: tasks.results, milestones: milestones.results, recent_updates: updates.results };
+  }
+
+  const history = (Array.isArray(body.history) ? body.history : []).slice(-MAX_HISTORY_TURNS)
+    .filter((item): item is { role: string; content: string } => !!item && typeof item === "object" && typeof (item as { content?: unknown }).content === "string")
+    .map((item) => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content.slice(0, 4_000) }));
+
+  try {
+    const reply = await llmChat(c.env, [
+      { role: "system", content: buildAssistantPrompt(lang) },
+      ...history,
+      { role: "user", content: JSON.stringify({ today: taipeiDate(), asking_user: { name: user.name, group: user.group_name }, projects, open_project: detail, question }) },
+    ], { timeoutMs: 90_000 });
+    return c.json({ reply, project_count: projects.length });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "AI 小幫手失敗", error: error instanceof Error ? error.message : String(error) }));
+    return c.json({ error: "AI 小幫手暫時無法回應，請稍後再試" }, 503);
+  }
+});
+
+// 建立內容與時程：只回草稿，一個字都不寫進資料庫。寫入由前端拿著草稿去打既有的建立端點，
+// 因此權限、稽核、自動進度全部照原本的路徑跑。
+aiRoutes.post("/plan-project", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const projectId = requiredString(body, "project_id");
+  const brief = requiredString(body, "brief");
+  if (!projectId || !brief) return c.json({ error: "請提供專案與說明" }, 422);
+  const lang = normalizeAiLang(body.lang);
+  const access = await getProjectAccess(c.env.DB, projectId);
+  if (!access) return c.json({ error: "找不到專案" }, 404);
+  // 讀得到還不夠——草稿的用途就是要寫進去，沒有編輯權就不必產。
+  if (!canViewProject(c.get("user"), access) || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+
+  const [project, stageRows, taskRows, milestoneRows] = await Promise.all([
+    c.env.DB.prepare("SELECT name,description,goal_summary FROM projects WHERE id=?").bind(projectId).first<{ name: string; description: string; goal_summary: string }>(),
+    c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
+    c.env.DB.prepare("SELECT title FROM tasks WHERE project_id=? ORDER BY created_at LIMIT 120").bind(projectId).all<{ title: string }>(),
+    c.env.DB.prepare("SELECT title,due_date FROM milestones WHERE project_id=? ORDER BY due_date LIMIT 60").bind(projectId).all<Record<string, unknown>>(),
+  ]);
+  const stages = stageRows.results.map((row) => row.name);
+  if (!stages.length) return c.json({ error: "這個專案還沒有任何階段，請先建立階段" }, 422);
+  // 一併回階段 id：前端拿草稿去打既有的建立端點時需要 stage_id，不該再多跑一趟。
+
+  try {
+    const text = await llmChat(c.env, [
+      { role: "system", content: buildPlanPrompt(lang, stages, taipeiDate()) },
+      { role: "user", content: JSON.stringify({ project: { name: project?.name ?? "", description: project?.description ?? "", goal: project?.goal_summary ?? "" }, brief: brief.slice(0, 8_000), existing_tasks: taskRows.results.map((row) => row.title), existing_milestones: milestoneRows.results }) },
+    ], { json: true, timeoutMs: 90_000 });
+    const plan = sanitizePlan(parseLooseJson<Record<string, unknown>>(text), stages);
+    return c.json({ plan, stages: stageRows.results });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "AI 專案草稿失敗", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
+    return c.json({ error: "AI 暫時無法產生草稿，請稍後再試" }, 503);
+  }
 });
