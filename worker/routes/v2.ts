@@ -216,21 +216,23 @@ v2Routes.delete("/rules/:id", async (c) => {
 
 v2Routes.get("/timeline", async (c) => {
   const user = c.get("user");
-  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>, events: [] as Array<{ id: string; title: string; event_date: string; end_date: string | null; kind: "event"; done: number }> }));
+  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>, markers: [] as Array<{ id: string; title: string; due_date: string; end_date: string | null; kind: "milestone" | "event"; done: number }> }));
   if (projects.length) {
     const marks = projects.map(() => "?").join(",");
     const ids = projects.map((project) => project.id);
-    const [tasks, events] = await Promise.all([
+    const [tasks, markers] = await Promise.all([
       c.env.DB.prepare(`SELECT t.id,t.project_id,t.title,t.start_date,t.due_date,t.created_at,t.done,t.stage_id,u.name AS assignee_name,s.name AS stage_name,s.color AS stage_color,s.position AS stage_position FROM tasks t JOIN stages s ON s.id=t.stage_id LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id IN (${marks}) ORDER BY s.position,t.position,t.created_at`).bind(...ids).all<{ id: string; project_id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>(),
-      c.env.DB.prepare(`SELECT id,project_id,title,due_date AS event_date,end_date,kind,done FROM milestones WHERE kind='event' AND project_id IN (${marks}) ORDER BY due_date,title`).bind(...ids).all<{ id: string; project_id: string; title: string; event_date: string; end_date: string | null; kind: "event"; done: number }>(),
+      // 里程碑與歷程事件都要。原本只抓 kind='event'，所以像「Apply the PMF for Pathone」
+      // 這種所有日期都記在里程碑上的專案，在全域時間軸完全沒有東西可畫。
+      c.env.DB.prepare(`SELECT id,project_id,title,due_date,end_date,kind,done FROM milestones WHERE due_date IS NOT NULL AND project_id IN (${marks}) ORDER BY due_date,title`).bind(...ids).all<{ id: string; project_id: string; title: string; due_date: string; end_date: string | null; kind: "milestone" | "event"; done: number }>(),
     ]);
     const byProject = new Map<string, typeof tasks.results>();
     for (const task of tasks.results) byProject.set(task.project_id, [...(byProject.get(task.project_id) ?? []), task]);
-    const eventsByProject = new Map<string, typeof events.results>();
-    for (const event of events.results) eventsByProject.set(event.project_id, [...(eventsByProject.get(event.project_id) ?? []), event]);
+    const markersByProject = new Map<string, typeof markers.results>();
+    for (const marker of markers.results) markersByProject.set(marker.project_id, [...(markersByProject.get(marker.project_id) ?? []), marker]);
     for (const project of projects) {
       project.tasks = byProject.get(project.id) ?? [];
-      project.events = eventsByProject.get(project.id) ?? [];
+      project.markers = markersByProject.get(project.id) ?? [];
     }
   }
   return c.json({ groups: groupTimelineProjects(projects) });

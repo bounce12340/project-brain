@@ -119,7 +119,10 @@ describe("SPEC-V12-4 calendar, Gantt, and confirmation drafts", () => {
     expect(views).toContain('item.kind === "event"');
     expect(views).toContain('fill="none"');
     expect(views).toContain('"views.history"');
-    expect(timeline).toContain('row.kind === "event"');
-    expect(timeline).toContain('fill="none"');
+    // 全域時間軸的列型別在「里程碑也納入」之後改名為 marker（原本只畫得出歷程事件）。
+    // 釘住的意圖不變：歷程事件是空心菱形，而里程碑是實心的，兩者一眼可分。
+    expect(timeline).toContain('row.kind === "marker"');
+    expect(timeline).toContain('milestone ? colour : "none"');
+    expect(timeline).toContain('row.marker.kind === "milestone"');
   });
 });
