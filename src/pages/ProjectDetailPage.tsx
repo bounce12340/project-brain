@@ -6,6 +6,7 @@ import { Empty, ErrorBox, Loading, Markdown, PageHeader, ProgressBar, RiskBadge 
 import type { BdCase, BdEvent, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
 import { relatedProjects } from "../project-grouping";
 import { groupProjectsForSwitch, nextProjectId, type SwitchableProject } from "../project-switcher";
+import { PROJECT_CHANGED } from "../components/AiSidebar";
 import { TaskWorkspace } from "../components/TaskViews";
 import { ProjectFiles } from "../components/ProjectFiles";
 import { AutomationPanel } from "../components/AutomationPanel";
@@ -53,6 +54,12 @@ export function ProjectDetailPage() {
     if (need && !sections.includes(need)) void load([...sections, need]);
   }, [tab, sections]);
   useEffect(() => { void api<{ projects: SwitchableProject[] }>("/projects?summary=1").then((result) => setSiblings(result.projects)).catch(() => setSiblings([])); }, []);
+  // AI 小幫手側邊欄掛在 Layout 上，寫入後拿不到這裡的 load()，改用事件通知重抓。
+  useEffect(() => {
+    const refresh = (event: Event) => { if ((event as CustomEvent<{ projectId?: string }>).detail?.projectId === id) void load(); };
+    window.addEventListener(PROJECT_CHANGED, refresh);
+    return () => window.removeEventListener(PROJECT_CHANGED, refresh);
+  }, [id, sections]);
   const groupType = data?.project.group_type;
   useEffect(() => { if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview"); }, [groupType]);
   useEffect(() => {

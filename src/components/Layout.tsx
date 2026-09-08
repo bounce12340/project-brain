@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { OnboardingTour } from "./OnboardingTour";
+import { AiSidebar } from "./AiSidebar";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { useTheme } from "../theme/ThemeContext";
@@ -24,6 +25,6 @@ export function Layout({ children }: { children: ReactNode }) {
           縮的是項目之間的間距與左右內距，觸控範圍本身不動。 */}
       <div className="flex gap-0.5 overflow-x-auto border-t border-gold-dim px-2 py-2 lg:hidden">{items.map(([to, key]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `whitespace-nowrap border-b-2 px-3 py-1.5 text-sm ${isActive ? "border-psi text-psi" : "border-transparent text-star-dim"}`}>{t(key)}</NavLink>)}</div>
     </nav>
-    <main className="mx-auto max-w-7xl px-4 py-7">{children}</main><OnboardingTour />
+    <main className="mx-auto max-w-7xl px-4 py-7">{children}</main><OnboardingTour /><AiSidebar />
   </div>;
 }
