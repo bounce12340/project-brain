@@ -330,8 +330,10 @@ aiRoutes.post("/assistant", async (c) => {
     ], { timeoutMs: 90_000 });
     return c.json({ reply, project_count: projects.length });
   } catch (error) {
-    console.error(JSON.stringify({ message: "AI 小幫手失敗", error: error instanceof Error ? error.message : String(error) }));
-    return c.json({ error: "AI 小幫手暫時無法回應，請稍後再試" }, 503);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({ message: "AI 小幫手失敗", error: reason }));
+    // 管理員看得到真正的原因。只回「暫時無法回應」的話，回報者與修的人都在猜。
+    return c.json({ error: adminDetail(user, "AI 小幫手暫時無法回應，請稍後再試", reason) }, 503);
   }
 });
 
@@ -366,7 +368,39 @@ aiRoutes.post("/plan-project", async (c) => {
     const plan = sanitizePlan(parseLooseJson<Record<string, unknown>>(text), stages);
     return c.json({ plan, stages: stageRows.results });
   } catch (error) {
-    console.error(JSON.stringify({ message: "AI 專案草稿失敗", project_id: projectId, error: error instanceof Error ? error.message : String(error) }));
-    return c.json({ error: "AI 暫時無法產生草稿，請稍後再試" }, 503);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({ message: "AI 專案草稿失敗", project_id: projectId, error: reason }));
+    return c.json({ error: adminDetail(c.get("user"), "AI 暫時無法產生草稿，請稍後再試", reason) }, 503);
   }
+});
+
+
+/** 一般使用者只看得到「暫時無法回應」；管理員多看到供應商回的原因，否則沒人查得出來。 */
+function adminDetail(user: { role: string }, message: string, reason: string): string {
+  return user.role === "admin" ? `${message}（${reason}）` : message;
+}
+
+// 管理員專用的連線診斷。在瀏覽器直接開 /api/ai/diagnostics 就能看結果——
+// AI 失敗時最花時間的一直是「到底是金鑰、模型名還是逾時」，這裡一次講清楚。
+aiRoutes.get("/diagnostics", async (c) => {
+  const user = c.get("user");
+  if (user.role !== "admin") return c.json({ error: "僅管理員可使用" }, 403);
+  const started = Date.now();
+  const result: Record<string, unknown> = {
+    key_present: !!c.env.LLM_API_KEY,
+    base_url: c.env.LLM_BASE_URL,
+    model: c.env.LLM_MODEL,
+    // 沒有金鑰時 llmChat 會靜靜地改用 Workers AI，答案品質不同但不會報錯。
+    provider: c.env.LLM_API_KEY ? "OpenAI 相容端點" : "Cloudflare Workers AI（沒有設定 LLM_API_KEY）",
+  };
+  try {
+    const reply = await llmChat(c.env, [{ role: "user", content: "Reply with the single word: ok" }], { attempts: 1, timeoutMs: 20_000 });
+    result.ok = true;
+    result.reply = reply.slice(0, 120);
+  } catch (error) {
+    result.ok = false;
+    result.error = error instanceof Error ? error.message : String(error);
+  }
+  result.elapsed_ms = Date.now() - started;
+  return c.json(result);
 });
