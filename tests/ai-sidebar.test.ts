@@ -34,6 +34,23 @@ describe("AI 小幫手不能自己改資料", () => {
   });
 });
 
+describe("建立內容與時程在任何頁面都要能用", () => {
+  it("不在專案內頁時，面板裡要有專案選單，而不是只留一句提示", () => {
+    // 回報：「建立內容與時程那頁不能輸入任何的東西」。第一版只在網址是 /projects/:id
+    // 時才渲染輸入框，其他頁面連一個輸入框都沒有——分頁點得到卻是死路。
+    // 泛型裡有 Array<…>，用 [^>]* 切會在第一個 > 就停，所以直接比對字串。
+    expect(sidebar).toContain('"/projects?summary=1"');
+    expect(sidebar).toContain('t("ai.planPick")');
+    expect(sidebar).toContain("const projectId = openProjectId || chosen;");
+  });
+
+  it("草稿與寫入都用選定的專案，不是網址上的", () => {
+    // 兩者在專案內頁相同，但從選單選的時候必須是選單那個。
+    expect(sidebar).not.toMatch(/api\(`\/projects\/\$\{openProjectId\}/);
+    expect(sidebar).toMatch(/project_id: projectId/);
+  });
+});
+
 describe("AI 小幫手的可見範圍不能比使用者大", () => {
   it("問答只餵使用者看得到的專案", () => {
     const body = handler(routes, "/assistant");
