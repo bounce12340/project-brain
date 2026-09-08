@@ -24,7 +24,7 @@
   "routes": [{ "pattern": "projects.uic-ai.com", "custom_domain": true }],
   "vars": {
     "APP_BASE_URL": "https://projects.uic-ai.com",
-    "LLM_BASE_URL": "https://ollama.com/v1",
+    "LLM_BASE_URL": "https://api.deepseek.com/v1",
     "LLM_MODEL": "deepseek-v4-pro",
     "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
     "MAIL_FROM_NAME": "艾爾水晶-專案進度"

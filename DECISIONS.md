@@ -253,3 +253,8 @@
 - 2026-09-08（AI 小幫手側邊欄）：上下文有硬上限——最多 60 個專案、最近 6 輪對話。側邊欄是會一直開著的東西，全帶的話成本隨資料量與對話長度線性成長，而且塞三百個專案只會讓模型抓不到重點。
 - 2026-09-08（AI 小幫手側邊欄）：側邊欄掛在 `Layout` 而非任一頁面，因此每一頁都在。目前開著哪個專案改由路徑判斷（`/projects/:id`），不做 prop 傳遞；寫入後用 window 事件通知專案內頁重抓，而不是整頁重新載入。
 - 2026-09-08（AI 小幫手側邊欄）：右下角切換鈕的名稱固定是「AI 小幫手」，開合交給 `aria-expanded`。第一版讓名稱隨狀態變成「收起」，結果與標題列的 ✕ 同名——正是先前修過的那類「同一頁兩個同名控制項」。量測後改掉：整頁 63 個互動元素、0 個沒有名稱。
+- 2026-09-08（改用 DeepSeek 官方 API）：`LLM_BASE_URL` 從 `https://ollama.com/v1` 改為 `https://api.deepseek.com/v1`。`LLM_MODEL` 不動——DeepSeek 官方 API 的模型名就是不帶 tag 的 `deepseek-v4-pro`（文件說明 Flash-0731／Pro-0813 是版本更新，呼叫時的名稱不變）。這順帶解掉先前「Ollama 目錄裡是 deepseek-v4-pro:0813、設定卻不帶 tag」的疑慮：那個疑慮只存在於 Ollama 那條路。
+- 2026-09-08（改用 DeepSeek 官方 API）：`https://api.deepseek.com` 與 `https://api.deepseek.com/v1` 兩種 base 都通（各自打 `/chat/completions` 都回 401 認證錯誤而非 404）。選 `/v1` 與原本的寫法一致。
+- 2026-09-08（改用 DeepSeek 官方 API）：DeepSeek 的 JSON 輸出模式有一條硬性要求——提詞裡必須出現「json」這個字，否則「API 可能偶爾回空內容」。而空內容在 `llmChat` 是丟例外、重試一次、再丟出，也就是功能直接壞掉而不是降級。現有五個 `json: true` 的提詞都已經寫了「Return JSON only」，切換不會踩到；但這是日後改提詞最容易漏掉的東西，所以加 `tests/llm-json-mode.test.ts` 釘住。
+- 2026-09-08（改用 DeepSeek 官方 API）：那個測試的第一版用「找第一個 `]`」來切呼叫範圍，被提詞裡的 `string[]`、`suggestions:string[]` 騙到，五個只抓到三個——一個抓不全卻永遠會通過的假保護。改成以 `llmChat(` 的出現位置切片，並加上「少於 5 個就算失敗」的下限，讓抓取方式跟著程式碼漂掉時測試會壞掉而不是靜靜失效。
+- 2026-09-08（改用 DeepSeek 官方 API）：金鑰不進 repo、不進對話。`LLM_API_KEY` 由使用者自己以 `npx wrangler secret put LLM_API_KEY` 設定，值只在該指令的互動輸入中出現。
