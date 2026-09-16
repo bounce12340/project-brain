@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTIVE_STATUSES, ARCHIVE_STATUSES, archiveDate, archiveSummary,
-  archivableSelection, bucketOf, bucketStatuses, canArchive, groupArchiveByYear, ongoingOnly, statusQuery,
+  archivableSelection, bucketOf, bucketStatuses, canArchive, deleteConfirmed, groupArchiveByYear, ongoingOnly, statusQuery,
 } from "../src/project-archive";
 import { requestedStatuses } from "../worker/routes/projects";
 import type { Project } from "../src/types";
@@ -150,4 +150,27 @@ describe("封存權限與勾選", () => {
   });
 
   it("沒有勾選時回空陣列", () => expect(archivableSelection([owned, others], new Set(), { id: "a", role: "admin" })).toEqual([]));
+});
+
+describe("deleteConfirmed", () => {
+  it("打對字才放行", () => {
+    expect(deleteConfirmed("刪除", "刪除")).toBe(true);
+    expect(deleteConfirmed("DELETE", "DELETE")).toBe(true);
+  });
+
+  it("前後空白忽略、英文不分大小寫", () => {
+    expect(deleteConfirmed("  刪除  ", "刪除")).toBe(true);
+    expect(deleteConfirmed("delete", "DELETE")).toBe(true);
+    expect(deleteConfirmed(" Delete ", "DELETE")).toBe(true);
+  });
+
+  it("打錯或沒打都擋下來", () => {
+    // window.prompt 按取消會回 null——那是最常見的情況，必須是 false。
+    expect(deleteConfirmed(null, "刪除")).toBe(false);
+    expect(deleteConfirmed(undefined, "刪除")).toBe(false);
+    expect(deleteConfirmed("", "刪除")).toBe(false);
+    expect(deleteConfirmed("確定", "刪除")).toBe(false);
+    expect(deleteConfirmed("刪", "刪除")).toBe(false);
+    expect(deleteConfirmed("刪除專案", "刪除")).toBe(false);
+  });
 });

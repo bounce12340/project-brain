@@ -6,7 +6,7 @@ import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import { dashboardGroups, filterProjectsByGroup, filterUpdatesByGroup, readDashboardGroup, resolveDashboardGroup, writeDashboardGroup } from "../dashboard-filter";
-import { archivableSelection, canArchive, ongoingOnly } from "../project-archive";
+import { archivableSelection, canArchive, ongoingOnly, deleteConfirmed } from "../project-archive";
 import type { Project } from "../types";
 
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
@@ -53,6 +53,20 @@ export function DashboardPage() {
     setSelected(new Set()); await load().catch(() => undefined); setBusy(false);
   };
 
+  const deleteSelected = async () => {
+    // 刪除與封存的權限規則相同（管理員或擁有者），後端的 canManageProject 也是同一條，
+    // 所以沿用同一個選取過濾，不另外寫一份會慢慢跟它分岔的邏輯。
+    const ids = archivableSelection(visible, selected, user);
+    if (!ids.length) return;
+    const keyword = t("dashboard.deleteKeyword");
+    if (!deleteConfirmed(window.prompt(t("dashboard.deleteConfirm", { count: ids.length, keyword })), keyword)) return;
+    setBusy(true); setError("");
+    const results = await Promise.allSettled(ids.map((id) => api(`/projects/${id}`, { method: "DELETE" })));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) setError(t("dashboard.deleteFailed", { count: failed }));
+    setSelected(new Set()); await load().catch(() => undefined); setBusy(false);
+  };
+
   if (!data) return <Loading />;
   const selectable = visible.filter((project) => canArchive(project, user));
   const pending = archivableSelection(visible, selected, user).length;
@@ -65,7 +79,7 @@ export function DashboardPage() {
         <h2 className="font-bold">{t("dashboard.groupProgress")}<span className="ml-2 text-sm font-normal text-star-dim">{t("common.items", { count: visible.length })}</span></h2>
         <div className="flex flex-wrap items-center gap-3">
           {groups.length > 1 && <select className="!py-1.5 text-sm" aria-label={t("dashboard.groupFilter")} value={group} onChange={(event) => chooseGroup(event.target.value)}><option value="">{t("dashboard.allGroups")}</option>{groups.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>}
-          {selectable.length > 0 && <button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button>}
+          {selectable.length > 0 && <><button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button><button className="btn-danger !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void deleteSelected()}>{t("dashboard.deleteSelected", { count: pending })}</button></>}
         </div>
       </div>
       {error && <ErrorBox message={error} />}

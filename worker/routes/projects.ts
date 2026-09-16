@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppContext, GroupType, ProjectAccess, Visibility } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
+import { r2FileStore } from "../services/filestore";
 import { booleanInt, boundedNumber, optionalString, requiredString } from "../services/http";
 import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, canViewProject } from "../services/permissions";
 import { recomputeAutoProgress } from "../services/auto-progress";
@@ -230,6 +231,17 @@ projectsRoutes.delete("/:id", async (c) => {
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canManageProject(user, access)) return c.json({ error: "沒有管理權限" }, 403);
   await writeAudit(c.env.DB, user, "delete", "project", id, "刪除專案");
+  // 資料庫的 ON DELETE CASCADE 會清掉 files 那幾列，但 R2 裡的實體檔案不會跟著消失。
+  // 列一旦刪掉就沒有任何紀錄指向那些物件，等於永久留在 bucket 裡繼續計費且無法清理，
+  // 所以一定要在刪列之前先清。單一檔案的刪除端點本來就是這樣做的。
+  const files = await c.env.DB.prepare("SELECT storage_key FROM files WHERE project_id = ?").bind(id).all<{ storage_key: string }>();
+  if (files.results.length) {
+    const store = r2FileStore(c.env.FILES);
+    // 用 allSettled：某個物件清不掉不該讓整個刪除卡住，資料庫才是使用者眼中的真相。
+    const outcome = await Promise.allSettled(files.results.map((file) => store.delete(file.storage_key)));
+    const failed = outcome.filter((item) => item.status === "rejected").length;
+    if (failed) console.error(JSON.stringify({ message: "刪除專案時有檔案未能從 R2 清除", project_id: id, failed, total: files.results.length }));
+  }
   await c.env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
 });
