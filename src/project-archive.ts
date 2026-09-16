@@ -84,3 +84,13 @@ export function archiveSummary(projects: Project[]): { total: number; done: numb
     archived: projects.filter((project) => project.status === "archived").length,
   };
 }
+
+/**
+ * 刪除前的打字確認。刪除會連帶清掉任務、里程碑、進度紀錄與檔案且無法復原，
+ * 一個 OK 鈕擋不住誤觸——要求把指定字詞打出來，手比腦快的時候才會停下來。
+ * 前後空白忽略，英文不分大小寫；中文沒有大小寫，兩邊都套不影響。
+ */
+export function deleteConfirmed(typed: string | null | undefined, required: string): boolean {
+  if (typeof typed !== "string") return false;
+  return typed.trim().toLowerCase() === required.trim().toLowerCase();
+}
