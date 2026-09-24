@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  dashboardGroups, filterProjectsByGroup, filterUpdatesByGroup,
-  readDashboardGroup, resolveDashboardGroup, writeDashboardGroup,
+  dashboardGroups, filterMine, filterProjectsByGroup, filterUpdatesByGroup, isMine, mineToggleUseful,
+  readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine,
 } from "../src/dashboard-filter";
 import type { Project } from "../src/types";
 
@@ -99,5 +99,49 @@ describe("記住選擇", () => {
     const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
     expect(readDashboardGroup(blocked)).toBe("");
     expect(() => writeDashboardGroup("g_ra", blocked)).not.toThrow();
+  });
+});
+
+describe("只看我負責的", () => {
+  const owned = { ...project("own", "g_ra", "RA/PV組"), owner_id: "me", member_ids: [] };
+  const joined = { ...project("join", "g_ra", "RA/PV組"), owner_id: "boss", member_ids: ["x", "me"] };
+  const others = { ...project("other", "g_bd", "BD組"), owner_id: "boss", member_ids: ["x"] };
+  const legacy = { ...project("legacy", "g_bd", "BD組"), owner_id: "boss" };
+
+  it("擁有者或專案成員都算", () => {
+    expect(isMine(owned, "me")).toBe(true);
+    expect(isMine(joined, "me")).toBe(true);
+    expect(isMine(others, "me")).toBe(false);
+  });
+
+  it("沒有成員名單的舊資料不會出錯", () => expect(isMine(legacy, "me")).toBe(false));
+
+  it("還沒登入時一件都不算", () => expect(isMine(owned, undefined)).toBe(false));
+
+  it("開啟時只留我負責的，關閉時原樣", () => {
+    expect(filterMine([owned, joined, others], "me", true).map((item) => item.id)).toEqual(["own", "join"]);
+    expect(filterMine([owned, joined, others], "me", false)).toHaveLength(3);
+  });
+
+  it("只有一部分是我的時才顯示開關", () => {
+    expect(mineToggleUseful([owned, others], "me")).toBe(true);
+    // 全是我的：打開也不會少任何一件。
+    expect(mineToggleUseful([owned, joined], "me")).toBe(false);
+    // 沒有我的：打開只會得到空清單。
+    expect(mineToggleUseful([others, legacy], "me")).toBe(false);
+    expect(mineToggleUseful([], "me")).toBe(false);
+  });
+
+  it("記住開關狀態，儲存空間不能用時視同關閉", () => {
+    const store = new Map<string, string>();
+    const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
+    expect(readDashboardMine(storage)).toBe(false);
+    writeDashboardMine(true, storage);
+    expect(readDashboardMine(storage)).toBe(true);
+    writeDashboardMine(false, storage);
+    expect(readDashboardMine(storage)).toBe(false);
+    const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+    expect(readDashboardMine(broken)).toBe(false);
+    expect(() => writeDashboardMine(true, broken)).not.toThrow();
   });
 });

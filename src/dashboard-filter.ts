@@ -57,3 +57,40 @@ export function filterUpdatesByGroup<T extends { project_id: string }>(
   const allowed = new Set(visibleProjects.map((project) => project.id));
   return updates.filter((update) => allowed.has(update.project_id));
 }
+
+const DASHBOARD_MINE_KEY = "brain.dashboard.mine";
+
+/** 我負責的：擁有者或專案成員。成員就是這個專案的工作夥伴，不只是旁觀者。 */
+export function isMine(project: Pick<Project, "owner_id" | "member_ids">, userId: string | undefined): boolean {
+  if (!userId) return false;
+  return project.owner_id === userId || (project.member_ids ?? []).includes(userId);
+}
+
+export function filterMine<T extends Pick<Project, "owner_id" | "member_ids">>(projects: T[], userId: string | undefined, on: boolean): T[] {
+  return on ? projects.filter((project) => isMine(project, userId)) : projects;
+}
+
+/**
+ * 只有「一部分是我的」時這個開關才有意義。全都是我的，打開也不會少任何一件；
+ * 一件都不是我的，打開只會得到空清單。兩種情況都不顯示開關。
+ */
+export function mineToggleUseful(projects: Array<Pick<Project, "owner_id" | "member_ids">>, userId: string | undefined): boolean {
+  const mine = projects.filter((project) => isMine(project, userId)).length;
+  return mine > 0 && mine < projects.length;
+}
+
+export function readDashboardMine(storage: Pick<Storage, "getItem"> = localStorage): boolean {
+  try {
+    return storage.getItem(DASHBOARD_MINE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeDashboardMine(on: boolean, storage: Pick<Storage, "setItem"> = localStorage): void {
+  try {
+    storage.setItem(DASHBOARD_MINE_KEY, on ? "1" : "0");
+  } catch {
+    // 存不進去只是下次要重按，不該讓畫面壞掉。
+  }
+}

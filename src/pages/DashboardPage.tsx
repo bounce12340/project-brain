@@ -5,8 +5,9 @@ import { useAuth } from "../auth";
 import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
-import { dashboardGroups, filterProjectsByGroup, filterUpdatesByGroup, readDashboardGroup, resolveDashboardGroup, writeDashboardGroup } from "../dashboard-filter";
+import { dashboardGroups, filterMine, filterProjectsByGroup, filterUpdatesByGroup, mineToggleUseful, readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine } from "../dashboard-filter";
 import { archivableSelection, canArchive, ongoingOnly, deleteConfirmed } from "../project-archive";
+import { ProjectGlance } from "../components/ProjectGlance";
 import type { Project } from "../types";
 
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
@@ -31,10 +32,23 @@ export function DashboardPage() {
   const [savedGroup, setSavedGroup] = useState(readDashboardGroup);
   const groups = useMemo(() => dashboardGroups(ongoing), [ongoing]);
   const group = resolveDashboardGroup(savedGroup, groups);
-  const visible = useMemo(() => filterProjectsByGroup(ongoing, group), [ongoing, group]);
+  // 「只看我負責的」是否有意義要看全部進行中的專案，不是篩過組別之後的：
+  // 否則切到某一組時開關會忽隱忽現，而開著的狀態卻還在默默過濾。
+  const [savedMine, setSavedMine] = useState(readDashboardMine);
+  const mineUseful = mineToggleUseful(ongoing, user?.id);
+  const mine = savedMine && mineUseful;
+  const visible = useMemo(() => filterMine(filterProjectsByGroup(ongoing, group), user?.id, mine), [ongoing, group, mine, user?.id]);
+  // 點專案名稱在下方展開快覽，不必切到專案內頁再切分頁。
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const visibleUpdates = useMemo(
     () => filterUpdatesByGroup(data?.recent_updates ?? [], visible, group), [data, visible, group]);
   const chooseGroup = (value: string) => { setSavedGroup(value); writeDashboardGroup(value); setSelected(new Set()); };
+  const chooseMine = (value: boolean) => { setSavedMine(value); writeDashboardMine(value); setSelected(new Set()); };
+  const toggleOpen = (id: string) => setOpen((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
 
   const toggle = (id: string) => setSelected((current) => {
     const next = new Set(current);
@@ -78,18 +92,26 @@ export function DashboardPage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">{t("dashboard.groupProgress")}<span className="ml-2 text-sm font-normal text-star-dim">{t("common.items", { count: visible.length })}</span></h2>
         <div className="flex flex-wrap items-center gap-3">
+          {mineUseful && <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={mine} onChange={(event) => chooseMine(event.target.checked)} />{t("dashboard.mineOnly")}</label>}
           {groups.length > 1 && <select className="!py-1.5 text-sm" aria-label={t("dashboard.groupFilter")} value={group} onChange={(event) => chooseGroup(event.target.value)}><option value="">{t("dashboard.allGroups")}</option>{groups.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>}
           {selectable.length > 0 && <><button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button><button className="btn-danger !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void deleteSelected()}>{t("dashboard.deleteSelected", { count: pending })}</button></>}
         </div>
       </div>
       {error && <ErrorBox message={error} />}
-      <div className="space-y-4">{visible.length ? visible.map((project) => <div className="flex items-start gap-2 border border-nexus-line p-3 transition hover:shadow-[0_0_14px_rgb(var(--color-psi)/.25)]" key={project.id}>
-        {canArchive(project, user) && <label className="touch-target shrink-0 cursor-pointer"><input type="checkbox" className="h-4 w-4" checked={selected.has(project.id)} onChange={() => toggle(project.id)} aria-label={t("dashboard.selectProject", { name: project.name })} /></label>}
-        <Link to={`/projects/${project.id}`} className="block min-w-0 flex-1">
-          <div className="mb-2 flex justify-between gap-3"><span className="font-medium">{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex items-center gap-2 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div>
-          <ProgressBar value={project.progress} />
-        </Link>
-      </div>) : <Empty>{t("dashboard.noProjects")}</Empty>}</div>
+      <div className="space-y-4">{visible.length ? visible.map((project) => {
+        const expanded = open.has(project.id);
+        return <div className={`border transition hover:shadow-[0_0_14px_rgb(var(--color-psi)/.25)] ${expanded ? "border-psi" : "border-nexus-line"}`} key={project.id}>
+          <div className="flex items-start gap-2 p-3">
+            {canArchive(project, user) && <label className="touch-target shrink-0 cursor-pointer"><input type="checkbox" className="h-4 w-4" checked={selected.has(project.id)} onChange={() => toggle(project.id)} aria-label={t("dashboard.selectProject", { name: project.name })} /></label>}
+            {/* 整列是展開快覽的按鈕；進專案內頁的連結在快覽裡，兩者不能巢狀。 */}
+            <button type="button" className="block min-w-0 flex-1 text-left" aria-expanded={expanded} aria-controls={`glance-${project.id}`} aria-label={t("glance.toggle", { name: project.name })} onClick={() => toggleOpen(project.id)}>
+              <div className="mb-2 flex justify-between gap-3"><span className="font-medium"><span aria-hidden="true" className={`mr-1.5 inline-block text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex items-center gap-2 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div>
+              <ProgressBar value={project.progress} />
+            </button>
+          </div>
+          {expanded && <div id={`glance-${project.id}`} className="border-t border-nexus-line p-3 sm:p-4"><ProjectGlance projectId={project.id} /></div>}
+        </div>;
+      }) : <Empty>{t(mine ? "dashboard.noMine" : "dashboard.noProjects")}</Empty>}</div>
       {selectable.length > 0 && <p className="mt-4 text-sm text-star-dim">{t("dashboard.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>}
     </section>
       <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}{group && <span className="ml-2 text-sm font-normal text-star-dim">{groups.find((item) => item.id === group)?.name}</span>}</h2><div className="space-y-4">{visibleUpdates.length ? visibleUpdates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 text-sm text-star-dim">{item.content}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>) : <Empty>{t(group ? "dashboard.noActivityInGroup" : "dashboard.noActivity")}</Empty>}</div></section>
