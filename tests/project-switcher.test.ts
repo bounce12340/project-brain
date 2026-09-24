@@ -78,7 +78,12 @@ describe("project detail wiring", () => {
     expect(page).toContain('if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview");');
   });
 
-  it("clears the previous project and resets to core while the next one loads", () => {
-    expect(page).toContain("setData(null); setError(\"\"); setSections([\"core\"]); void load([\"core\"]);");
+  it("clears the previous project and resets to the initial sections while the next one loads", () => {
+    expect(page).toContain("setData(null); setError(\"\"); setSections(INITIAL_SECTIONS); void load(INITIAL_SECTIONS);");
+  });
+
+  it("loads progress updates up front, because the overview's glance shows the latest one", () => {
+    expect(page).toContain('const INITIAL_SECTIONS = ["core", "updates"];');
+    expect(page).toContain("<ProjectGlance detail={data} openLink={false} goal={false} />");
   });
 });

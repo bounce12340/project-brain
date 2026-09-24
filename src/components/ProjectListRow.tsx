@@ -1,10 +1,13 @@
 import { Link } from "react-router-dom";
 import { ProgressBar } from "./UI";
+import { ProjectGlance } from "./ProjectGlance";
 import { useT } from "../i18n/LangContext";
 import type { Project } from "../types";
 
 /**
- * 專案清單的一列。卡片改成長條之後，「開啟專案」不能退化成要點兩下——所以標題列拆成
+ * 專案清單的一列。展開後是進度快覽（最新進度、接下來、歷程），不必進專案內頁切分頁。
+ *
+ * 卡片改成長條之後，「開啟專案」不能退化成要點兩下——所以標題列拆成
  * 兩個並排的可點區域：整條是展開／收合的按鈕，右側另有一個直接開啟的連結。兩者不能巢狀
  * （連結包在按鈕裡是無效的 HTML，而且點擊行為會互搶）。
  */
@@ -17,11 +20,6 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
 }) {
   const t = useT();
   const statusLabel = { active: t("status.active"), paused: t("status.paused"), done: t("status.done"), archived: t("status.archived") };
-  const detail = (label: string, value: string) => <div>
-    <dt className="text-xs text-star-dim">{label}</dt>
-    <dd className="mt-0.5 text-sm">{value || t("common.none")}</dd>
-  </div>;
-
   return <div data-tour={tour ? "project-card" : undefined} className="border border-nexus-line bg-nexus-raised">
     <div className="flex items-center gap-2 px-3">
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
@@ -44,15 +42,9 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
     </div>
 
     {expanded && <div className="border-t border-nexus-line px-3 py-4">
-      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {detail(t("projects.product"), project.product)}
-        {detail(t("projects.site"), project.site)}
-        {detail(t("task.assignee"), project.owner_name)}
-        {detail(t("project.targetDate"), project.target_date ?? "")}
-      </dl>
-      <p className="mt-4 text-sm text-star-dim">{project.goal_summary || project.description || t("projects.noDescription")}</p>
-      <div className="mt-3 sm:hidden"><ProgressBar value={project.progress} /></div>
-      {related.length > 0 && <div className="mt-4">
+      <div className="mb-4 sm:hidden"><ProgressBar value={project.progress} /></div>
+      <ProjectGlance projectId={project.id} openLink={false} />
+      {related.length > 0 && <div className="mt-5 border-t border-nexus-line pt-4">
         <p className="mb-2 text-xs font-semibold text-gold-bright">{t("projects.related")}</p>
         <div className="flex flex-wrap gap-2">{related.map((item) => <Link key={item.id} to={`/projects/${item.id}`}
           className="border border-nexus-line px-2 py-1 text-sm hover:border-psi hover:text-psi">{item.name}</Link>)}</div>

@@ -4,6 +4,8 @@ export interface User {
 
 export interface Project {
   id: string; name: string; description: string; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; owner_id: string; owner_name: string; visibility: "all" | "group" | "private"; status: "active" | "paused" | "done" | "archived"; progress: number; progress_mode: "manual" | "auto"; goal_summary: string; product: string; site: string; start_date: string | null; target_date: string | null; auto_archive: number; archived_at: string | null; last_activity_at: string; risk_level: "low" | "medium" | "high" | null; risk_summary: string | null; risk_suggestions: string | null; risk_updated_at: string | null;
+  /** 清單類端點才有；專案內頁另有 members。 */
+  member_ids?: string[];
 }
 
 export interface Metadata {
@@ -14,7 +16,7 @@ export interface Metadata {
 
 export interface Stage { id: string; project_id: string; name: string; color: string; position: number }
 export interface Task { id: string; project_id: string; stage_id: string; title: string; description: string; assignee_id: string | null; assignee_name?: string; start_date: string | null; due_date: string | null; position: number; done: number; done_at: string | null; created_at: string; dependency_ids: string[]; comment_count: number; attachment_count: number }
-export interface Milestone { id: string; title: string; due_date: string | null; end_date: string | null; done: number; position: number; kind: "milestone" | "event" }
+export interface Milestone { id: string; title: string; due_date: string | null; end_date: string | null; done: number; done_at?: string | null; position: number; kind: "milestone" | "event" }
 export interface ProgressUpdate { id: string; author_id: string; content: string; progress_snapshot: number | null; author_name: string; is_support: number; created_at: string; edited_at: string | null; edited_by: string | null; can_edit: boolean }
 export interface Enrollment { id: string; record_date: string; site: string | null; count: number; note: string; created_by_name: string }
 export interface BdCase { id: string; case_name: string; product_name: string; case_type: string; submission_no: string | null; current_status: string; submitted_at: string | null; expected_approval: string | null; note: string }

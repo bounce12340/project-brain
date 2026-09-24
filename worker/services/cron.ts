@@ -7,6 +7,15 @@ import { licenseNotificationStage } from "./licenses";
 import { fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
 
 interface Recipient { id: string; email: string; email_notifications: number }
+
+/**
+ * 還需要人去推的專案。做完的不再催。
+ *
+ * 只看 status 不夠：自動進度模式下勾完最後一項就是 100%，但狀態要有人手動改成
+ * 「已完成」，實際上沒有人會記得。結果做完的專案超過 21 天沒動靜，就每天被催「專案停滯」。
+ * 專案別名一律是 p。
+ */
+const OPEN_PROJECT = "p.status IN ('active','paused') AND p.progress < 100";
 interface ReminderSource { project_id: string; project_name: string; owner_id: string; group_id: string }
 
 function addDays(date: string, days: number): string {
@@ -37,7 +46,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const addFor = async (source: ReminderSource, title: string, body: string, sameGroup = false) => {
     for (const recipient of await projectRecipients(env.DB, source, sameGroup)) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${source.project_id}` });
   };
-  const milestones = await env.DB.prepare(`SELECT m.title,COALESCE(m.end_date, m.due_date) AS due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND COALESCE(m.end_date, m.due_date)<=? AND p.status!='archived'`).bind(next3).all<ReminderSource & { title: string; due_date: string }>();
+  const milestones = await env.DB.prepare(`SELECT m.title,COALESCE(m.end_date, m.due_date) AS due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND COALESCE(m.end_date, m.due_date)<=? AND ${OPEN_PROJECT}`).bind(next3).all<ReminderSource & { title: string; due_date: string }>();
   for (const row of milestones.results) await addFor(row, row.due_date < today ? "里程碑已逾期" : "里程碑即將到期", `${row.project_name}：${row.title}（${row.due_date}）`);
 
   const todos = await env.DB.prepare("SELECT t.user_id,t.title,t.due_date,u.email,u.email_notifications FROM todos t JOIN users u ON u.id=t.user_id WHERE t.done=0 AND t.due_date<=? AND u.is_active=1").bind(today).all<{ user_id: string; title: string; due_date: string; email: string; email_notifications: number }>();
@@ -49,7 +58,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const stalledCases = await env.DB.prepare(`SELECT bc.case_name,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id,MAX(e.event_date) AS last_event FROM bd_cases bc JOIN projects p ON p.id=bc.project_id LEFT JOIN bd_case_events e ON e.case_id=bc.id WHERE bc.current_status='補件中' GROUP BY bc.id HAVING last_event IS NULL OR last_event<?`).bind(staleCaseDate).all<ReminderSource & { case_name: string }>();
   for (const row of stalledCases.results) await addFor(row, "BD 補件案件停滯", `${row.project_name}／${row.case_name} 已超過 14 天無歷程更新。`, true);
 
-  const stalledProjects = await env.DB.prepare("SELECT id AS project_id,name AS project_name,owner_id,group_id FROM projects WHERE status='active' AND last_activity_at<?").bind(staleProjectAt).all<ReminderSource>();
+  const stalledProjects = await env.DB.prepare(`SELECT p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM projects p WHERE ${OPEN_PROJECT} AND p.status='active' AND p.last_activity_at<?`).bind(staleProjectAt).all<ReminderSource>();
   for (const row of stalledProjects.results) await addFor(row, "專案停滯", `${row.project_name} 已超過 21 天無更新。`, true);
 
   const licenses = await env.DB.prepare(`SELECT l.id,l.name,l.expires_at,l.last_notified_stage,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id

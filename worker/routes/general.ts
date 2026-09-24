@@ -57,7 +57,8 @@ generalRoutes.get("/dashboard", async (c) => {
   }
   return c.json({
     kpis: { active_projects: visible.filter((row) => row.status === "active").length, overdue_milestones: overdue, today_todos: todoCount ?? 0, week_updates: weekUpdates ?? 0 },
-    projects: visible.map(({ member_ids_csv: _memberIds, ...row }) => row), recent_updates: updates,
+    // member_ids 給「只看我負責的」用。專案清單端點本來就回這個欄位，不是新的暴露。
+    projects: visible.map(({ member_ids_csv, ...row }) => ({ ...row, member_ids: member_ids_csv?.split(",").filter(Boolean) ?? [] })), recent_updates: updates,
     charts: { group_status: [...groupStatus.values()], clinical_enrollments: enrollments, bd_fees: fees },
     v6: { quarter, key_results: keyResults, license_alerts: licenseAlerts },
   });
