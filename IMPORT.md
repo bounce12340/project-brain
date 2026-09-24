@@ -1,8 +1,52 @@
-# V6 批次匯入 JSON
+# 批次匯入
 
-管理員可在「管理 → 批次匯入」貼上 JSON，或以 `POST /api/admin/import` 匯入。Request body 上限 5 MB，`Content-Type` 為 `application/json`。所有日期必須是有效的 `YYYY-MM-DD`；季度必須是 `YYYYQ1`～`YYYYQ4`。
+## Excel 範本（所有使用者）
 
-## 最外層
+「專案 → 批次匯入」（`/import`）開放給所有人：
+
+1. **下載範本**。範本在瀏覽器當下產生，組別與成員下拉選單是系統裡現在的資料。內含「說明」「專案」「工作項目」「進度紀錄」「給AI的整理指令」「範例」「選項清單」七張工作表。
+2. **上傳填好的檔案**（`.xlsx`，也可以是 JSON）。選好檔案當下就檢查：
+   - 瀏覽器逐列檢查格式，錯誤標出工作表、列號、欄位與欄位字母，同一列的問題一次列齊；
+   - 沒有格式錯誤時，伺服器以上傳者的權限預演一次（`POST /api/import/validate`，不寫入），回報會新增／更新哪些專案、哪些已存在而略過。
+3. **送出**。一般使用者送出後成為待審核申請，**什麼都還沒寫進去**，所有管理員收到通知；管理員核准後才寫入並通知提交者，也可以附理由退回。管理員自己上傳則直接匯入。
+
+「給AI的整理指令」是一份可直接貼給 AI 的說明，教它把使用者原本的工作進度表整理成範本的三張表；指令裡的範例本身就是合法的匯入資料（有測試保證）。匯入頁的「複製給 AI 的整理指令」按鈕複製的是同一份內容。
+
+Excel 的日期可以是 Excel 日期、`2026/9/30`、`2026.9.30`、`115/9/30`（民國）、`2026年9月30日`；只有年月的當作該月最後一天並提醒。「預計完成」可以寫季度（`2026 Q4`，存成季末日期）。
+
+### 一般使用者的規則
+
+一般使用者匯入時只能做他在畫面上自己動手能做的事：
+
+| 項目 | 規則 |
+|---|---|
+| 新專案 | 擁有者一律是提交者；實習生不能建立專案；沒填組別時用提交者的組別 |
+| 既有專案 | 要有編輯權（同 `canEditProgress`）；擁有者與組別只有管理員能改 |
+| 進度紀錄 | 一律記在提交者名下；寫了別人的 `author_email` 時，原作者放在內文開頭 |
+| 不能匯入 | 法規動態、季度目標、KR、證照效期、CCR、臨床收案 |
+| 猜代碼 | 代碼屬於看不到的專案時，錯誤訊息不透露那個專案的名稱 |
+
+管理員核准時，以**提交者的身分與權限**重新預演一次再寫入——送出到核准之間權限可能變了。每人同時最多 5 筆待審核。
+
+### API
+
+| 端點 | 誰 | 說明 |
+|---|---|---|
+| `POST /api/import/validate` | 所有人 | `{ payload }`，只預演不寫入 |
+| `POST /api/import` | 所有人 | `{ source_name, payload }`；管理員直接匯入，其他人建立待審核申請 |
+| `GET /api/import/requests` | 所有人 | 一般使用者只看自己的，管理員看全部；`?status=pending` 篩選 |
+| `GET /api/import/requests/:id` | 提交者、管理員 | 含內容與以提交者身分重新檢查的結果 |
+| `POST /api/import/requests/:id/approve` | 管理員 | 以提交者身分匯入 |
+| `POST /api/import/requests/:id/reject` | 管理員 | `{ note }`，通知提交者 |
+| `POST /api/import/requests/:id/withdraw` | 提交者 | 撤回自己待審核的申請 |
+
+## JSON 格式
+
+管理員也可在「管理 → 批次匯入」貼上 JSON，或以 `POST /api/admin/import` 匯入。Request body 上限 5 MB（待審核申請上限 1.5 MB），`Content-Type` 為 `application/json`。所有日期必須是有效的 `YYYY-MM-DD`；季度必須是 `YYYYQ1`～`YYYYQ4`。
+
+所有匯入都先預演一次（跑同一條路徑但不寫入），全部通過才真的寫——格式或權限問題會在寫入第一筆之前擋下，不會只匯進一半。
+
+### 最外層
 
 ```json
 {
@@ -23,18 +67,19 @@
 }
 ```
 
-## `projects[]`
+### `projects[]`
 
 | 欄位 | 必填 | 型別／允許值 | 說明 |
 |---|---:|---|---|
-| `external_key` | 是 | string | 專案冪等鍵；已存在時更新專案基本欄位 |
-| `name` | 是 | string | 專案名稱 |
-| `group` | 是 | string | 組別 `id` 或完整名稱 |
+| `external_key` | 否 | string | 專案冪等鍵；已存在時更新專案基本欄位。省略時以 `name` 對應「看得到的」既有專案，同名兩個以上會要求填代碼 |
+| `name` | 新專案必填 | string | 專案名稱 |
+| `group` | 新專案必填 | string | 組別 `id` 或完整名稱（Excel 匯入時新專案預設為提交者的組別） |
 | `owner_email` | 否 | string | 找不到時改掛執行匯入的 admin |
 | `visibility` | 否 | `all`、`group`、`private` | 預設 `group` |
 | `status` | 否 | `active`、`paused`、`done`、`archived` | 預設 `active` |
 | `progress` | 否 | 0～100 | 無效或省略時，新專案為 0、既有專案保留原值 |
 | `goal_summary` | 否 | string | 專案目標 |
+| `product`、`site` | 否 | string | 產品、廠區 |
 | `start_date`、`target_date` | 否 | `YYYY-MM-DD` | 專案日期 |
 | `stages` | 否 | string[] | 省略時套組別模板；找不到模板時用「待辦／進行中／完成」 |
 | `quarter_goals` | 否 | object[] | 季度目標 |
@@ -47,11 +92,11 @@
 | `licenses` | 否 | object[] | QA 效期紀錄 |
 | `ccrs` | 否 | object[] | CCR，可直接指定落點狀態 |
 
-### 子項格式
+#### 子項格式
 
 - `quarter_goals[]`: `{ "quarter": "2026Q3", "objective": "本季目標" }`
 - `key_results[]`: `{ "title": "完成送件", "owner_email": "user@example.com", "quarter": "2026Q3", "status": "未開始|進行中|完成|暫停" }`
-- `tasks[]`: `{ "title": "工作", "stage": "進行中", "assignee_email": "user@example.com", "due_date": "2026-08-31", "done": false }`
+- `tasks[]`: `{ "title": "工作", "stage": "進行中", "assignee_email": "user@example.com", "start_date": "2026-08-01", "due_date": "2026-08-31", "done": false }`
 - `milestones[]`: `{ "title": "審查期", "due_date": "2026-09-01", "end_date": "2026-09-30", "done": false }`
 - `events[]`: `{ "title": "CDE 收案至審查回覆", "due_date": "2026-02-06", "end_date": "2026-03-23" }`
 - `progress_updates[]`: `{ "date": "2026-07-21", "content": "進度文字", "author_email": "user@example.com" }`
@@ -61,9 +106,11 @@
 
 `milestones[]` 的 `due_date` 可省略；`events[]` 的 `due_date` 必填並代表事件起始日。兩者的 `end_date` 都可省略；有值時必須是合法 `YYYY-MM-DD` 且不得早於 `due_date`。省略 `end_date` 會在甘特顯示單點節點，填入則顯示起訖橫條。
 
+既有專案**只更新有寫的欄位**：省略 `status` 不會把專案改回「進行中」，省略 `owner_email` 不會把擁有者換成執行匯入的人；`owner_email` 找不到使用者時維持原擁有者並提出警告。匯入後會重算自動進度（有明確填 `progress` 的除外），匯進來時已標完成的任務不會讓專案停在 0%。
+
 子項採「不存在才建立」：任務以同專案、階段、標題判重；里程碑／歷程以同專案、類型、標題、起始日期判重；KR 以同專案、季度、標題判重；進度紀錄以日期與最終 content 前 40 字判重；license 以專案、名稱、效期判重；CCR 以專案、標題、原因判重。
 
-## `reg_entries[]`
+### `reg_entries[]`
 
 ```json
 {
@@ -81,11 +128,11 @@
 - `product_line`: `藥品`、`醫療器材`、`化粧品`、`健康食品`、`食品`、`再生醫療`、`包裝容器`、`寵物食品`、`其他`。
 - 冪等鍵為 `(entry_date, title)`；相同資料會計入 `skipped`。
 
-## Email fallback
+### Email fallback
 
-`owner_email`、`assignee_email`、`author_email` 或 `owner_email`（KR）找不到 active approved 使用者時，資料改掛執行匯入的 admin；相應的專案目標／任務描述／進度 content／KR note／收案 note 會加上 `【原負責人：email】`，回應同時列出 warning。Email 比對不分大小寫。
+`owner_email`、`assignee_email`、`author_email` 或 `owner_email`（KR）找不到 active approved 使用者時，資料改掛執行匯入的人（管理員匯入時是該管理員，一般使用者的申請是提交者）；相應的專案目標／任務描述／進度 content／KR note／收案 note 會加上 `【原負責人：email】`，回應同時列出 warning。Email 比對不分大小寫。
 
-## 完整範例
+### 完整範例
 
 ```json
 {

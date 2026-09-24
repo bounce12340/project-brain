@@ -13,7 +13,7 @@ import { scheduledJobForCron } from "./services/schedule";
 import { v2Routes } from "./routes/v2";
 import { registerRoutes } from "./routes/register";
 import { v6Routes } from "./routes/v6";
-import { importRoutes } from "./routes/import";
+import { adminImportRoutes, importRoutes } from "./routes/import";
 import { v7Routes } from "./routes/v7";
 
 const app = new Hono<AppContext>();
@@ -36,7 +36,8 @@ app.route("/api", v7Routes);
 app.route("/api", v6Routes);
 app.route("/api/reports", reportsRoutes);
 app.route("/api/ai", aiRoutes);
-app.route("/api/admin", importRoutes);
+app.route("/api", importRoutes);
+app.route("/api/admin", adminImportRoutes);
 app.route("/api/admin", adminRoutes);
 app.notFound((c) => c.json({ error: "找不到資源" }, 404));
 
