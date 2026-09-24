@@ -84,7 +84,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const notificationStatements = notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link));
   if (notificationStatements.length || licenseUpdates.length) await env.DB.batch([...notificationStatements, ...licenseUpdates]);
   const recentMentions = await env.DB.prepare(`SELECT n.user_id,u.email,n.title,n.body,n.link FROM notifications n JOIN users u ON u.id=n.user_id
-    WHERE n.type IN ('mention','automation','tfda_draft') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
+    WHERE n.type IN ('mention','automation','tfda_draft','import_request') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
   const emailItems = [...notifications.filter((item) => item.email), ...recentMentions.results];
   let sent = 0;
   for (const digest of groupEmailNotifications(emailItems)) {

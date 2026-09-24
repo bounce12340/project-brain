@@ -31,7 +31,7 @@ export function ProjectsPage() {
   const unset = hasUnsetSite(projects ?? []);
   const site = resolveSite(chosenSite, sites, unset);
   const visible = filterProjectsBySite(projects ?? [], site);
-  return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={user?.role !== "intern" && <button className="btn" onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>} />
+  return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={<div className="flex flex-wrap gap-2"><Link className="btn-secondary" to="/import">{t("import.entry")}</Link>{user?.role !== "intern" && <button className="btn" onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>}</div>} />
     {showNew && meta && <NewProject metadata={meta} onDone={() => { setShowNew(false); load(); }} />}
     <div className={`panel mb-5 grid gap-3 ${sites.length ? "md:grid-cols-4" : "md:grid-cols-3"}`}><select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => { setAutoGroup(false); writeProjectGroup(e.target.value); setFilters({ ...filters, group: e.target.value }); }}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} />
       {/* 沒有人填過廠區時整個不顯示——一個只有「全部」可選的下拉只是噪音。 */}

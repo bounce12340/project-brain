@@ -39,6 +39,7 @@ describe("V6 OKR, import and regwatch", () => {
   it("既有鍵會 skip", () => expect(importItemExists(new Set(["key"]), "key")).toBe(true));
   it("不存在鍵會 create", () => expect(importItemExists(new Set(["key"]), "other")).toBe(false));
   it("只接受有效 YYYY-MM-DD", () => expect([isIsoDate("2026-02-28"), isIsoDate("2026-02-30"), isIsoDate("26-02-28")]).toEqual([true, false, false]));
+  it("不存在的月份與日期回 false，不丟例外", () => expect(["2026-13-01", "2026-00-10", "2026-01-00", "2026-01-32"].map(isIsoDate)).toEqual([false, false, false, false]));
   it("admin 可管理法規動態", () => expect(canManageRegwatch({ role: "admin", group_id: "grp_clinical" })).toBe(true));
   it("RA/PV member 可管理法規動態", () => expect(canManageRegwatch({ role: "member", group_id: "grp_general" })).toBe(true));
   it("intern 與其他組 member 只能讀", () => expect([canManageRegwatch({ role: "intern", group_id: "grp_general" }), canManageRegwatch({ role: "member", group_id: "grp_qa" })]).toEqual([false, false]));
