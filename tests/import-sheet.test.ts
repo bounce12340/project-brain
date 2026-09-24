@@ -110,6 +110,33 @@ describe("既有專案", () => {
   });
 });
 
+describe("專案名稱寫法略有不同", () => {
+  const qa: ImportContext = { ...context, existingProjects: [...context.existingProjects, { name: "QA：GDP/GMP" }] };
+
+  it("半形冒號、多了空白也對得到既有專案，並改用系統上的正式名稱", () => {
+    const result = workbookToPayload(book({
+      [SHEET.items]: [header("items"), ["QA:GDP/GMP", "任務", "盤點證照"], [" QA： GDP/GMP ", "任務", "年度稽核"]],
+      [SHEET.updates]: [header("updates"), ["qa:gdp/gmp", "2026-09-24", "進度"]],
+    }), qa);
+    expect(errors(result)).toEqual([]);
+    expect(result.payload.projects).toHaveLength(1);
+    expect(result.payload.projects[0].name).toBe("QA：GDP/GMP");
+    expect(result.projects[0]).toMatchObject({ name: "QA：GDP/GMP", isNew: false, tasks: 2, updates: 1 });
+  });
+
+  it("真的對不到時提示最接近的專案名稱", () => {
+    const result = workbookToPayload(book({ [SHEET.items]: [header("items"), ["GDP/GMP", "任務", "t"]] }), qa);
+    expect(errors(result)[0].message).toBe("找不到專案「GDP/GMP」。是不是「QA：GDP/GMP」？名稱要跟系統上一致。新專案請先在「專案」工作表加一列");
+    // 預覽不能把找不到的專案標成「既有」。
+    expect(result.projects).toEqual([expect.objectContaining({ name: "GDP/GMP", isNew: false, missing: true })]);
+  });
+
+  it("「專案」表裡寫法不同的兩列算同一個專案，報重複", () => {
+    const result = workbookToPayload(book({ [SHEET.projects]: [header("projects"), ["新案 A"], ["新案A"]] }), qa);
+    expect(errors(result)[0].message).toBe("「新案A」在這張表出現了兩次，請合併成一列");
+  });
+});
+
 describe("逐列指出問題", () => {
   const result = workbookToPayload(book({
     [SHEET.projects]: [header("projects"), ["新案", "", "不存在組"], ["新案"]],

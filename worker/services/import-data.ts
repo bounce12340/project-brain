@@ -6,6 +6,7 @@ import { milestoneDateRangeError } from "./milestone-dates";
 import { stageColorFor } from "./stage-colors";
 import { canEditProgress, canViewProject } from "./permissions";
 import { recomputeAutoProgress } from "./auto-progress";
+import { closestProjectName, normalizeProjectName } from "../../src/project-names";
 
 type JsonObject = Record<string, unknown>;
 
@@ -129,6 +130,17 @@ async function planProjects(
 ): Promise<PlannedProject[]> {
   const planned: PlannedProject[] = [];
   const seen = new Map<string, string>();
+  /** 使用者看得到的專案，只在需要用名稱對應時才查一次。 */
+  let visibleProjects: Array<{ id: string; name: string }> | null = null;
+  const visible = async () => {
+    if (visibleProjects) return visibleProjects;
+    const rows = await db.prepare("SELECT p.id,p.name,p.owner_id,p.group_id,p.visibility,GROUP_CONCAT(pm.user_id) AS member_ids_csv FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id GROUP BY p.id")
+      .all<{ id: string; name: string; owner_id: string; group_id: string; visibility: ProjectAccess["visibility"]; member_ids_csv: string | null }>();
+    visibleProjects = rows.results
+      .filter((row) => canViewProject(actor, { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] }))
+      .map(({ id, name }) => ({ id, name }));
+    return visibleProjects;
+  };
   for (const [index, item] of items.entries()) {
     const externalKey = text(item.external_key);
     const name = text(item.name);
@@ -152,14 +164,11 @@ async function planProjects(
       existing = await db.prepare(`SELECT ${EXISTING_COLUMNS} FROM projects WHERE external_key=?`).bind(externalKey).first<ExistingProject>();
     } else if (name) {
       // 沒有專案代碼時用名稱對既有專案。只在看得到的專案裡找——看不到的不能被「猜中」。
-      const rows = await db.prepare(`SELECT ${EXISTING_COLUMNS} FROM projects WHERE name=?`).bind(name).all<ExistingProject>();
-      const visible: ExistingProject[] = [];
-      for (const row of rows.results) {
-        const access = await getProjectAccess(db, row.id);
-        if (access && canViewProject(actor, access)) visible.push(row);
-      }
-      if (visible.length > 1) { issues.push(`有 ${visible.length} 個專案都叫「${name}」，請填專案代碼區分`); continue; }
-      existing = visible[0] ?? null;
+      // 全形半形與空白不影響比對：「QA:GDP/GMP」對得到「QA：GDP/GMP」。
+      const key = normalizeProjectName(name);
+      const matches = (await visible()).filter((row) => normalizeProjectName(row.name) === key);
+      if (matches.length > 1) { issues.push(`有 ${matches.length} 個專案都叫「${name}」，請填專案代碼區分`); continue; }
+      existing = matches[0] ? await db.prepare(`SELECT ${EXISTING_COLUMNS} FROM projects WHERE id=?`).bind(matches[0].id).first<ExistingProject>() : null;
     }
 
     const target = existing ? `id:${existing.id}` : `new:${externalKey ?? name}`;
@@ -179,7 +188,14 @@ async function planProjects(
       }
     } else {
       if (!name) issues.push(`「${label}」是新專案，需要專案名稱`);
-      else if (!groupValue) issues.push(externalKey ? `「${label}」是新專案，需要組別` : `找不到專案「${name}」。要新增專案，請提供組別`);
+      else if (!groupValue) {
+        if (externalKey) issues.push(`「${label}」是新專案，需要組別`);
+        else {
+          // 提示只從看得到的專案裡找，不會因此透露別人的專案名稱。
+          const guess = closestProjectName(name, (await visible()).map((row) => row.name));
+          issues.push(`找不到專案「${name}」。${guess ? `是不是「${guess}」？` : ""}要新增專案，請提供組別`);
+        }
+      }
       if (mode === "member" && actor.role === "intern") issues.push(`實習生不能建立新專案（「${label}」）`);
     }
     planned.push({ item, label, externalKey, name, existing, group });
@@ -232,7 +248,8 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       const set = (column: string, value: unknown) => { sets.push(`${column}=?`); values.push(value); };
       // 既有專案只改表上有寫的欄位。先前省略 status 會把專案改回「進行中」、省略
       // owner_email 會把擁有者換成執行匯入的管理員——重匯一次就默默改掉別人的設定。
-      if (name && name !== existing.name) set("name", name);
+      // 只有用專案代碼對到時才改名；用名稱對到的，表上的寫法可能只是全形半形不同。
+      if (externalKey && name && name !== existing.name) set("name", name);
       for (const field of ["visibility", "status", "product", "site"]) if (has(item, field)) set(field, text(item[field]) ?? "");
       if (has(item, "goal_summary")) set("goal_summary", text(item.goal_summary) ?? "");
       if (has(item, "start_date")) set("start_date", item.start_date);

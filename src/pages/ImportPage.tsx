@@ -33,6 +33,8 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
 
 const issuesOf = (body: Record<string, unknown>): string[] => Array.isArray(body.issues) ? body.issues as string[] : [String(body.error ?? "HTTP error")];
 const failure = (body: Record<string, unknown>): Check => ({ ok: false, issues: issuesOf(body) });
+/** 一個問題寫成一行，給紀錄用：「工作項目 第 8 列 類型（B 欄）：…」。 */
+const describeIssue = (issue: Issue) => [issue.sheet, issue.row ? `第 ${issue.row} 列` : "", issue.column ?? ""].filter(Boolean).join(" ") + (issue.sheet || issue.row || issue.column ? "：" : "") + issue.message;
 
 export function ImportPage() {
   const t = useT(); const { lang } = useLang(); const { user } = useAuth();
@@ -82,10 +84,15 @@ export function ImportPage() {
     catch { setCopyNote(t("import.copyFailed")); }
   };
 
-  const serverCheck = async (payload: unknown) => {
+  /** 檢查沒過就回報給伺服器記下來，管理員才查得到誰卡在哪裡。回報失敗不影響畫面。 */
+  const reportFailure = (sourceName: string, messages: string[]) => {
+    if (messages.length) void post("/import/check-failed", { source_name: sourceName, messages }).catch(() => undefined);
+  };
+
+  const serverCheck = async (payload: unknown, sourceName: string) => {
     setChecking(true);
     try {
-      const response = await post("/import/validate", { payload });
+      const response = await post("/import/validate", { payload, source_name: sourceName });
       setCheck(response.status === 200 ? { ok: true, summary: response.body.summary as Stats } : failure(response.body));
     } finally { setChecking(false); }
   };
@@ -99,15 +106,19 @@ export function ImportPage() {
       let result: ConversionResult;
       if (/\.json$/i.test(file.name)) {
         let payload: unknown;
-        try { payload = JSON.parse(new TextDecoder().decode(bytes)); } catch { setFileError(t("import.jsonError")); return; }
+        try { payload = JSON.parse(new TextDecoder().decode(bytes)); } catch { setFileError(t("import.jsonError")); reportFailure(file.name, [t("import.jsonError")]); return; }
         result = { payload: payload as ConversionResult["payload"], issues: [], projects: previewPayload(payload, context) };
       } else {
         result = workbookToPayload(await readXlsx(bytes), context);
       }
       setConversion(result);
-      if (!result.issues.some((issue) => issue.level === "error")) await serverCheck(result.payload);
+      const errors = result.issues.filter((issue) => issue.level === "error");
+      if (!errors.length) await serverCheck(result.payload, file.name);
+      else reportFailure(file.name, errors.map(describeIssue));
     } catch (cause) {
-      setFileError(t("import.fileError", { message: cause instanceof Error ? cause.message : String(cause) }));
+      const message = t("import.fileError", { message: cause instanceof Error ? cause.message : String(cause) });
+      setFileError(message);
+      reportFailure(file.name, [message]);
     } finally { setReading(false); }
   };
 
@@ -161,6 +172,8 @@ export function ImportPage() {
       <button type="button" className="btn" disabled={!canSubmit} onClick={() => void submit()}>{submitting ? t("import.submitting") : t(isAdmin ? "import.importNow" : "import.submit")}</button>
     </section>}
 
+    {isAdmin && <CheckFailures lang={lang} />}
+
     <section className="panel">
       <h2 className="mb-3 font-bold">{t(isAdmin ? "import.requests" : "import.myRequests")}</h2>
       {!requests ? <Loading /> : requests.length ? <div className="space-y-3">
@@ -188,7 +201,7 @@ function ProjectTable({ projects }: { projects: ConversionResult["projects"] }) 
     <thead><tr className="border-b border-nexus-line text-gold-bright">{(["import.col.project", "import.col.kind", "import.col.tasks", "import.col.milestones", "import.col.events", "import.col.updates"] as TransKey[]).map((key) => <th key={key} className="py-2 pr-3">{t(key)}</th>)}</tr></thead>
     <tbody>{projects.map((project) => <tr key={project.name} className="border-b border-nexus-line">
       <td className="py-2 pr-3 font-medium">{project.name}</td>
-      <td className="pr-3"><span className={`badge ${project.isNew ? "text-psi" : ""}`}>{t(project.isNew ? "import.new" : "import.existing")}</span></td>
+      <td className="pr-3"><span className={`badge ${project.missing ? "text-danger" : project.isNew ? "text-psi" : ""}`}>{t(project.missing ? "import.missing" : project.isNew ? "import.new" : "import.existing")}</span></td>
       <td className="pr-3">{project.tasks}</td><td className="pr-3">{project.milestones}</td><td className="pr-3">{project.events}</td><td>{project.updates}</td>
     </tr>)}</tbody>
   </table></div>;
@@ -292,4 +305,20 @@ function ImportContents({ payload }: { payload?: { projects?: Array<Record<strin
         <tr key={row} className="border-t border-nexus-line align-top"><td className="w-20 py-1.5 pr-3 text-xs text-star-dim">{kind}</td><td className="whitespace-pre-wrap break-words pr-3">{title}</td><td className="w-44 whitespace-nowrap text-xs text-star-dim">{dates}</td></tr>)}</tbody></table></div>}
     </div>;
   })}</div>;
+}
+
+/** 管理員看得到誰的上傳卡在檢查、卡在哪幾個問題，不必再請對方截圖。 */
+function CheckFailures({ lang }: { lang: "zh" | "en" }) {
+  const t = useT();
+  const [failures, setFailures] = useState<Array<{ id: string; created_at: string; summary: string; user_name: string | null }> | null>(null);
+  useEffect(() => { api<{ failures: Array<{ id: string; created_at: string; summary: string; user_name: string | null }> }>("/import/check-failures").then((data) => setFailures(data.failures)).catch(() => setFailures([])); }, []);
+  if (!failures) return null;
+  return <section className="panel mb-5">
+    <h2 className="font-bold">{t("import.failures")}</h2>
+    <p className="mt-1 text-sm text-star-dim">{t("import.failuresHint")}</p>
+    {failures.length ? <div className="mt-3 space-y-3">{failures.map((item) => <article key={item.id} className="border border-nexus-line p-3">
+      <p className="text-xs text-star-dim">{t("import.failureBy", { name: item.user_name ?? "—", date: formatDate(item.created_at, true, lang) })}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.summary}</p>
+    </article>)}</div> : <p className="mt-3 text-sm text-star-dim">{t("import.noFailures")}</p>}
+  </section>;
 }
