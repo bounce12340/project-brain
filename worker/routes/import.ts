@@ -44,6 +44,23 @@ async function validate(db: D1Database, actor: AuthUser, payload: unknown, mode:
 const audit = (db: D1Database, userId: string, action: string, id: string, summary: string) =>
   db.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,'import_request',?,?)").bind(createId("audit"), userId, action, id, summary);
 
+/** 一小時內同一人最多記幾筆檢查失敗，避免被重複上傳洗版。 */
+const MAX_CHECK_LOGS_PER_HOUR = 30;
+
+/**
+ * 檢查沒通過時留下紀錄。檢查主要在使用者的瀏覽器裡做，失敗時伺服器原本什麼都不知道——
+ * 有人說「上傳不過」，管理員只能請對方截圖。記下誰、哪個檔案、前幾個錯誤，後台就查得到。
+ */
+export async function logCheckFailure(db: D1Database, user: AuthUser, sourceName: string, stage: "browser" | "server", messages: string[]): Promise<void> {
+  const recent = await db.prepare("SELECT COUNT(*) AS value FROM audit_log WHERE user_id=? AND action='import_check_failed' AND created_at>=datetime('now','-1 hour')").bind(user.id).first<number>("value");
+  if ((recent ?? 0) >= MAX_CHECK_LOGS_PER_HOUR) return;
+  const lines = messages.slice(0, 8).map((message, index) => `${index + 1}. ${message.slice(0, 200)}`);
+  const more = messages.length > 8 ? `\n……另有 ${messages.length - 8} 個問題` : "";
+  const summary = `${sourceName || "（未命名檔案）"}｜${stage === "server" ? "系統核對" : "格式檢查"}未通過，${messages.length} 個問題：\n${lines.join("\n")}${more}`;
+  await db.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,'import_check_failed','import',?,?)")
+    .bind(createId("audit"), user.id, createId("chk"), summary.slice(0, 2000)).run();
+}
+
 const notify = (db: D1Database, userId: string, title: string, body: string, link: string) =>
   db.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,'import_request',?,?,?)").bind(createId("ntf"), userId, title, body, link);
 
@@ -112,8 +129,31 @@ importRoutes.post("/import/validate", async (c) => {
   const user = c.get("user");
   const body = await readJson(c, modeOf(user) === "admin" ? MAX_IMPORT_BYTES : MAX_REQUEST_BYTES);
   if ("status" in body) return c.json(body.body, body.status);
-  const result = await validate(c.env.DB, user, (body.value as { payload?: unknown })?.payload, modeOf(user));
-  return "status" in result ? c.json(result.body, result.status) : c.json(result);
+  const wrapper = (body.value ?? {}) as { payload?: unknown; source_name?: unknown };
+  const result = await validate(c.env.DB, user, wrapper.payload, modeOf(user));
+  if ("status" in result) {
+    await logCheckFailure(c.env.DB, user, typeof wrapper.source_name === "string" ? wrapper.source_name.trim().slice(0, 200) : "", "server", result.body.issues ?? [result.body.error]);
+    return c.json(result.body, result.status);
+  }
+  return c.json(result);
+});
+
+/** 瀏覽器端的格式檢查沒過時回報這裡；只記紀錄，不做其他事。 */
+importRoutes.post("/import/check-failed", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{ source_name?: unknown; messages?: unknown }>().catch(() => ({} as { source_name?: unknown; messages?: unknown }));
+  const messages = Array.isArray(body.messages) ? body.messages.filter((item): item is string => typeof item === "string").slice(0, 50) : [];
+  if (!messages.length) return c.json({ error: "沒有問題可以記錄" }, 422);
+  await logCheckFailure(c.env.DB, user, typeof body.source_name === "string" ? body.source_name.trim().slice(0, 200) : "", "browser", messages);
+  return c.json({ ok: true });
+});
+
+/** 管理員看最近誰的上傳卡在檢查。 */
+importRoutes.get("/import/check-failures", async (c) => {
+  if (c.get("user").role !== "admin") return c.json({ error: "僅限管理員" }, 403);
+  const rows = await c.env.DB.prepare(`SELECT a.id,a.created_at,a.summary,u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
+    WHERE a.action='import_check_failed' AND a.created_at>=datetime('now','-30 days') ORDER BY a.created_at DESC LIMIT 30`).all();
+  return c.json({ failures: rows.results });
 });
 
 /** 管理員直接匯入；其他人建立待審核申請，管理員核准後才寫入。 */
@@ -125,7 +165,10 @@ importRoutes.post("/import", async (c) => {
   const wrapper = (body.value ?? {}) as { payload?: unknown; source_name?: unknown };
   const sourceName = typeof wrapper.source_name === "string" ? wrapper.source_name.trim().slice(0, 200) : "";
   const checked = await validate(c.env.DB, user, wrapper.payload, mode);
-  if ("status" in checked) return c.json(checked.body, checked.status);
+  if ("status" in checked) {
+    await logCheckFailure(c.env.DB, user, sourceName, "server", checked.body.issues ?? [checked.body.error]);
+    return c.json(checked.body, checked.status);
+  }
 
   if (mode === "admin") {
     const result = await importNow(c.env.DB, user, wrapper.payload, "admin");

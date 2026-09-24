@@ -117,6 +117,27 @@ describe("一般使用者動既有專案", () => {
   });
 });
 
+describe("用名稱對既有專案", () => {
+  it("全形半形不同也對得到，而且不會把專案改名成表上的寫法", async () => {
+    await project("p1", "QA：GDP/GMP", ra);
+    const stats = await run(ra, { projects: [{ name: "QA:GDP/GMP", tasks: [{ title: "盤點證照" }] }] });
+    expect(stats.projects).toEqual({ created: 0, updated: 1 });
+    expect(await row("SELECT name FROM projects WHERE id='p1'")).toEqual({ name: "QA：GDP/GMP" });
+    expect(await row("SELECT project_id FROM tasks")).toEqual({ project_id: "p1" });
+  });
+
+  it("對不到時提示看得到的相近專案，看不到的不提", async () => {
+    await project("mine", "QA：GDP/GMP", ra);
+    await project("secret", "QA：GDP/GMP 機密版", bd, { visibility: "private" });
+    const issues = await issuesOf(run(ra, { projects: [{ name: "GDP/GMP", tasks: [{ title: "t" }] }] }));
+    expect(issues).toEqual(["找不到專案「GDP/GMP」。是不是「QA：GDP/GMP」？要新增專案，請提供組別"]);
+    const hidden = await issuesOf(run(ra, { projects: [{ name: "機密版", tasks: [{ title: "t" }] }] }));
+    // 訊息會重複使用者自己打的字；要確認的是看不到的那個專案的名稱沒有被說出來。
+    expect(hidden.join()).not.toContain("QA：GDP/GMP 機密版");
+    expect(hidden).toEqual(["找不到專案「機密版」。要新增專案，請提供組別"]);
+  });
+});
+
 describe("一般使用者不能匯入的內容", () => {
   it("法規動態、KR、證照一律擋下，並一次列出", async () => {
     await project("p1", "案", ra);

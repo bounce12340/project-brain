@@ -1,3 +1,4 @@
+import { closestProjectName, normalizeProjectName } from "./project-names";
 import { quarterEndDate } from "./project-quarter";
 import { columnLetter, STYLE, type Cell, type SheetSpec, type Workbook } from "./xlsx";
 
@@ -75,6 +76,8 @@ export interface Issue {
 export interface ProjectPreview {
   name: string;
   isNew: boolean;
+  /** 只出現在工作項目或進度紀錄、系統上又找不到的專案。 */
+  missing?: boolean;
   tasks: number; milestones: number; events: number; updates: number;
 }
 
@@ -230,7 +233,8 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
   const tables = locateTables(workbook, issues);
   const groupByName = new Map<string, string>();
   for (const group of context.groups) { groupByName.set(group.name.toLowerCase(), group.name); groupByName.set(group.id.toLowerCase(), group.name); }
-  const existing = new Set(context.existingProjects.map((item) => item.name.trim()));
+  // 以正規化後的名稱比對（全形半形、空白不影響），對到時改用系統裡的正式名稱。
+  const existing = new Map(context.existingProjects.map((item) => [normalizeProjectName(item.name), item.name.trim()]));
   const existingCodes = new Set(context.existingProjects.map((item) => item.external_key?.trim()).filter(Boolean));
   const byEmail = new Map(context.users.map((user) => [user.email.toLowerCase(), user.email]));
   const byName = new Map<string, string[]>();
@@ -240,9 +244,11 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
   const fromProjectSheet = new Set<string>();
   /** 只在另外兩張表出現的專案，記下第一次出現的位置，找不到時才指得回那一列。 */
   const firstReference = new Map<string, { sheet: string; row: number; column: string | null }>();
+  /** 以正規化名稱為鍵：同一個專案在不同工作表寫法略有不同（全形半形、空白）也算同一個。 */
   const project = (name: string) => {
-    let item = projects.get(name);
-    if (!item) { item = { name }; projects.set(name, item); }
+    const key = normalizeProjectName(name);
+    let item = projects.get(key);
+    if (!item) { item = { name: existing.get(key) ?? name }; projects.set(key, item); }
     return item;
   };
   const push = (item: Record<string, unknown>, field: string, value: unknown) => { (item[field] = (item[field] as unknown[] | undefined) ?? []); (item[field] as unknown[]).push(value); };
@@ -271,8 +277,8 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
       if (!projectName) { issue("error", table.kind === "projects" ? "name" : "project", "專案名稱不能空白"); return; }
 
       if (table.kind === "projects") {
-        if (fromProjectSheet.has(projectName)) { issue("error", "name", `「${projectName}」在這張表出現了兩次，請合併成一列`); return; }
-        fromProjectSheet.add(projectName);
+        if (fromProjectSheet.has(normalizeProjectName(projectName))) { issue("error", "name", `「${projectName}」在這張表出現了兩次，請合併成一列`); return; }
+        fromProjectSheet.add(normalizeProjectName(projectName));
         const item = project(projectName);
         const code = text("code");
         if (code) item.external_key = code;
@@ -299,9 +305,9 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
       }
 
       const item = project(projectName);
-      if (!firstReference.has(projectName)) {
+      if (!firstReference.has(normalizeProjectName(projectName))) {
         const index = col("project");
-        firstReference.set(projectName, { sheet: table.name, row: excelRow, column: index === undefined ? null : `專案名稱（${columnLetter(index)} 欄）` });
+        firstReference.set(normalizeProjectName(projectName), { sheet: table.name, row: excelRow, column: index === undefined ? null : `專案名稱（${columnLetter(index)} 欄）` });
       }
       if (table.kind === "updates") {
         const updateDate = date("date");
@@ -369,19 +375,22 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
   }
 
   const previews: ProjectPreview[] = [];
-  for (const [name, item] of projects) {
+  for (const [key, item] of projects) {
+    const name = item.name as string;
     const code = item.external_key as string | undefined;
     // 有代碼時以代碼判斷（重新匯入時改了名稱也對得上），沒有代碼才看名稱。
-    const isNew = code ? !existingCodes.has(code) : !existing.has(name);
-    if (fromProjectSheet.has(name)) {
+    const isNew = code ? !existingCodes.has(code) : !existing.has(key);
+    if (fromProjectSheet.has(key)) {
       // 新專案沒填組別時用自己的組別。既有專案不補：補了會把專案搬到別組（管理員匯入時真的會搬）。
       if (isNew && !item.group) item.group = context.me.group_name;
-    } else if (!existing.has(name)) {
-      const where = firstReference.get(name);
-      issues.push({ level: "error", sheet: where?.sheet ?? SHEET.items, row: where?.row ?? null, column: where?.column ?? null, message: `找不到專案「${name}」。新專案請先在「${SHEET.projects}」工作表加一列` });
+    } else if (!existing.has(key)) {
+      const where = firstReference.get(key);
+      const guess = closestProjectName(name, [...existing.values()]);
+      issues.push({ level: "error", sheet: where?.sheet ?? SHEET.items, row: where?.row ?? null, column: where?.column ?? null,
+        message: `找不到專案「${name}」。${guess ? `是不是「${guess}」？名稱要跟系統上一致。` : ""}新專案請先在「${SHEET.projects}」工作表加一列` });
     }
     const count = (field: string) => (item[field] as unknown[] | undefined)?.length ?? 0;
-    previews.push({ name, isNew: isNew && fromProjectSheet.has(name), tasks: count("tasks"), milestones: count("milestones"), events: count("events"), updates: count("progress_updates") });
+    previews.push({ name, isNew: isNew && fromProjectSheet.has(key), ...(!fromProjectSheet.has(key) && !existing.has(key) ? { missing: true } : {}), tasks: count("tasks"), milestones: count("milestones"), events: count("events"), updates: count("progress_updates") });
   }
   if (tables.length && !projects.size) issues.push({ level: "error", sheet: "", row: null, column: null, message: "沒有讀到任何資料列。範本的第一列是標題，資料請從第二列開始填" });
   return { payload: { projects: [...projects.values()] }, issues, projects: previews };
@@ -391,13 +400,13 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
 export function previewPayload(payload: unknown, context: Pick<ImportContext, "existingProjects">): ProjectPreview[] {
   const projects = (payload as { projects?: unknown })?.projects;
   if (!Array.isArray(projects)) return [];
-  const names = new Set(context.existingProjects.map((item) => item.name.trim()));
+  const names = new Set(context.existingProjects.map((item) => normalizeProjectName(item.name)));
   const codes = new Set(context.existingProjects.map((item) => item.external_key?.trim()).filter(Boolean));
   return projects.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null).map((item) => {
     const name = typeof item.name === "string" ? item.name.trim() : String(item.external_key ?? "");
     const code = typeof item.external_key === "string" ? item.external_key.trim() : "";
     const count = (field: string) => Array.isArray(item[field]) ? (item[field] as unknown[]).length : 0;
-    return { name, isNew: code ? !codes.has(code) : !names.has(name), tasks: count("tasks"), milestones: count("milestones"), events: count("events"), updates: count("progress_updates") };
+    return { name, isNew: code ? !codes.has(code) : !names.has(normalizeProjectName(name)), tasks: count("tasks"), milestones: count("milestones"), events: count("events"), updates: count("progress_updates") };
   });
 }
 

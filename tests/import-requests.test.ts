@@ -180,3 +180,39 @@ describe("管理員", () => {
     expect(await count("SELECT COUNT(*) AS n FROM projects")).toBe(0);
   });
 });
+
+describe("檢查沒過時留下紀錄", () => {
+  const logs = () => db.prepare("SELECT user_id,summary FROM audit_log WHERE action='import_check_failed' ORDER BY created_at").all<{ user_id: string; summary: string }>().then((result) => result.results);
+
+  it("伺服器核對沒過：記下誰、哪個檔案、有哪些問題", async () => {
+    await call("ra", "POST", "/api/import/validate", { source_name: "Elvis 的進度表.xlsx", payload: { projects: [{ name: "不存在的案" }] } });
+    expect(await logs()).toEqual([{ user_id: "ra", summary: "Elvis 的進度表.xlsx｜系統核對未通過，1 個問題：\n1. 找不到專案「不存在的案」。要新增專案，請提供組別" }]);
+  });
+
+  it("瀏覽器端檢查沒過：頁面回報的問題照樣記下來，太多時只記前 8 個", async () => {
+    const messages = Array.from({ length: 12 }, (_, index) => `工作項目 第 ${index + 2} 列 類型（B 欄）：「會議」不是有效的類型`);
+    expect((await call("ra", "POST", "/api/import/check-failed", { source_name: "表.xlsx", messages })).status).toBe(200);
+    const [log] = await logs();
+    expect(log.summary.split("\n")).toHaveLength(10);
+    expect(log.summary).toContain("表.xlsx｜格式檢查未通過，12 個問題");
+    expect(log.summary).toContain("……另有 4 個問題");
+  });
+
+  it("沒有問題就不記", async () => {
+    expect((await call("ra", "POST", "/api/import/check-failed", { messages: [] })).status).toBe(422);
+    await call("ra", "POST", "/api/import/validate", { payload });
+    expect(await logs()).toEqual([]);
+  });
+
+  it("同一個人一小時最多記 30 筆，不會被重複上傳洗版", async () => {
+    for (let index = 0; index < 35; index += 1) await call("ra", "POST", "/api/import/check-failed", { messages: ["x"] });
+    expect(await logs()).toHaveLength(30);
+  });
+
+  it("只有管理員看得到檢查失敗的清單", async () => {
+    await call("ra", "POST", "/api/import/check-failed", { source_name: "表.xlsx", messages: ["問題"] });
+    expect((await call("ra", "GET", "/api/import/check-failures")).status).toBe(403);
+    const list = await call("boss", "GET", "/api/import/check-failures");
+    expect(list.body.failures).toEqual([expect.objectContaining({ user_name: "名字ra", summary: "表.xlsx｜格式檢查未通過，1 個問題：\n1. 問題" })]);
+  });
+});
