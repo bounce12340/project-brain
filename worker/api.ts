@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import type { AppContext } from "./types";
 import { authRoutes } from "./routes/auth";
+import { passwordResetRoutes } from "./routes/password-reset";
 import { projectsRoutes } from "./routes/projects";
 import { resourcesRoutes } from "./routes/resources";
 import { generalRoutes } from "./routes/general";
@@ -12,6 +13,7 @@ import { v6Routes } from "./routes/v6";
 import { adminImportRoutes, importRoutes } from "./routes/import";
 import { v7Routes } from "./routes/v7";
 import { mcpGrantRoutes } from "./routes/mcp-grants";
+import { contactsRoutes } from "./routes/contacts";
 
 /**
  * 掛上所有 /api 路由。網站（登入 cookie）與 MCP 連接器（OAuth token）共用同一份，
@@ -21,6 +23,7 @@ import { mcpGrantRoutes } from "./routes/mcp-grants";
 export function mountApiRoutes(app: Hono<AppContext>): void {
   app.get("/api/health", (c) => c.json({ ok: true, service: "project-brain" }));
   app.route("/api/auth", authRoutes);
+  app.route("/api/auth", passwordResetRoutes);
   app.route("/api/register", registerRoutes);
   app.route("/api/projects", projectsRoutes);
   app.route("/api", resourcesRoutes);
@@ -32,6 +35,7 @@ export function mountApiRoutes(app: Hono<AppContext>): void {
   app.route("/api/ai", aiRoutes);
   app.route("/api", importRoutes);
   app.route("/api", mcpGrantRoutes);
+  app.route("/api", contactsRoutes);
   app.route("/api/admin", adminImportRoutes);
   app.route("/api/admin", adminRoutes);
 }

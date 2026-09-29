@@ -8,7 +8,7 @@ import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { useTheme } from "../theme/ThemeContext";
 
-const items: ReadonlyArray<readonly [string, TransKey]> = [["/", "nav.dashboard"], ["/projects", "nav.projects"], ["/archive", "nav.archive"], ["/timeline", "nav.timeline"], ["/reports", "nav.reports"], ["/regwatch", "nav.regwatch"], ["/todos", "nav.todos"], ["/notifications", "nav.notifications"]];
+const items: ReadonlyArray<readonly [string, TransKey]> = [["/", "nav.dashboard"], ["/projects", "nav.projects"], ["/archive", "nav.archive"], ["/timeline", "nav.timeline"], ["/reports", "nav.reports"], ["/regwatch", "nav.regwatch"], ["/todos", "nav.todos"], ["/contacts", "nav.contacts"], ["/notifications", "nav.notifications"]];
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth(); const [unread, setUnread] = useState(0);

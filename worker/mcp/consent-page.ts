@@ -30,7 +30,8 @@ button { font: inherit; padding: 10px 20px; border: 1px solid var(--psi); cursor
 strong { color: var(--star); }
 a { color: var(--psi); }`;
 
-function page(title: string, body: string): string {
+/** Worker 直接輸出的單頁（授權頁、取消通知信），和網站同一套配色。body 由呼叫端負責跳脫。 */
+export function page(title: string, body: string): string {
   return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head><body><main><div class="brand">艾爾水晶</div>${body}</main></body></html>`;
 }
 

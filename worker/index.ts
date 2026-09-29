@@ -4,6 +4,7 @@ import type { AppContext } from "./types";
 import { originGuard, sessionAuth } from "./middleware/auth";
 import { mountApiRoutes } from "./api";
 import { oauthRoutes } from "./routes/oauth";
+import { emailRoutes } from "./routes/email";
 import { handleMcp, MCP_SCOPES, type McpProps } from "./mcp/handler";
 import { AUTHORIZATION_SERVER_METADATA_PATH, withoutIssuerIdentification } from "./mcp/issuer-identification";
 import { runDailyWorkflow } from "./services/cron";
@@ -21,6 +22,7 @@ app.use("/api/*", originGuard);
 app.use("/api/*", sessionAuth);
 mountApiRoutes(app);
 app.route("/oauth", oauthRoutes);
+app.route("/email", emailRoutes);
 app.notFound((c) => c.json({ error: "找不到資源" }, 404));
 
 /**

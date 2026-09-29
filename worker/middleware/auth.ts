@@ -7,6 +7,8 @@ import { findSessionUser } from "../services/session-user";
 const PUBLIC_PATHS = new Set([
   "/api/health",
   "/api/auth/login",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/register/meta",
   "/api/register/send-code",
   "/api/register/submit",
