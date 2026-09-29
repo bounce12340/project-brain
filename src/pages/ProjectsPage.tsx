@@ -66,7 +66,14 @@ function NewProject({ metadata, onDone }: { metadata: Metadata; onDone(): void }
  */
 function ProjectSections({ projects, open, onToggle }: { projects: Project[]; open: Set<string>; onToggle(id: string): void }) {
   const t = useT();
-  const sections = groupByProduct(projects);
+  // 子專案收在母專案下面（預設收合）；母專案不在這份清單裡（被篩掉或看不到）時照一般專案列出。
+  const ids = new Set(projects.map((project) => project.id));
+  const childrenOf = new Map<string, Project[]>();
+  for (const project of projects) if (project.parent_id && ids.has(project.parent_id)) childrenOf.set(project.parent_id, [...(childrenOf.get(project.parent_id) ?? []), project]);
+  const tops = projects.filter((project) => !(project.parent_id && ids.has(project.parent_id)));
+  const [openParents, setOpenParents] = useState<Set<string>>(new Set());
+  const toggleParent = (id: string) => setOpenParents((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
+  const sections = groupByProduct(tops);
   const grouped = hasClusters(sections);
   let first = true;
   return <div className="space-y-6">
@@ -77,8 +84,15 @@ function ProjectSections({ projects, open, onToggle }: { projects: Project[]; op
       </h2>}
       <div className="space-y-2">{section.projects.map((project) => {
         const tour = first; first = false;
-        return <ProjectListRow key={project.id} project={project} tour={tour} expanded={open.has(project.id)}
-          related={relatedProjects(projects, project)} onToggle={() => onToggle(project.id)} />;
+        const kids = (childrenOf.get(project.id) ?? []).sort((left, right) => left.name.localeCompare(right.name, "zh-Hant"));
+        const kidsOpen = openParents.has(project.id);
+        return <div key={project.id}>
+          <ProjectListRow project={project} tour={tour} expanded={open.has(project.id)} related={relatedProjects(tops, project)} onToggle={() => onToggle(project.id)} />
+          {kids.length > 0 && <div className="ml-4 border-l border-nexus-line pl-3 sm:ml-6">
+            <button type="button" className="py-1.5 text-xs font-semibold text-psi hover:text-star" aria-expanded={kidsOpen} onClick={() => toggleParent(project.id)}>{kidsOpen ? "▾" : "▸"} {t("subprojects.count", { count: kids.length })}</button>
+            {kidsOpen && <div className="space-y-2">{kids.map((kid) => <ProjectListRow key={kid.id} project={kid} tour={false} expanded={open.has(kid.id)} related={[]} onToggle={() => onToggle(kid.id)} />)}</div>}
+          </div>}
+        </div>;
       })}</div>
     </section>)}
   </div>;

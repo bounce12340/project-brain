@@ -216,7 +216,7 @@ v2Routes.delete("/rules/:id", async (c) => {
 
 v2Routes.get("/timeline", async (c) => {
   const user = c.get("user");
-  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>, markers: [] as Array<{ id: string; title: string; due_date: string; end_date: string | null; kind: "milestone" | "event"; done: number }> }));
+  const projects = (await projectRows(c.env.DB)).filter((row) => row.status === "active" && canViewProject(user, accessFrom(row))).map((row) => ({ id: row.id, name: row.name, parent_id: row.parent_id, start_date: row.start_date, target_date: row.target_date, progress: row.progress, risk_level: row.risk_level, group_id: row.group_id, group_name: row.group_name, tasks: [] as Array<{ id: string; title: string; start_date: string | null; due_date: string | null; created_at: string; done: number; assignee_name: string | null; stage_id: string; stage_name: string; stage_color: string; stage_position: number }>, markers: [] as Array<{ id: string; title: string; due_date: string; end_date: string | null; kind: "milestone" | "event"; done: number }> }));
   if (projects.length) {
     const marks = projects.map(() => "?").join(",");
     const ids = projects.map((project) => project.id);

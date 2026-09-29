@@ -23,7 +23,7 @@ export interface ToolContext {
 interface ProjectSummary { id: string; name: string; group_name: string; status: string; product: string }
 interface ProjectListRow extends ProjectSummary {
   owner_id: string; owner_name: string; progress: number; start_date: string | null; target_date: string | null;
-  last_activity_at: string; goal_summary: string; member_ids: string[];
+  last_activity_at: string; goal_summary: string; member_ids: string[]; parent_id?: string | null;
 }
 interface Stage { id: string; name: string; position: number }
 interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null }
@@ -34,6 +34,8 @@ interface ProjectDetail {
   permissions: { can_edit: boolean; can_manage: boolean };
   members: Array<{ name: string }>;
   stages: Stage[]; tasks: TaskRow[]; milestones: MilestoneRow[]; progress_updates?: UpdateRow[];
+  parent?: { id: string; name: string } | null;
+  children?: Array<{ id: string; name: string; status: string; progress: number; owner_name: string; target_date: string | null; task_total: number; task_done: number; task_overdue: number }>;
 }
 interface MetadataUser { id: string; name: string; email: string }
 
@@ -115,10 +117,11 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const { projects } = await ctx.api.get<{ projects: ProjectListRow[] }>(`/api/projects?${query}`);
       const mine = (project: ProjectListRow) => project.owner_id === ctx.user.id || project.member_ids.includes(ctx.user.id);
       const rows = projects.filter((project) => !args.mine || mine(project));
+      const names = new Map(projects.map((project) => [project.id, project.name]));
       return {
         count: rows.length,
         projects: rows.slice(0, 200).map((project) => ({
-          id: project.id, name: project.name, group: project.group_name, status: STATUS_LABEL[project.status] ?? project.status,
+          id: project.id, name: project.name, ...(project.parent_id ? { parent: names.get(project.parent_id) ?? project.parent_id } : {}), group: project.group_name, status: STATUS_LABEL[project.status] ?? project.status,
           progress: project.progress, owner: project.owner_name, mine: mine(project), product: project.product || undefined,
           start_date: project.start_date, target_date: project.target_date, last_activity: project.last_activity_at,
           objective: project.goal_summary ? truncate(project.goal_summary, 200) : undefined,
@@ -130,7 +133,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "get_project",
     title: "查看專案",
-    description: "Get one project in full: its background (context and hard requirements — read this before proposing work), objective, kanban stages with their tasks, milestones, history events, recent progress updates, members, and whether the user may edit it. Accepts a project id or name.",
+    description: "Get one project in full: its background (context and hard requirements — read this before proposing work), objective, kanban stages with their tasks, milestones, history events, recent progress updates, members, and whether the user may edit it. A large project can have sub-projects (one level): a parent lists them under sub_projects with their progress, and a sub-project names its parent; call get_project on a sub-project for its own board. Accepts a project id or name.",
     inputSchema: { type: "object", additionalProperties: false, required: ["project"], properties: {
       project: projectRef,
       updates_limit: { type: "integer", minimum: 0, maximum: 50, description: "最近幾則進度紀錄，預設 10" },
@@ -142,11 +145,16 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const limit = typeof args.updates_limit === "number" ? args.updates_limit : 10;
       return {
         id: project.id, name: project.name, group: project.group_name, owner: project.owner_name,
-        status: STATUS_LABEL[project.status] ?? project.status, progress: project.progress, progress_mode: project.progress_mode === "auto" ? "自動（依任務與里程碑）" : "手動",
+        ...(detail.parent ? { parent: detail.parent.name } : {}),
+        status: STATUS_LABEL[project.status] ?? project.status, progress: project.progress, progress_mode: project.progress_mode === "auto" ? (detail.children?.length ? "自動（依任務與里程碑，含子專案）" : "自動（依任務與里程碑）") : "手動",
         start_date: project.start_date, target_date: project.target_date, product: project.product || undefined, site: project.site || undefined,
         background: project.description || null, objective: project.goal_summary || null,
         permissions: { can_edit: detail.permissions.can_edit, can_edit_background_and_objective: detail.permissions.can_manage },
         members: detail.members.map((member) => member.name),
+        ...(detail.children?.length ? { sub_projects: detail.children.map((child) => ({
+          id: child.id, name: child.name, status: STATUS_LABEL[child.status] ?? child.status, progress: child.progress, owner: child.owner_name,
+          target_date: child.target_date, tasks_done: child.task_done, tasks_total: child.task_total, overdue_tasks: child.task_overdue,
+        })) } : {}),
         board: detail.stages.map((stage) => ({
           stage: stage.name,
           tasks: detail.tasks.filter((task) => task.stage_id === stage.id).map((task) => ({

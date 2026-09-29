@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { taipeiDateTime } from "../services/time";
 import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { boundedNumber, integer, optionalString, requiredString } from "../services/http";
@@ -227,24 +228,51 @@ resourcesRoutes.post("/projects/:id/progress-updates", async (c) => {
   return c.json({ id }, 201);
 });
 
+/**
+ * 進度紀錄上標示的時間（created_at）可以調整，例如補記上週的會議。
+ * 前端送帶時區的時間；存成和資料庫預設相同的 UTC「YYYY-MM-DD HH:MM:SS」，排序與週報區間照常。
+ * 不收未來的時間（給 5 分鐘誤差），也不收 2000 年以前的。
+ */
+export function parseRecordedAt(value: unknown): { error: string } | { value: string; date: Date } {
+  const time = typeof value === "string" && value.trim() ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(time)) return { error: "時間格式不正確" };
+  if (time > Date.now() + 5 * 60_000) return { error: "進度紀錄的時間不能晚於現在" };
+  if (time < Date.UTC(2000, 0, 1)) return { error: "進度紀錄的時間不正確" };
+  const date = new Date(time);
+  return { value: date.toISOString().slice(0, 19).replace("T", " "), date };
+}
+
 resourcesRoutes.patch("/progress-updates/:id", async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
-  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null }>();
+  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot,created_at FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null; created_at: string }>();
   if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, update.project_id);
   if (!access || !canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const content = requiredString(body, "content");
+  if (!("content" in body) && !("created_at" in body)) return c.json({ error: "請輸入進度內容" }, 422);
+  const content = "content" in body ? requiredString(body, "content") : update.content;
   if (!content) return c.json({ error: "請輸入進度內容" }, 422);
+  let createdAt = update.created_at;
+  let movedTo: Date | null = null;
+  if ("created_at" in body) {
+    const recorded = parseRecordedAt(body.created_at);
+    if ("error" in recorded) return c.json({ error: recorded.error }, 422);
+    if (recorded.value !== createdAt.slice(0, 19).replace("T", " ")) { createdAt = recorded.value; movedTo = recorded.date; }
+  }
+  const contentChanged = content !== update.content;
+  if (!contentChanged && !movedTo) return c.json({ ok: true, created_at: update.created_at });
   const editedAt = new Date().toISOString();
+  const summary = [contentChanged && "編輯進度紀錄", movedTo && `時間改為 ${taipeiDateTime(movedTo)}`].filter(Boolean).join("，");
   await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=? WHERE id=?").bind(content, editedAt, user.id, id),
+    movedTo
+      ? c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=?,created_at=? WHERE id=?").bind(content, editedAt, user.id, createdAt, id)
+      : c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=? WHERE id=?").bind(content, editedAt, user.id, id),
     c.env.DB.prepare("UPDATE projects SET last_activity_at=?,updated_at=? WHERE id=?").bind(editedAt, editedAt, update.project_id),
     c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
-      .bind(createId("audit"), user.id, "progress_edited", "progress_update", id, `編輯進度紀錄：「${progressAuditExcerpt(content)}」`),
+      .bind(createId("audit"), user.id, "progress_edited", "progress_update", id, `${summary}：「${progressAuditExcerpt(content)}」`),
   ]);
-  return c.json({ ok: true, edited_at: editedAt });
+  return c.json({ ok: true, edited_at: editedAt, created_at: createdAt });
 });
 
 resourcesRoutes.delete("/progress-updates/:id", async (c) => {

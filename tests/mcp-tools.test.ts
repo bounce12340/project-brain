@@ -74,6 +74,17 @@ describe("讀取", () => {
     expect(project.recent_progress_updates).toEqual([{ date: "2026-07-27", author: "陳冠宇", content: "完成回收演練" }]);
   });
 
+  it("子專案：母專案列出子專案與進度，子專案說出母專案；清單標示母專案", async () => {
+    await db.prepare("UPDATE projects SET parent_id='p_qa' WHERE id='p_food'").run();
+    await db.prepare("INSERT INTO stages (id,project_id,name,color,position) VALUES ('s_food','p_food','待辦','#888',0)").run();
+    await db.prepare("INSERT INTO tasks (id,project_id,stage_id,title,done,due_date,position) VALUES ('f1','p_food','s_food','配方',1,NULL,0),('f2','p_food','s_food','安定性',0,?,1)").bind(shift(-1)).run();
+    const parent = await run("get_project", { project: "p_qa" });
+    expect(parent.progress_mode).toBe("自動（依任務與里程碑，含子專案）");
+    expect(parent.sub_projects).toEqual([expect.objectContaining({ id: "p_food", name: "全素低渣代餐包開發（24個月效期）", owner: "陳冠宇", tasks_done: 1, tasks_total: 2, overdue_tasks: 1 })]);
+    expect(await run("get_project", { project: "p_food" })).toMatchObject({ parent: "QA：GDP/GMP" });
+    expect((await run("list_projects", {})).projects.find((project: { id: string }) => project.id === "p_food")).toMatchObject({ parent: "QA：GDP/GMP" });
+  });
+
   it("名稱只打一部分也行，只要不會對到兩個", async () => {
     expect((await run("get_project", { project: "代餐包" })).id).toBe("p_food");
     expect(await fails("get_project", { project: "專案" })).toContain("對到好幾個專案");

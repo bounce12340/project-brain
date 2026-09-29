@@ -5,6 +5,9 @@ export interface SwitchableProject {
   group_name: string;
   /** 同產品的專案常跨組別——BD 的 `Plenvu` 與一般組的 `RA：啟動Plenvu註冊` 是同一個產品。 */
   product: string;
+  /** 設定頁的「母專案」選單用：只能掛在自己管理、本身不是子專案的專案底下。 */
+  parent_id?: string | null;
+  owner_id?: string;
 }
 
 export interface SwitchGroup<T extends SwitchableProject> {
