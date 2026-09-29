@@ -10,7 +10,7 @@ const MAX_REQUEST_BYTES = 1_500_000;
 const MAX_PENDING_PER_USER = 5;
 
 type Ctx = Context<AppContext>;
-type Failure = { status: 413 | 422; body: { error: string; issues?: string[] } };
+type Failure = { status: 413 | 422 | 500; body: { error: string; issues?: string[]; logged?: boolean } };
 
 async function readJson(c: Ctx, limit: number): Promise<{ value: unknown } | Failure> {
   const tooLarge = { status: 413 as const, body: { error: `匯入內容不可超過 ${Math.floor(limit / 1024 / 1024 * 10) / 10} MB` } };
@@ -24,7 +24,7 @@ async function readJson(c: Ctx, limit: number): Promise<{ value: unknown } | Fai
 const modeOf = (user: AuthUser): ImportMode => user.role === "admin" ? "admin" : "member";
 
 /**
- * 先預演一次，全部通過才真的寫。匯入是一筆一筆寫的，途中遇到錯誤會留下前半段；
+ * 先預演一次，全部通過才真的寫。匯入一個專案寫一批，途中遇到錯誤，前面的專案已經寫進去了；
  * 預演會跑完同一條路徑但不寫，任何格式、權限問題都在寫第一筆之前擋下。
  */
 async function importNow(db: D1Database, actor: AuthUser, payload: unknown, mode: ImportMode): Promise<ImportStats> {
@@ -37,7 +37,21 @@ async function validate(db: D1Database, actor: AuthUser, payload: unknown, mode:
     return { ok: true, summary: await runImport(db, actor, payload, { mode, dryRun: true }) };
   } catch (error) {
     if (error instanceof ImportValidationError) return { status: 422, body: { error: error.message, issues: error.issues } };
-    throw error;
+    // 不是資料本身的問題（資料庫逾時、超過單次請求能呼叫的次數……）。以前這裡直接丟出去，
+    // 使用者只看到「HTTP error」，後台也沒有任何紀錄。
+    console.error("import check failed unexpectedly", error);
+    return { status: 500, body: { error: `系統核對時發生錯誤：${error instanceof Error ? error.message : String(error)}。請稍後再試；一直失敗的話請通知管理員` } };
+  }
+}
+
+/** 檢查沒過就記下來。記錄本身失敗（例如資料庫正忙）不能蓋掉原本要回給使用者的錯誤。 */
+async function recordFailure(db: D1Database, user: AuthUser, sourceName: string, failure: Failure): Promise<Failure["body"]> {
+  try {
+    await logCheckFailure(db, user, sourceName, "server", failure.body.issues ?? [failure.body.error]);
+    return { ...failure.body, logged: true };
+  } catch (error) {
+    console.error("could not record import check failure", error);
+    return failure.body;
   }
 }
 
@@ -131,10 +145,7 @@ importRoutes.post("/import/validate", async (c) => {
   if ("status" in body) return c.json(body.body, body.status);
   const wrapper = (body.value ?? {}) as { payload?: unknown; source_name?: unknown };
   const result = await validate(c.env.DB, user, wrapper.payload, modeOf(user));
-  if ("status" in result) {
-    await logCheckFailure(c.env.DB, user, typeof wrapper.source_name === "string" ? wrapper.source_name.trim().slice(0, 200) : "", "server", result.body.issues ?? [result.body.error]);
-    return c.json(result.body, result.status);
-  }
+  if ("status" in result) return c.json(await recordFailure(c.env.DB, user, typeof wrapper.source_name === "string" ? wrapper.source_name.trim().slice(0, 200) : "", result), result.status);
   return c.json(result);
 });
 
@@ -165,10 +176,7 @@ importRoutes.post("/import", async (c) => {
   const wrapper = (body.value ?? {}) as { payload?: unknown; source_name?: unknown };
   const sourceName = typeof wrapper.source_name === "string" ? wrapper.source_name.trim().slice(0, 200) : "";
   const checked = await validate(c.env.DB, user, wrapper.payload, mode);
-  if ("status" in checked) {
-    await logCheckFailure(c.env.DB, user, sourceName, "server", checked.body.issues ?? [checked.body.error]);
-    return c.json(checked.body, checked.status);
-  }
+  if ("status" in checked) return c.json(await recordFailure(c.env.DB, user, sourceName, checked), checked.status);
 
   if (mode === "admin") {
     const result = await importNow(c.env.DB, user, wrapper.payload, "admin");

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { AppContext, AuthUser } from "../worker/types";
 import { adminImportRoutes, importRoutes } from "../worker/routes/import";
@@ -207,6 +207,47 @@ describe("檢查沒過時留下紀錄", () => {
   it("同一個人一小時最多記 30 筆，不會被重複上傳洗版", async () => {
     for (let index = 0; index < 35; index += 1) await call("ra", "POST", "/api/import/check-failed", { messages: ["x"] });
     expect(await logs()).toHaveLength(30);
+  });
+
+  /** 讓符合的 SQL 一執行就出錯，模擬 D1 在請求途中失敗（逾時、超過單次請求能呼叫的次數）。 */
+  async function withFailingDb<T>(pattern: RegExp, message: string, action: () => Promise<T>): Promise<T> {
+    const real = db;
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    db = new Proxy(real, { get(inner, key) {
+      if (key === "prepare") return (sql: string) => { if (pattern.test(sql)) throw new Error(message); return inner.prepare(sql); };
+      return Reflect.get(inner, key);
+    } });
+    try { return await action(); } finally { db = real; quiet.mockRestore(); }
+  }
+
+  it("核對途中資料庫出錯：回覆看得懂的訊息並記下來，不再只是「HTTP error」", async () => {
+    const result = await withFailingDb(/FROM groups/, "D1_ERROR: Too many API requests by single worker invocation", () =>
+      call("ra", "POST", "/api/import/validate", { source_name: "Elvis 的進度表.xlsx", payload }));
+    expect(result.status).toBe(500);
+    expect(result.body.error).toContain("系統核對時發生錯誤：D1_ERROR: Too many API requests by single worker invocation");
+    expect(result.body.logged).toBe(true);
+    expect((await logs())[0].summary).toContain("Elvis 的進度表.xlsx｜系統核對未通過，1 個問題：\n1. 系統核對時發生錯誤：D1_ERROR");
+  });
+
+  it("連紀錄都寫不進去時，照樣把原本的錯誤回給使用者，並讓頁面知道要自己回報", async () => {
+    const result = await withFailingDb(/FROM groups|audit_log/, "D1_ERROR: overloaded", () =>
+      call("ra", "POST", "/api/import/validate", { source_name: "表.xlsx", payload }));
+    expect(result.status).toBe(500);
+    expect(result.body.error).toContain("D1_ERROR: overloaded");
+    expect(result.body.logged).toBeUndefined();
+  });
+
+  it("送出時資料庫出錯：不建立申請，回覆看得懂的訊息", async () => {
+    const result = await withFailingDb(/FROM groups/, "D1_ERROR: timeout", () => call("ra", "POST", "/api/import", { source_name: "表.xlsx", payload }));
+    expect(result.status).toBe(500);
+    expect(result.body.error).toContain("D1_ERROR: timeout");
+    expect(await count("SELECT COUNT(*) AS n FROM import_requests")).toBe(0);
+  });
+
+  it("伺服器記下了的失敗會註明，頁面就不重複回報", async () => {
+    const result = await call("ra", "POST", "/api/import/validate", { payload: { projects: [{ name: "不存在的案" }] } });
+    expect(result.status).toBe(422);
+    expect(result.body.logged).toBe(true);
   });
 
   it("只有管理員看得到檢查失敗的清單", async () => {

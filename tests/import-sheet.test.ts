@@ -131,6 +131,17 @@ describe("專案名稱寫法略有不同", () => {
     expect(result.projects).toEqual([expect.objectContaining({ name: "GDP/GMP", isNew: false, missing: true })]);
   });
 
+  it("「專案」表寫了很像既有專案的新名稱：送得出去，但提醒會另外建一個新專案", () => {
+    const result = workbookToPayload(book({
+      [SHEET.projects]: [header("projects"), ["GDP/GMP", "", "", "進行中"], ["化粧品GMP"]],
+      [SHEET.items]: [header("items"), ["GDP/GMP", "任務", "年度稽核"]],
+    }), qa);
+    expect(errors(result)).toEqual([]);
+    expect(result.issues).toEqual([{ level: "warning", sheet: SHEET.projects, row: 2, column: "專案名稱（A 欄）",
+      message: "系統上已經有「QA：GDP/GMP」。如果是同一個專案，請把三張表的名稱都改成「QA：GDP/GMP」，並從「專案」表刪掉這一列；否則會另外建立一個新專案「GDP/GMP」" }]);
+    expect(result.projects.map((project) => [project.name, project.isNew])).toEqual([["GDP/GMP", true], ["化粧品GMP", true]]);
+  });
+
   it("「專案」表裡寫法不同的兩列算同一個專案，報重複", () => {
     const result = workbookToPayload(book({ [SHEET.projects]: [header("projects"), ["新案 A"], ["新案A"]] }), qa);
     expect(errors(result)[0].message).toBe("「新案A」在這張表出現了兩次，請合併成一列");
@@ -243,6 +254,12 @@ describe("範本", () => {
     expect(options.rows.map((row) => row[5]).filter(Boolean)).toEqual(["負責人（姓名）", "王小明", "陳冠宇", "同名", "同名"]);
   });
 
+  it("「選項清單」最後一欄列出自己已經有的專案，可以直接複製名稱", async () => {
+    const mine: ImportContext = { ...context, existingProjects: [{ name: "QA：GDP/GMP", yours: true }, { name: "別組的專案" }] };
+    const options = (await readXlsx(writeXlsx(templateSheets(mine)))).sheets.find((sheet) => sheet.name === "選項清單")!;
+    expect(options.rows.map((row) => row[7]).filter(Boolean)).toEqual(["你已經有的專案", "QA：GDP/GMP"]);
+  });
+
   it("專案代碼欄是文字格式，007 不會變成 7", () => {
     const [, projects] = templateSheets(context);
     expect(projects.columnStyles?.[1]).toBe(4);
@@ -274,6 +291,35 @@ describe("給 AI 的整理指令", () => {
     }
     expect(Object.keys(tables)).toEqual([SHEET.projects, SHEET.items, SHEET.updates]);
     expect(workbookToPayload(book(tables), context).issues).toEqual([]);
+  });
+
+  it("列出上傳者已經有的專案，要 AI 照抄名稱、不要寫進「專案」表", () => {
+    const mine: ImportContext = { ...context, existingProjects: [
+      { name: "QA：GDP/GMP", external_key: "qa-okr-r6", yours: true }, { name: "QA：一般事務", yours: true }, { name: "別組的專案", yours: false },
+    ] };
+    const text = aiInstructions(mine).join("\n");
+    expect(text).toContain("・QA：GDP/GMP\n・QA：一般事務\n");
+    expect(text).not.toContain("別組的專案");
+    expect(text).toContain("不要簡寫或改寫");
+    expect(text).toContain("這些專案不要寫進「專案」表");
+  });
+
+  it("沒有自己的專案時說清楚，不留一段空清單", () => {
+    expect(lines).toContain("（目前沒有。原始表裡的專案都當作新專案。）");
+  });
+
+  it("專案太多時只列前 80 個，並說還有幾個", () => {
+    const many: ImportContext = { ...context, existingProjects: Array.from({ length: 83 }, (_, index) => ({ name: `專案${index + 1}`, yours: true })) };
+    const text = aiInstructions(many);
+    expect(text.filter((line) => line.startsWith("・專案"))).toHaveLength(80);
+    expect(text).toContain("・……另有 3 個，名稱請到艾爾水晶的專案清單查");
+  });
+
+  it("新專案的組別預設填上傳者的組別；過期項目要填完成；同一件事不要寫兩次", () => {
+    const text = lines.join("\n");
+    expect(text).toContain("新專案請填「RA/PV組」");
+    expect(text).toContain("日期已經過去的任務與里程碑一定要填「完成」");
+    expect(text).toContain("同一件事只寫一次");
   });
 
   it("每一行都不含換行——在 Excel 裡一格一行，整欄複製才不會被加上引號", () => {

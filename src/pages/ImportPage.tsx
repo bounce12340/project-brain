@@ -31,8 +31,11 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
   return { status: response.status, body: await response.json().catch(() => ({})) as Record<string, unknown> };
 }
 
-const issuesOf = (body: Record<string, unknown>): string[] => Array.isArray(body.issues) ? body.issues as string[] : [String(body.error ?? "HTTP error")];
-const failure = (body: Record<string, unknown>): Check => ({ ok: false, issues: issuesOf(body) });
+/** 伺服器沒回 JSON（例如 Cloudflare 的錯誤頁）時，至少說出 HTTP 狀態碼，別只寫「HTTP error」。 */
+const issuesOf = (response: { status: number; body: Record<string, unknown> }): string[] =>
+  Array.isArray(response.body.issues) ? response.body.issues as string[]
+    : [typeof response.body.error === "string" ? response.body.error : `系統沒有回應正確的結果（HTTP ${response.status}）。請稍後再試；一直失敗的話請通知管理員`];
+const failure = (response: { status: number; body: Record<string, unknown> }): Check => ({ ok: false, issues: issuesOf(response) });
 /** 一個問題寫成一行，給紀錄用：「工作項目 第 8 列 類型（B 欄）：…」。 */
 const describeIssue = (issue: Issue) => [issue.sheet, issue.row ? `第 ${issue.row} 列` : "", issue.column ?? ""].filter(Boolean).join(" ") + (issue.sheet || issue.row || issue.column ? "：" : "") + issue.message;
 
@@ -60,7 +63,10 @@ export function ImportPage() {
         groups: meta.groups.map(({ id, name }) => ({ id, name })),
         users: meta.users.map(({ name, email }) => ({ name, email })),
         me: { name: user?.name ?? "", email: user?.email ?? "", group_name: user?.group_name ?? "" },
-        existingProjects: list.projects.map(({ name, external_key }) => ({ name, external_key })),
+        existingProjects: list.projects.map((project) => ({
+          name: project.name, external_key: project.external_key,
+          yours: project.status !== "archived" && !!user && (project.owner_id === user.id || !!project.member_ids?.includes(user.id) || project.group_id === user.group_id),
+        })),
       }))
       .catch((cause) => setLoadError(cause instanceof Error ? cause.message : String(cause)));
     void loadRequests();
@@ -93,7 +99,13 @@ export function ImportPage() {
     setChecking(true);
     try {
       const response = await post("/import/validate", { payload, source_name: sourceName });
-      setCheck(response.status === 200 ? { ok: true, summary: response.body.summary as Stats } : failure(response.body));
+      setCheck(response.status === 200 ? { ok: true, summary: response.body.summary as Stats } : failure(response));
+      // 伺服器自己記不下來的失敗（逾時、錯誤頁），由這裡補記，管理員才查得到。
+      if (response.status !== 200 && response.body.logged !== true) reportFailure(sourceName, issuesOf(response));
+    } catch (cause) {
+      const issues = [`連不上系統：${cause instanceof Error ? cause.message : String(cause)}。請確認網路後重新上傳`];
+      setCheck({ ok: false, issues });
+      reportFailure(sourceName, issues);
     } finally { setChecking(false); }
   };
 
@@ -131,7 +143,12 @@ export function ImportPage() {
         setDone(response.body.status === "applied" ? "imported" : "submitted");
         setConversion(null); setCheck(null);
         void loadRequests();
-      } else setCheck(failure(response.body));
+      } else {
+        setCheck(failure(response));
+        if (response.body.logged !== true) reportFailure(fileName, issuesOf(response));
+      }
+    } catch (cause) {
+      setCheck({ ok: false, issues: [`連不上系統，沒有送出：${cause instanceof Error ? cause.message : String(cause)}。請確認網路後再按一次`] });
     } finally { setSubmitting(false); }
   };
 
@@ -243,7 +260,7 @@ function RequestItem({ request, isAdmin, lang, autoOpen, onChanged }: { request:
     try {
       const response = await post(`/import/requests/${request.id}/${action}`, body ?? {});
       // 失敗時清掉明細重新抓：核准被擋通常是資料在送出後變了，要看到最新的檢查結果。
-      if (response.status >= 400) { setError(issuesOf(response.body).join("；")); setDetail(null); }
+      if (response.status >= 400) { setError(issuesOf(response).join("；")); setDetail(null); }
       else onChanged();
     } finally { setBusy(false); }
   };

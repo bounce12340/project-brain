@@ -12,8 +12,11 @@ export interface ImportContext {
   groups: Array<{ id: string; name: string }>;
   users: Array<{ name: string; email: string }>;
   me: { name: string; email: string; group_name: string };
-  /** 目前看得到的專案（名稱與代碼）。用來判斷表上的專案是新的還是既有的。 */
-  existingProjects: Array<{ name: string; external_key?: string | null }>;
+  /**
+   * 目前看得到的專案（名稱與代碼）。用來判斷表上的專案是新的還是既有的。
+   * yours：自己負責、參與或同組、還沒歸檔的專案，會列進範本與給 AI 的指令，讓表上的名稱照抄系統上的寫法。
+   */
+  existingProjects: Array<{ name: string; external_key?: string | null; yours?: boolean }>;
 }
 
 export const SHEET = { projects: "專案", items: "工作項目", updates: "進度紀錄" } as const;
@@ -242,6 +245,8 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
 
   const projects = new Map<string, Record<string, unknown>>();
   const fromProjectSheet = new Set<string>();
+  /** 「專案」表上每個專案所在的位置，提醒「系統上已經有很像的專案」時指得回那一列。 */
+  const projectRow = new Map<string, { sheet: string; row: number; column: string | null }>();
   /** 只在另外兩張表出現的專案，記下第一次出現的位置，找不到時才指得回那一列。 */
   const firstReference = new Map<string, { sheet: string; row: number; column: string | null }>();
   /** 以正規化名稱為鍵：同一個專案在不同工作表寫法略有不同（全形半形、空白）也算同一個。 */
@@ -279,6 +284,8 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
       if (table.kind === "projects") {
         if (fromProjectSheet.has(normalizeProjectName(projectName))) { issue("error", "name", `「${projectName}」在這張表出現了兩次，請合併成一列`); return; }
         fromProjectSheet.add(normalizeProjectName(projectName));
+        const nameIndex = col("name");
+        projectRow.set(normalizeProjectName(projectName), { sheet: table.name, row: excelRow, column: nameIndex === undefined ? null : `專案名稱（${columnLetter(nameIndex)} 欄）` });
         const item = project(projectName);
         const code = text("code");
         if (code) item.external_key = code;
@@ -383,6 +390,14 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
     if (fromProjectSheet.has(key)) {
       // 新專案沒填組別時用自己的組別。既有專案不補：補了會把專案搬到別組（管理員匯入時真的會搬）。
       if (isNew && !item.group) item.group = context.me.group_name;
+      // 「GDP/GMP」對不到「QA：GDP/GMP」，照樣會建成新專案——檢查不會擋，結果是一個重複的專案。
+      // 名稱很像既有專案時提醒；真的是新專案（例如只差年份）也送得出去。
+      const lookalike = isNew ? closestProjectName(name, [...existing.values()]) : null;
+      if (lookalike) {
+        const where = projectRow.get(key);
+        issues.push({ level: "warning", sheet: where?.sheet ?? SHEET.projects, row: where?.row ?? null, column: where?.column ?? null,
+          message: `系統上已經有「${lookalike}」。如果是同一個專案，請把三張表的名稱都改成「${lookalike}」，並從「${SHEET.projects}」表刪掉這一列；否則會另外建立一個新專案「${name}」` });
+      }
     } else if (!existing.has(key)) {
       const where = firstReference.get(key);
       const guess = closestProjectName(name, [...existing.values()]);
@@ -434,11 +449,37 @@ export const EXAMPLES: Record<SheetKind, string[][]> = {
 
 const headers = (kind: SheetKind) => COLUMNS[kind].map((column) => column.required ? `${column.label}＊` : column.label);
 
-/** 給 AI 的整理指令，一行一句。放在範本裡，也讓匯入頁可以一鍵複製。 */
-export function aiInstructions(context: Pick<ImportContext, "groups" | "users">): string[] {
+/** 列進範本與給 AI 指令的「你已經有的專案」上限；再多就只列前面這些並註明還有幾個。 */
+const MAX_LISTED_PROJECTS = 80;
+
+/** 自己負責、參與或同組、還沒歸檔的專案名稱。 */
+export function yourProjectNames(context: Pick<ImportContext, "existingProjects">): { names: string[]; more: number } {
+  const names = [...new Set(context.existingProjects.filter((item) => item.yours).map((item) => item.name.trim()).filter(Boolean))];
+  return { names: names.slice(0, MAX_LISTED_PROJECTS), more: Math.max(0, names.length - MAX_LISTED_PROJECTS) };
+}
+
+/**
+ * 給 AI 的整理指令，一行一句。放在範本裡，也讓匯入頁可以一鍵複製。
+ *
+ * 規則幾乎都來自實際出過的錯：AI 看不到系統，會把「QA：GDP/GMP」簡寫成「GDP/GMP」而另開
+ * 一個重複的專案；同一場會議同時寫成歷程事件和進度紀錄，歷程裡就出現兩次；過期的里程碑
+ * 沒標完成，匯入後每天被提醒逾期。所以指令裡直接列出上傳者已經有的專案名稱。
+ */
+export function aiInstructions(context: Pick<ImportContext, "groups" | "users" | "me" | "existingProjects">): string[] {
   const line = (kind: SheetKind) => COLUMNS[kind].map((column) => column.label).join("\t");
+  const { names, more } = yourProjectNames(context);
+  const status = (value: string) => CHOICES.status.find(([, code]) => code === value)?.[0] ?? value;
   return [
     "你是資料整理助手。請把我接下來貼上的「原始工作進度表」，整理成「艾爾水晶批次匯入範本」的三張表格。",
+    "",
+    "【我在系統上已經有的專案】",
+    ...(names.length ? [
+      "原始表裡的專案如果就是下面其中一個，「工作項目」與「進度紀錄」的專案名稱要照抄下面的寫法，連「QA：」這類前綴、全形冒號都一樣，不要簡寫或改寫；否則系統會另外建立一個重複的專案。",
+      "這些專案不要寫進「專案」表（寫了會改掉系統上的專案設定）。",
+      ...names.map((name) => `・${name}`),
+      ...(more ? [`・……另有 ${more} 個，名稱請到艾爾水晶的專案清單查`] : []),
+      "不在這份清單裡的，才是新專案。",
+    ] : ["（目前沒有。原始表裡的專案都當作新專案。）"]),
     "",
     "【輸出格式】",
     "請輸出三個表格，依序是「專案」「工作項目」「進度紀錄」。每個表格前面單獨一行寫表格名稱，第一列是欄位名稱，名稱與順序必須完全照下面這樣：",
@@ -446,27 +487,39 @@ export function aiInstructions(context: Pick<ImportContext, "groups" | "users">)
     `工作項目：${line("items").replace(/\t/g, "｜")}`,
     `進度紀錄：${line("updates").replace(/\t/g, "｜")}`,
     "欄位之間用 Tab 分隔（這樣可以直接貼回 Excel），不要用 Markdown 表格，也不要在表格裡加任何說明文字。",
-    "三個表格都輸出完之後，另外用「整理備註」列出你略過的內容、做的假設、以及看不懂的地方。",
+    "三個表格都輸出完之後，另外用「整理備註」列出你略過的內容、做的假設、以及需要我確認的地方。",
     "",
     "【怎麼分表】",
-    "1. 每個專案在「專案」表只寫一列。「工作項目」與「進度紀錄」用「專案名稱」對應，名稱必須一字不差。",
+    "1. 每個新專案在「專案」表只寫一列。「工作項目」與「進度紀錄」用「專案名稱」對應，名稱必須一字不差。",
     "2. 「工作項目」的「類型」只能填：任務、里程碑、歷程事件。",
     "   - 要去做的事、待辦事項 → 任務",
     "   - 重要的交付點或期限（送件、核准、取得證書、截止日）→ 里程碑",
-    "   - 已經發生過的事（開會、收到公文、對方回覆）→ 歷程事件，一定要有日期",
-    "3. 原始表裡的進度說明、備註、會議紀錄，依日期拆成「進度紀錄」，一個日期一列。沒有日期的說明放進「專案目標」，不要自己編日期。",
+    "   - 已經發生過的事（開會、訪廠、收到公文、對方回覆）→ 歷程事件，一定要有日期",
+    "3. 原始表裡的進度說明、備註、會議紀錄，依日期拆成「進度紀錄」，同一個專案同一天合併成一列。沒有日期的說明放進「專案目標」，不要自己編日期。",
+    "4. 同一件事只寫一次：已經發生的事，寫成歷程事件或寫進進度紀錄，二選一，不要兩邊都寫。一句話就說完的（例如「興展訪廠」）寫成歷程事件；有內容、決議、數字或後續安排的寫進進度紀錄。系統的專案歷程會同時列出兩者，兩邊都寫就會出現兩次。",
+    "",
+    "【完成與狀態】",
+    "5. 「完成」只能填：是、否。原始表寫已完成、完成、Done、✓、結案、已發出、已簽核、已發布 → 是。歷程事件不用填。",
+    "6. 日期已經過去的任務與里程碑一定要填「完成」：看得出已經做完就填「是」；看不出來就填「否」，並寫進「整理備註」請我確認。系統會把過期又沒完成的項目當成逾期，每天提醒。",
+    `7. 「狀態」只能填：${CHOICES.status.map(([label]) => label).join("、")}。整個專案已經結案（例如最後一項寫「結案」「完成移交」）就填「${status("done")}」；還在做的填「${status("active")}」。不確定就留空，寫進「整理備註」。`,
+    "8. 「階段」只用在任務，是看板上的欄位。原始表有看板欄位時才填（例如 待辦、進行中、完成）；只是要表示做完了沒，寫在「完成」欄就好，「階段」留空。",
     "",
     "【欄位規則】",
-    "4. 日期一律寫成 YYYY-MM-DD，例如 2026-09-30。民國年要換成西元（115/9/30 → 2026-09-30）。只有年月的寫該月最後一天；完全沒有日期就留空，不要猜。",
-    "5. 「預計完成」可以寫季度，例如 2026 Q4。",
-    "6. 任務與里程碑的日期：只有一個日期就填在「結束／到期日」；有起訖期間才兩欄都填。",
-    "7. 「完成」只能填：是、否。已完成、Done、✓ → 是。歷程事件不用填。",
-    `8. 「狀態」只能填：${CHOICES.status.map(([label]) => label).join("、")}。「可見性」只能填：${CHOICES.visibility.map(([label]) => label).join("、")}。不確定就留空。`,
-    `9. 「組別」只能填：${context.groups.map((group) => group.name).join("、")}。不確定就留空（會用上傳者的組別）。`,
-    `10. 「負責人」填系統上的姓名或 Email：${context.users.map((user) => user.name).join("、") || "（向管理員確認）"}。對不上的就留空。`,
-    "11. 「階段」是看板上的欄位，例如 待辦、進行中、完成；原始表沒有對應資訊就留空。",
-    "12. 「專案代碼」可以留空。已經在系統上的專案不用寫進「專案」表，直接在另外兩張表寫它的名稱就好。",
-    "13. 不要發明原始資料沒有的內容；看不懂的欄位就略過，寫進「整理備註」。",
+    "9. 日期一律寫成 YYYY-MM-DD，例如 2026-09-30。民國年要換成西元（115/9/30 → 2026-09-30）。只有年月的寫該月最後一天；完全沒有日期就留空，不要猜。",
+    "10. 「預計完成」可以寫季度，例如 2026 Q4。",
+    "11. 任務與里程碑的日期：只有一個日期就填在「結束／到期日」；有起訖期間才兩欄都填。",
+    `12. 「組別」只能填：${context.groups.map((group) => group.name).join("、")}。新專案請填「${context.me.group_name || "我的組別"}」，除非原始表寫明是別的組。`,
+    `13. 「可見性」只能填：${CHOICES.visibility.map(([label]) => label).join("、")}。不確定就留空（預設同組可見）。`,
+    `14. 「負責人」填系統上的姓名或 Email：${context.users.map((user) => user.name).join("、") || "（向管理員確認）"}。對不上的就留空。`,
+    "15. 「專案代碼」可以留空。",
+    "16. 不要發明原始資料沒有的內容；看不懂的欄位就略過，寫進「整理備註」。",
+    "",
+    "【輸出前自己檢查一次】",
+    "・「工作項目」「進度紀錄」裡的每個專案名稱，不是出現在「專案」表，就是上面「已經有的專案」清單裡的名稱，一字不差。",
+    "・「專案」表裡沒有和清單中專案是同一件事、只是名稱寫法不同的專案。",
+    "・沒有同一件事同時寫成歷程事件又寫進進度紀錄。",
+    "・日期已經過去的任務與里程碑都填了「完成」。",
+    "・所有日期都是 YYYY-MM-DD。",
     "",
     "【範例】",
     "專案",
@@ -494,6 +547,7 @@ export function templateSheets(context: ImportContext): SheetSpec[] {
     ["完成", [...CHOICES.done]],
     ["負責人（姓名）", context.users.map((user) => user.name)],
     ["負責人（Email）", context.users.map((user) => user.email)],
+    ["你已經有的專案", yourProjectNames(context).names],
   ];
   const optionRows = Math.max(...optionColumns.map(([, values]) => values.length));
   const optionRange = (label: string) => {
@@ -519,6 +573,7 @@ export function templateSheets(context: ImportContext): SheetSpec[] {
     [""],
     ["三張表的關係"],
     ["用「專案名稱」連起來，名稱要一字不差。已經在系統上的專案不用寫進「專案」表，直接在另外兩張表寫它的名稱即可。"],
+    ["系統上的名稱怎麼寫，就照抄怎麼寫：「GDP/GMP」對不到「QA：GDP/GMP」，會被當成另一個新專案。你已經有的專案列在「選項清單」的最後一欄，可以直接複製。"],
     ["系統上有同名的專案時會併入那個專案；有兩個以上同名時，請在「專案」表填專案代碼區分。"],
     [""],
     ["欄位說明（＊ 為必填）"],
@@ -528,11 +583,11 @@ export function templateSheets(context: ImportContext): SheetSpec[] {
     [`專案｜狀態：${CHOICES.status.map(([label]) => label).join("、")}。可見性：${CHOICES.visibility.map(([label]) => label).join("、")}。`],
     ["專案｜起始日、預計完成：日期寫 2026-09-30；預計完成也可以寫季度，例如 2026 Q4。"],
     ["工作項目｜類型：任務（要做的事）、里程碑（重要期限或交付點）、歷程事件（已經發生的事，一定要有日期）。沒填當作任務。"],
-    ["工作項目｜階段：只用在任務，就是看板上的欄位，例如 待辦、進行中、完成。沒有的階段會自動建立。"],
+    ["工作項目｜階段：只用在任務，就是看板上的欄位，例如 待辦、進行中、完成。沒有的階段會自動建立；只是要表示做完了沒，填「完成」欄就好，階段留空。"],
     ["工作項目｜負責人：只用在任務，填系統上的姓名或 Email（見「選項清單」）。"],
     ["工作項目｜開始日、結束／到期日：只有一個日期時填在「結束／到期日」；有起訖期間才兩欄都填。"],
-    ["工作項目｜完成：是 / 否。"],
-    ["進度紀錄｜日期＊、內容＊：一個日期一列，會記在上傳者名下。"],
+    ["工作項目｜完成：是 / 否。日期已經過去的任務與里程碑請務必填：沒標完成的會被當成逾期，每天提醒。"],
+    ["進度紀錄｜日期＊、內容＊：一個日期一列，會記在上傳者名下。已經寫成歷程事件的事，不用再寫一次進度紀錄，專案歷程會同時列出兩者。"],
     [""],
     ["日期可以怎麼寫"],
     ["2026-09-30、2026/9/30、2026.9.30、115/9/30（民國）、2026年9月30日都可以；只有年月（2026-09）會當作該月最後一天並提醒你。"],
