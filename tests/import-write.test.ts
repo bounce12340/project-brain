@@ -194,3 +194,19 @@ describe("名稱很像既有專案時提醒", () => {
     expect(stats.warnings.join()).not.toContain("機密併購案");
   });
 });
+
+describe("專案背景", () => {
+  it("新專案寫進背景；既有專案有填才改，沒填不動", async () => {
+    await runImport(db, qa, { projects: [{ name: "代餐包", group: "QA組", description: "# 背景\n取代味噌湯米粉" }] }, { mode: "member" });
+    expect(await row("SELECT description FROM projects WHERE name='代餐包'")).toEqual({ description: "# 背景\n取代味噌湯米粉" });
+    await runImport(db, qa, { projects: [{ name: "代餐包", tasks: [{ title: "打樣" }] }] }, { mode: "member" });
+    expect(await row("SELECT description FROM projects WHERE name='代餐包'")).toEqual({ description: "# 背景\n取代味噌湯米粉" });
+    await runImport(db, qa, { projects: [{ name: "代餐包", description: "改過的背景" }] }, { mode: "member" });
+    expect(await row("SELECT description FROM projects WHERE name='代餐包'")).toEqual({ description: "改過的背景" });
+  });
+
+  it("背景超過上限時在預演就擋下", async () => {
+    await expect(runImport(db, qa, { projects: [{ name: "太長", group: "QA組", description: "字".repeat(10_001) }] }, { mode: "member", dryRun: true }))
+      .rejects.toThrow("「太長」的專案背景超過 10,000 字");
+  });
+});

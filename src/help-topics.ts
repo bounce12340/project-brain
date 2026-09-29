@@ -49,6 +49,10 @@ const zhLink = "看完整教學 →";
 const enLink = "Read the full guide →";
 
 export const HELP_TOPICS = {
+  projectBackground: {
+    zh: topic("專案的緣起、為什麼要做，以及相關的法規或商業背景", "例：許可證 2027-03 到期，須提前六個月送展延", "/help#quickstart-a", zhLink, "背景說為什麼做；專案目標說要做到什麼"),
+    en: topic("Why the project exists and the context behind it", "Example: licence expires March 2027; file the renewal six months ahead", "/help#quickstart-a", enLink, "Background explains why; the objective states what must be delivered"),
+  },
   projectGoal: {
     zh: topic("專案完成時要交付的成果", "例：2026 Q3 完成藥品查驗登記送件", "/help#quickstart-a", zhLink, "Objective 是單季聚焦方向；專案目標管整案"),
     en: topic("The outcome delivered when the project ends", "Example: submit the drug registration in Q3 2026", "/help#quickstart-a", enLink, "An Objective focuses one quarter; this covers the whole project"),
@@ -222,7 +226,7 @@ export const HELP_TOPICS = {
 export type TopicKey = keyof typeof HELP_TOPICS;
 
 export const HELP_TOPIC_PLACEMENTS = [
-  "projectGoal", "progressMode", "milestones", "historyEvents", "milestonePeriods", "projectDates", "members", "visibility", "status", "objective", "keyResults", "aiRisk",
+  "projectBackground", "projectGoal", "progressMode", "milestones", "historyEvents", "milestonePeriods", "projectDates", "members", "visibility", "status", "objective", "keyResults", "aiRisk",
   "stages", "taskCards", "taskDates", "dependencies", "viewKanban", "viewList", "viewCalendar", "viewGantt", "unscheduled",
   "progressUpdates", "aiQuickWrite", "aiLinkSuggestions",
   "clinicalEnrollment", "bdCaseStatus", "bdHistory", "bdFees", "qaLicenseExpiry", "ccr",

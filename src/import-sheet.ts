@@ -36,6 +36,7 @@ export const COLUMNS: Record<SheetKind, Column[]> = {
     { key: "start", label: "起始日", aliases: ["開始日", "開始日期", "起始日期"], width: 12 },
     { key: "target", label: "預計完成", aliases: ["預計完成日", "目標日", "目標完成", "預計完成季度"], width: 12 },
     { key: "goal", label: "專案目標", aliases: ["目標", "說明", "專案說明"], width: 44 },
+    { key: "background", label: "專案背景", aliases: ["背景", "背景說明", "緣起", "background"], width: 60 },
   ],
   items: [
     { key: "project", label: "專案名稱", required: true, aliases: ["專案", "案名", "計畫名稱", "project"], width: 30 },
@@ -303,6 +304,8 @@ export function workbookToPayload(workbook: Workbook, context: ImportContext): C
         for (const key of ["product", "site"] as const) if (text(key)) item[key] = text(key);
         const goal = text("goal");
         if (goal) item.goal_summary = goal;
+        const background = text("background");
+        if (background) item.description = background;
         const start = date("start");
         const target = date("target", parseTarget);
         if (start) item.start_date = start;
@@ -430,8 +433,8 @@ export function previewPayload(payload: unknown, context: Pick<ImportContext, "e
 /** 範本與給 AI 的指令裡的範例。範例放在另一張工作表，不會被當成資料匯入。 */
 export const EXAMPLES: Record<SheetKind, string[][]> = {
   projects: [
-    ["原料藥來源變更", "RA-2026-01", "", "進行中", "同組", "範例錠 10mg", "範例原料廠", "2026-01-15", "2026 Q4", "完成原料藥第二來源變更並取得核准"],
-    ["年度 GMP 自我查核", "", "", "進行中", "同組", "", "", "2026-03-01", "2026-11-30", "完成年度查核與缺失改善"],
+    ["原料藥來源變更", "RA-2026-01", "", "進行中", "同組", "範例錠 10mg", "範例原料廠", "2026-01-15", "2026 Q4", "完成原料藥第二來源變更並取得核准", "現行原料藥廠只有一家，2025 年曾斷貨兩個月。新增第二來源，規格須與現行藥典標準一致。"],
+    ["年度 GMP 自我查核", "", "", "進行中", "同組", "", "", "2026-03-01", "2026-11-30", "完成年度查核與缺失改善", ""],
   ],
   items: [
     ["原料藥來源變更", "歷程事件", "召開變更評估會議", "", "", "2026-01-20", "", ""],
@@ -495,7 +498,7 @@ export function aiInstructions(context: Pick<ImportContext, "groups" | "users" |
     "   - 要去做的事、待辦事項 → 任務",
     "   - 重要的交付點或期限（送件、核准、取得證書、截止日）→ 里程碑",
     "   - 已經發生過的事（開會、訪廠、收到公文、對方回覆）→ 歷程事件，一定要有日期",
-    "3. 原始表裡的進度說明、備註、會議紀錄，依日期拆成「進度紀錄」，同一個專案同一天合併成一列。沒有日期的說明放進「專案目標」，不要自己編日期。",
+    "3. 原始表裡的進度說明、備註、會議紀錄，依日期拆成「進度紀錄」，同一個專案同一天合併成一列。沒有日期的說明（專案的緣起、為什麼要做、硬性規格、已經定案的決策）放進「專案背景」；要達成什麼寫在「專案目標」。不要自己編日期。",
     "4. 同一件事只寫一次：已經發生的事，寫成歷程事件或寫進進度紀錄，二選一，不要兩邊都寫。一句話就說完的（例如「興展訪廠」）寫成歷程事件；有內容、決議、數字或後續安排的寫進進度紀錄。系統的專案歷程會同時列出兩者，兩邊都寫就會出現兩次。",
     "",
     "【完成與狀態】",
@@ -582,6 +585,7 @@ export function templateSheets(context: ImportContext): SheetSpec[] {
     [`專案｜組別：${context.groups.map((group) => group.name).join("、")}。新專案沒填時用你的組別。`],
     [`專案｜狀態：${CHOICES.status.map(([label]) => label).join("、")}。可見性：${CHOICES.visibility.map(([label]) => label).join("、")}。`],
     ["專案｜起始日、預計完成：日期寫 2026-09-30；預計完成也可以寫季度，例如 2026 Q4。"],
+    ["專案｜專案目標：要達成什麼，一兩句話。專案背景：緣起、為什麼要做、硬性規格與已定案的決策；可以寫很多行（Alt+Enter 換行），用 # 標題、- 項目分段。"],
     ["工作項目｜類型：任務（要做的事）、里程碑（重要期限或交付點）、歷程事件（已經發生的事，一定要有日期）。沒填當作任務。"],
     ["工作項目｜階段：只用在任務，就是看板上的欄位，例如 待辦、進行中、完成。沒有的階段會自動建立；只是要表示做完了沒，填「完成」欄就好，階段留空。"],
     ["工作項目｜負責人：只用在任務，填系統上的姓名或 Email（見「選項清單」）。"],

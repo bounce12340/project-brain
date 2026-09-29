@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { translateBackendError } from "../i18n/errors";
 import { useT } from "../i18n/LangContext";
+import { markdownBlocks } from "../markdown";
 
 export function PageHeader({ title, description, actions }: { title: ReactNode; description?: string; actions?: ReactNode }) {
   return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-gold-bright">{title}</h1>{description && <p className="mt-1 text-sm text-star-dim">{description}</p>}</div>{actions}</div>;
@@ -23,13 +24,16 @@ export function RiskBadge({ level }: { level?: string | null }) {
 }
 
 export function Markdown({ content }: { content: string }) {
-  const lines = content.split("\n");
-  return <div className="space-y-2 text-sm leading-6">{lines.map((line, index) => {
-    if (line.startsWith("### ")) return <h4 className="pt-2 font-semibold" key={index}>{inlineMarkdown(line.slice(4))}</h4>;
-    if (line.startsWith("## ")) return <h3 className="pt-3 text-base font-bold" key={index}>{inlineMarkdown(line.slice(3))}</h3>;
-    if (line.startsWith("# ")) return <h2 className="pt-3 text-lg font-bold" key={index}>{inlineMarkdown(line.slice(2))}</h2>;
-    if (/^[-*] /.test(line)) return <div className="flex gap-2 pl-2" key={index}><span>•</span><span>{inlineMarkdown(line.slice(2))}</span></div>;
-    return line ? <p key={index}>{inlineMarkdown(line)}</p> : <div className="h-1" key={index} />;
+  const indent = (depth: number) => ({ paddingLeft: `${0.5 + depth * 1.25}rem` });
+  return <div className="space-y-2 text-sm leading-6">{markdownBlocks(content).map((block, index) => {
+    if (block.kind === "heading") {
+      if (block.level === 3) return <h4 className="pt-2 font-semibold" key={index}>{inlineMarkdown(block.text)}</h4>;
+      if (block.level === 2) return <h3 className="pt-3 text-base font-bold" key={index}>{inlineMarkdown(block.text)}</h3>;
+      return <h2 className="pt-3 text-lg font-bold" key={index}>{inlineMarkdown(block.text)}</h2>;
+    }
+    if (block.kind === "bullet") return <div className="flex gap-2" style={indent(block.depth)} key={index}><span>{block.depth ? "◦" : "•"}</span><span>{inlineMarkdown(block.text)}</span></div>;
+    if (block.kind === "numbered") return <div className="flex gap-2" style={indent(block.depth)} key={index}><span className="tabular-nums">{block.number}.</span><span>{inlineMarkdown(block.text)}</span></div>;
+    return block.kind === "paragraph" ? <p key={index}>{inlineMarkdown(block.text)}</p> : <div className="h-1" key={index} />;
   })}</div>;
 }
 

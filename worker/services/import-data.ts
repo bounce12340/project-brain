@@ -7,6 +7,7 @@ import { stageColorFor } from "./stage-colors";
 import { canEditProgress, canViewProject } from "./permissions";
 import { recomputeAutoProgress } from "./auto-progress";
 import { closestProjectName, normalizeProjectName } from "../../src/project-names";
+import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
 
 type JsonObject = Record<string, unknown>;
 
@@ -184,6 +185,10 @@ async function planProjects(
     for (const field of ["start_date", "target_date"]) {
       if (has(item, field) && !isIsoDate(item[field])) issues.push(`「${label}」的 ${field} 必須是 YYYY-MM-DD`);
     }
+    for (const field of ["description", "goal_summary"] as const) {
+      const value = text(item[field]);
+      if (value && textLength(value) > PROJECT_TEXT_LIMITS[field]) issues.push(`「${label}」的${field === "description" ? "專案背景" : "專案目標"}超過 ${PROJECT_TEXT_LIMITS[field].toLocaleString("en-US")} 字`);
+    }
 
     let existing: ExistingProject | null = null;
     if (externalKey) {
@@ -288,6 +293,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       if (externalKey && name && name !== existing.name) set("name", name);
       for (const field of ["visibility", "status", "product", "site"]) if (has(item, field)) set(field, text(item[field]) ?? "");
       if (has(item, "goal_summary")) set("goal_summary", text(item.goal_summary) ?? "");
+      if (has(item, "description")) set("description", text(item.description) ?? "");
       if (has(item, "start_date")) set("start_date", item.start_date);
       if (has(item, "target_date")) set("target_date", item.target_date);
       if (has(item, "progress")) {
@@ -320,7 +326,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       const status = text(item.status) ?? "active";
       const visibility = text(item.visibility) ?? "group";
       await run(db.prepare("INSERT INTO projects (id,external_key,name,description,group_id,owner_id,visibility,status,progress,goal_summary,product,site,start_date,target_date,progress_mode,last_activity_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'auto', CURRENT_TIMESTAMP)")
-        .bind(projectId, externalKey, name, owner.notePrefix, createdGroup.id, owner.userId, visibility, status, mode === "admin" ? Math.round(numberIn(item.progress, 0, 100, 0)) : 0, prefixed(owner.notePrefix, text(item.goal_summary)), text(item.product) ?? "", text(item.site) ?? "", date(item.start_date, `${label}.start_date`), date(item.target_date, `${label}.target_date`)));
+        .bind(projectId, externalKey, name, prefixed(owner.notePrefix, text(item.description)), createdGroup.id, owner.userId, visibility, status, mode === "admin" ? Math.round(numberIn(item.progress, 0, 100, 0)) : 0, prefixed(owner.notePrefix, text(item.goal_summary)), text(item.product) ?? "", text(item.site) ?? "", date(item.start_date, `${label}.start_date`), date(item.target_date, `${label}.target_date`)));
       if (mode === "member" && has(item, "progress")) stats.warnings.push(`${label}: 新專案採自動進度，已忽略填寫的進度`);
       stats.projects.created += 1;
     }
