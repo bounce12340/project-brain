@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppContext, ProjectAccess } from "../types";
-import { createId, getProjectAccess, touchProject } from "../services/db";
+import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { optionalString, requiredString } from "../services/http";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { accessFrom, projectRows } from "./projects";
@@ -152,9 +152,36 @@ generalRoutes.post("/notifications/read-all", async (c) => {
   return c.json({ ok: true });
 });
 
+const DISPLAY_NAME_MAX = 40;
+
+/** 自己的顯示名稱：去頭尾空白、連續空白併成一個。回傳錯誤訊息或整理好的名稱。 */
+function cleanDisplayName(value: unknown): { error: string } | { name: string } {
+  const name = typeof value === "string" ? value.normalize("NFC").replace(/\s+/g, " ").trim() : "";
+  if (!name) return { error: "名稱不能空白" };
+  if ([...name].length > DISPLAY_NAME_MAX) return { error: `名稱不能超過 ${DISPLAY_NAME_MAX} 個字` };
+  return { name };
+}
+
+/**
+ * 使用者自己能改的資料：顯示名稱與每日提醒信。Email、組別、角色會影響登入與權限，只有管理員能改。
+ * 名稱不能和別人重複：批次匯入與指派負責人都靠名稱對人。
+ */
 generalRoutes.patch("/profile", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const enabled = body.email_notifications === true || body.email_notifications === 1 ? 1 : 0;
-  await c.env.DB.prepare("UPDATE users SET email_notifications=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(enabled, c.get("user").id).run();
+  const user = c.get("user");
+  if ("name" in body) {
+    const cleaned = cleanDisplayName(body.name);
+    if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
+    if (cleaned.name !== user.name) {
+      const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE id<>? AND lower(trim(name))=lower(?)").bind(user.id, cleaned.name).first();
+      if (taken) return c.json({ error: `已經有人叫「${cleaned.name}」，請換一個名稱（例如加上姓氏）` }, 409);
+      await c.env.DB.prepare("UPDATE users SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(cleaned.name, user.id).run();
+      await writeAudit(c.env.DB, user, "update", "user", user.id, `顯示名稱由「${user.name}」改為「${cleaned.name}」`);
+    }
+  }
+  if ("email_notifications" in body) {
+    const enabled = body.email_notifications === true || body.email_notifications === 1 ? 1 : 0;
+    await c.env.DB.prepare("UPDATE users SET email_notifications=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(enabled, user.id).run();
+  }
   return c.json({ ok: true });
 });
