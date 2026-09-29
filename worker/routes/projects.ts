@@ -7,6 +7,23 @@ import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, 
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 import { stageColorFor } from "../services/stage-colors";
+import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
+
+/** 專案背景與目標是給人讀的長文字：可以清空，但不能無限長。上限與前端編輯器共用。 */
+type LongTextField = keyof typeof PROJECT_TEXT_LIMITS;
+
+/**
+ * 讀背景或目標。欄位不在 body 裡回傳 undefined（不動）；空字串代表清空。
+ * optionalString 會把空字串當成「沒填」，用它的話寫錯的背景永遠刪不掉。
+ */
+function longText(body: Record<string, unknown>, field: LongTextField): string | undefined | { error: string } {
+  if (!(field in body)) return undefined;
+  const value = body[field];
+  if (value !== null && typeof value !== "string") return { error: "文字欄位格式不正確" };
+  const text = (value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (textLength(text) > PROJECT_TEXT_LIMITS[field]) return { error: `${field === "description" ? "專案背景" : "專案目標"}最多 ${PROJECT_TEXT_LIMITS[field].toLocaleString("en-US")} 字` };
+  return text;
+}
 
 interface ProjectRow {
   id: string;
@@ -120,12 +137,16 @@ projectsRoutes.post("/", async (c) => {
   if (!name || !groupId || !visibilityValues.has(visibility)) return c.json({ error: "專案名稱、組別或可見性不正確" }, 422);
   const group = await c.env.DB.prepare("SELECT id FROM groups WHERE id = ?").bind(groupId).first();
   if (!group) return c.json({ error: "找不到組別" }, 422);
+  const description = longText(body, "description");
+  const goal = longText(body, "goal_summary");
+  if (typeof description === "object") return c.json(description, 422);
+  if (typeof goal === "object") return c.json(goal, 422);
   const id = createId("prj");
   const now = new Date().toISOString();
   await c.env.DB.prepare(`
     INSERT INTO projects (id, name, description, group_id, owner_id, visibility, goal_summary, product, site, start_date, target_date, auto_archive, progress_mode, last_activity_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto', ?)
-  `).bind(id, name, optionalString(body, "description") ?? "", groupId, user.id, visibility, optionalString(body, "goal_summary") ?? "", optionalString(body, "product") ?? "", optionalString(body, "site") ?? "", optionalString(body, "start_date"), optionalString(body, "target_date"), booleanInt(body, "auto_archive", 1), now).run();
+  `).bind(id, name, description ?? "", groupId, user.id, visibility, goal ?? "", optionalString(body, "product") ?? "", optionalString(body, "site") ?? "", optionalString(body, "start_date"), optionalString(body, "target_date"), booleanInt(body, "auto_archive", 1), now).run();
   const templateId = optionalString(body, "template_id");
   if (templateId) {
     const template = await c.env.DB.prepare("SELECT stages_json FROM stage_templates WHERE id = ?").bind(templateId).first<{ stages_json: string }>();
@@ -203,6 +224,10 @@ projectsRoutes.patch("/:id", async (c) => {
   if (hasSettings && !manager) return c.json({ error: "只有 owner 或管理員可修改專案設定" }, 403);
   const current = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(id).first<ProjectRow>();
   if (!current) return c.json({ error: "找不到專案" }, 404);
+  const description = longText(body, "description");
+  const goal = longText(body, "goal_summary");
+  if (typeof description === "object") return c.json(description, 422);
+  if (typeof goal === "object") return c.json(goal, 422);
   const progressMode = optionalString(body, "progress_mode") ?? current.progress_mode;
   if (!["manual", "auto"].includes(progressMode)) return c.json({ error: "進度模式不正確" }, 422);
   if (progress !== null && progressMode === "auto") return c.json({ error: "自動進度模式不可手動修改進度" }, 422);
@@ -210,7 +235,7 @@ projectsRoutes.patch("/:id", async (c) => {
   const status = optionalString(body, "status") ?? current.status;
   if (!visibilityValues.has(visibility) || !statusValues.has(status)) return c.json({ error: "狀態或可見性不正確" }, 422);
   await c.env.DB.prepare(`UPDATE projects SET name=?, description=?, goal_summary=?, product=?, site=?, visibility=?, status=?, progress=?, start_date=?, target_date=?, auto_archive=?,progress_mode=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .bind(optionalString(body, "name") ?? current.name, optionalString(body, "description") ?? current.description, optionalString(body, "goal_summary") ?? current.goal_summary, optionalString(body, "product") ?? current.product, optionalString(body, "site") ?? current.site, visibility, status, progress ?? current.progress, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "target_date" in body ? optionalString(body, "target_date") : current.target_date, "auto_archive" in body ? booleanInt(body, "auto_archive", current.auto_archive) : current.auto_archive, progressMode, id).run();
+    .bind(optionalString(body, "name") ?? current.name, description ?? current.description, goal ?? current.goal_summary, optionalString(body, "product") ?? current.product, optionalString(body, "site") ?? current.site, visibility, status, progress ?? current.progress, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "target_date" in body ? optionalString(body, "target_date") : current.target_date, "auto_archive" in body ? booleanInt(body, "auto_archive", current.auto_archive) : current.auto_archive, progressMode, id).run();
   if (progress !== null && progress !== current.progress) {
     await c.env.DB.prepare("INSERT INTO progress_updates (id, project_id, author_id, content, progress_snapshot) VALUES (?, ?, ?, ?, ?)")
       .bind(createId("upd"), id, user.id, `專案進度更新為 ${progress}%`, progress).run();
@@ -220,7 +245,10 @@ projectsRoutes.patch("/:id", async (c) => {
     const result = await recomputeAutoProgress(c.env.DB, id, user.id);
     if (result?.changed) await runAutomationRules(c.env.DB, user.id, id, [{ type: "progress_reached", previousProgress: result.previous, progress: result.progress }]);
   }
-  if (hasSettings) await writeAudit(c.env.DB, user, "update", "project", id, "更新專案設定");
+  if (hasSettings) {
+    const edited = [description !== undefined && description !== current.description && "專案背景", goal !== undefined && goal !== current.goal_summary && "專案目標"].filter(Boolean);
+    await writeAudit(c.env.DB, user, "update", "project", id, edited.length ? `更新${edited.join("與")}` : "更新專案設定");
+  }
   return c.json({ ok: true });
 });
 

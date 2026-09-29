@@ -63,6 +63,7 @@ describe("範例資料轉換", () => {
     expect(result.payload.projects[0]).toEqual({
       name: "原料藥來源變更", external_key: "RA-2026-01", group: "RA/PV組", status: "active", visibility: "group", product: "範例錠 10mg", site: "範例原料廠",
       goal_summary: "完成原料藥第二來源變更並取得核准", start_date: "2026-01-15", target_date: "2026-12-31",
+      description: "現行原料藥廠只有一家，2025 年曾斷貨兩個月。新增第二來源，規格須與現行藥典標準一致。",
       events: [{ title: "召開變更評估會議", due_date: "2026-01-20" }],
       tasks: [
         { title: "收集新廠商 DMF 與 CoA", stage: "進行中", start_date: "2026-01-20", due_date: "2026-02-28", done: true },
@@ -107,6 +108,24 @@ describe("既有專案", () => {
   it("工作項目寫了系統上沒有、也沒在「專案」表的專案時報錯", () => {
     const result = workbookToPayload(book({ [SHEET.items]: [header("items"), ["打錯的專案名", "任務", "t"]] }), context);
     expect(errors(result)).toEqual([{ level: "error", sheet: SHEET.items, row: 2, column: "專案名稱（A 欄）", message: "找不到專案「打錯的專案名」。新專案請先在「專案」工作表加一列" }]);
+  });
+});
+
+describe("專案背景欄", () => {
+  it("多行的背景原樣帶進 description；沒填就不帶", () => {
+    const result = workbookToPayload(book({ [SHEET.projects]: [
+      [...header("projects")],
+      ["代餐包", "", "RA/PV組", "", "", "", "", "", "", "取代味噌湯米粉", "# 硬性規格\r\n- 效期 24 個月"],
+      ["另一案", "", "RA/PV組"],
+    ] }), context);
+    expect(errors(result)).toEqual([]);
+    expect(result.payload.projects[0]).toMatchObject({ goal_summary: "取代味噌湯米粉", description: "# 硬性規格\n- 效期 24 個月" });
+    expect(result.payload.projects[1]).not.toHaveProperty("description");
+  });
+
+  it("欄名寫「背景說明」「緣起」也認得", () => {
+    const result = workbookToPayload(book({ [SHEET.projects]: [["專案名稱", "組別", "緣起"], ["代餐包", "RA/PV組", "味噌湯米粉泡不開"]] }), context);
+    expect(result.payload.projects[0].description).toBe("味噌湯米粉泡不開");
   });
 });
 
