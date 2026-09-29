@@ -6,6 +6,8 @@ export interface Project {
   id: string; name: string; description: string; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; owner_id: string; owner_name: string; visibility: "all" | "group" | "private"; status: "active" | "paused" | "done" | "archived"; progress: number; progress_mode: "manual" | "auto"; goal_summary: string; product: string; site: string; start_date: string | null; target_date: string | null; auto_archive: number; archived_at: string | null; last_activity_at: string; risk_level: "low" | "medium" | "high" | null; risk_summary: string | null; risk_suggestions: string | null; risk_updated_at: string | null;
   /** 清單類端點才有；專案內頁另有 members。 */
   member_ids?: string[];
+  /** 母專案；null 是一般（或母）專案。子專案只有一層。 */
+  parent_id?: string | null;
 }
 
 export interface Metadata {
@@ -35,10 +37,19 @@ export interface RegEntry { id: string; entry_date: string; entry_type: "announc
 
 export interface ProjectDetail {
   project: Project; permissions: { can_edit: boolean; can_manage: boolean; can_view_fees: boolean };
+  /** 子專案才有：看得到時帶母專案的 id 與名稱。 */
+  parent?: { id: string; name: string } | null;
+  /** 母專案（或還沒有子專案的一般專案）才有：看得到的子專案與任務完成狀況。 */
+  children?: ChildProject[];
   members: Array<{ id: string; name: string; email: string; role: string; group_name: string }>;
   stages: Stage[]; tasks: Task[]; milestones: Milestone[];
   // 以下集合只在對應分頁開啟時才載入；undefined 代表「尚未載入」，與「載入後為空」不同。
   progress_updates?: ProgressUpdate[];
   clinical_settings?: { project_id: string; target_n: number } | null; enrollments?: Enrollment[];
   bd_cases?: BdCase[]; bd_events?: BdEvent[]; bd_fees?: BdFee[];
+}
+
+export interface ChildProject {
+  id: string; name: string; status: Project["status"]; progress: number; owner_id: string; owner_name: string;
+  start_date: string | null; target_date: string | null; task_total: number; task_done: number; task_overdue: number;
 }

@@ -1,6 +1,6 @@
 import type { NotificationItem } from "../types";
 import { createId } from "./db";
-import { sendMail } from "./mailer";
+import { sendNotificationMail } from "./notification-mail";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
 import { licenseNotificationStage } from "./licenses";
@@ -89,7 +89,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   let sent = 0;
   for (const digest of groupEmailNotifications(emailItems)) {
     const text = [`今日共有 ${digest.items.length} 則提醒：`, "", ...digest.items.map((item) => `- ${item.title}：${item.body}\n  ${env.APP_BASE_URL}${item.link}`), "", `開啟艾爾水晶-專案進度：${env.APP_BASE_URL}`].join("\n");
-    const result = await sendMail(env, digest.email, "[艾爾水晶] 今日提醒", text);
+    const result = await sendNotificationMail(env, { id: digest.user_id, email: digest.email }, "[艾爾水晶] 今日提醒", text);
     if (result.sent) sent += 1;
   }
   return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length, license_notifications: licenseNotificationCount };

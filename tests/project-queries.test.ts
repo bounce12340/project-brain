@@ -10,7 +10,7 @@ const admin: AuthUser = {
 
 const row = (id: string, name: string, groupId = "grp") => ({
   id, name, description: "說明文字", group_id: groupId, group_name: "Group", group_type: "general",
-  owner_id: "usr_admin", owner_name: "Admin", visibility: "all", status: "active", progress: 10,
+  owner_id: "usr_admin", owner_name: "Admin", visibility: "all", status: "active", progress: 10, parent_id: null,
   progress_mode: "manual", goal_summary: "目標摘要", start_date: null, target_date: null, auto_archive: 0,
   last_activity_at: "2026-07-30T00:00:00Z", risk_level: null, risk_summary: "風險摘要",
   risk_suggestions: '[{"note":"很長的 JSON 建議"}]', risk_updated_at: null, member_ids_csv: "usr_admin",
@@ -91,7 +91,8 @@ describe("project list summary mode", () => {
 
     expect(response.status).toBe(200);
     expect(body.projects).toHaveLength(2);
-    expect(Object.keys(body.projects[0]).sort()).toEqual(["group_id", "group_name", "id", "name", "status"]);
+    // owner_id、parent_id 給設定頁的「母專案」選單用（只能掛在自己管理、本身不是子專案的專案底下）。
+    expect(Object.keys(body.projects[0]).sort()).toEqual(["group_id", "group_name", "id", "name", "owner_id", "parent_id", "status"]);
   });
 
   it("drops the payload the switcher never reads", async () => {

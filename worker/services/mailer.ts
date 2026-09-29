@@ -9,7 +9,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function sendMail(env: Env, to: string, subject: string, text: string, html?: string): Promise<MailResult> {
+export interface MailOptions {
+  html?: string;
+  /** 額外的信件標頭，例如通知信的 List-Unsubscribe。 */
+  headers?: Record<string, string>;
+}
+
+export async function sendMail(env: Env, to: string, subject: string, text: string, options: MailOptions = {}): Promise<MailResult> {
   if (!env.AGENTMAIL_API_KEY) {
     console.log(JSON.stringify({ message: "AGENTMAIL_API_KEY 未設定，略過 Email" }));
     return { sent: false, skipped: true };
@@ -17,7 +23,7 @@ export async function sendMail(env: Env, to: string, subject: string, text: stri
   const response = await fetch(`https://api.agentmail.to/v0/inboxes/${encodeURIComponent(env.AGENTMAIL_INBOX_ID)}/messages/send`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.AGENTMAIL_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ to, subject, text, html }),
+    body: JSON.stringify({ to, subject, text, html: options.html, headers: options.headers }),
   });
   const parsed: unknown = await response.json().catch(() => ({}));
   const body = isRecord(parsed) ? parsed : {};

@@ -3,6 +3,7 @@ import type { AppContext } from "../types";
 import { hashPassword, sha256 } from "../services/crypto";
 import { createId } from "../services/db";
 import { sendMail } from "../services/mailer";
+import { sendNotificationMail } from "../services/notification-mail";
 import {
   generateOtp,
   hashOtp,
@@ -101,7 +102,7 @@ registerRoutes.post("/submit", async (c) => {
   }
 
   const userId = createId("usr");
-  const admins = await c.env.DB.prepare("SELECT id,email,name FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").all<{ id: string; email: string; name: string }>();
+  const admins = await c.env.DB.prepare("SELECT id,email,name,email_notifications FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").all<{ id: string; email: string; name: string; email_notifications: number }>();
   const noticeTitle = `新註冊申請：${validation.value.name}`;
   const noticeBody = `${validation.value.email}／${group!.name}`;
   const statements = [
@@ -117,9 +118,10 @@ registerRoutes.post("/submit", async (c) => {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "此 Email 已註冊" }, 409);
     throw error;
   }
-  await Promise.allSettled(admins.results.map((admin) => sendMail(
+  // 系統內的通知一定有；信只寄給沒關掉通知信的管理員。
+  await Promise.allSettled(admins.results.filter((admin) => admin.email_notifications === 1).map((admin) => sendNotificationMail(
     c.env,
-    admin.email,
+    admin,
     "[艾爾水晶] 新註冊申請",
     `${noticeTitle}\n${noticeBody}\n\n請至管理中心核准：${c.env.APP_BASE_URL}/admin`,
   )));

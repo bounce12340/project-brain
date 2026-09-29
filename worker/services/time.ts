@@ -4,6 +4,11 @@ export function taipeiDate(date = new Date()): string {
   return new Date(date.getTime() + TAIPEI_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** 台北時間的「YYYY-MM-DD HH:mm」，給稽核與訊息顯示用。 */
+export function taipeiDateTime(date = new Date()): string {
+  return new Date(date.getTime() + TAIPEI_OFFSET_MS).toISOString().slice(0, 16).replace("T", " ");
+}
+
 export function currentTaipeiQuarter(date = new Date()): string {
   const local = new Date(date.getTime() + TAIPEI_OFFSET_MS);
   return `${local.getUTCFullYear()}Q${Math.floor(local.getUTCMonth() / 3) + 1}`;

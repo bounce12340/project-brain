@@ -10,7 +10,7 @@
     "not_found_handling": "single-page-application",
     "binding": "ASSETS",
     // /mcp、/oauth 與 /.well-known 是 AI 連接器（MCP + OAuth）用的，不能被前端 SPA 接走。
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/*", "/email/*", "/.well-known/*"]
   },
   "d1_databases": [
     {
