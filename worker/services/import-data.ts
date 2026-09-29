@@ -83,6 +83,32 @@ async function stageNamesForProject(db: D1Database, projectId: string): Promise<
   return new Map(rows.results.map((row) => [row.name, row.id]));
 }
 
+type StageTemplate = { name: string; group_id: string | null; stages_json: string };
+
+/**
+ * 新專案用哪一套看板欄位。表上的任務有寫階段時，挑涵蓋最多那些階段的範本；
+ * 都沒寫或都對不上時，組別只有一套範本就用它，否則用該類組別的通用流程。
+ *
+ * 以前一律取組別的第一套範本（依名稱排序），QA 組因此每個匯入的專案都變成
+ * 「CAPA 矯正預防措施」的欄位，表上寫的「進行中」「完成」再被接在後面，看板一團亂。
+ */
+export function chooseStageTemplate(templates: StageTemplate[], group: { id: string; type: string }, wanted: string[]): StageTemplate | null {
+  const stagesOf = (template: StageTemplate): string[] => { try { const names: unknown = JSON.parse(template.stages_json); return Array.isArray(names) ? names.map(String) : []; } catch { return []; } };
+  const own = templates.filter((template) => template.group_id === group.id);
+  const preferredName = group.type === "clinical" ? "臨床試驗流程" : group.type === "bd" ? "BD 查驗登記流程" : "一般專案";
+  const preferred = templates.find((template) => template.name === preferredName) ?? templates.find((template) => template.name === "一般專案") ?? null;
+  const fallback = own.length === 1 ? own[0] : preferred ?? own[0] ?? null;
+  const distinct = [...new Set(wanted)];
+  if (!distinct.length) return fallback;
+  let best: { template: StageTemplate; covered: number } | null = null;
+  for (const template of [...(fallback ? [fallback] : []), ...own, ...(preferred ? [preferred] : [])]) {
+    const names = new Set(stagesOf(template));
+    const covered = distinct.filter((stage) => names.has(stage)).length;
+    if (!best || covered > best.covered) best = { template, covered };
+  }
+  return best && best.covered > 0 ? best.template : fallback;
+}
+
 async function createCcrFromImport(db: D1Database, projectId: string, item: JsonObject, actorId: string, notePrefix: string, dryRun: boolean): Promise<void> {
   const title = text(item.title);
   if (!title) throw new ImportValidationError("ccrs[].title 必填");
@@ -126,7 +152,7 @@ const EXISTING_COLUMNS = "id,name,group_id,owner_id,goal_summary,start_date,targ
  */
 async function planProjects(
   db: D1Database, actor: AuthUser, mode: ImportMode, items: JsonObject[],
-  groups: Map<string, { id: string; name: string; type: string }>, issues: string[],
+  groups: Map<string, { id: string; name: string; type: string }>, issues: string[], warnings: string[],
 ): Promise<PlannedProject[]> {
   const planned: PlannedProject[] = [];
   const seen = new Map<string, string>();
@@ -197,6 +223,12 @@ async function planProjects(
         }
       }
       if (mode === "member" && actor.role === "intern") issues.push(`實習生不能建立新專案（「${label}」）`);
+      // 名稱只差前綴（「GDP/GMP」與「QA：GDP/GMP」）時多半是同一個專案，建下去就是重複。
+      // 不擋，因為真的可能是新專案；但審核的管理員要看得到。
+      else if (name) {
+        const lookalike = closestProjectName(name, (await visible()).map((row) => row.name));
+        if (lookalike) warnings.push(`「${name}」會建立成新專案，但系統上已經有「${lookalike}」；如果是同一個專案，請把名稱改成一樣`);
+      }
     }
     planned.push({ item, label, externalKey, name, existing, group });
   }
@@ -204,13 +236,17 @@ async function planProjects(
 }
 
 /**
- * 匯入。先 `dryRun: true` 跑一次再真的跑，是呼叫端（API）的責任：這裡的寫入是一筆一筆
- * 送出的，途中遇到格式錯誤會留下前半段——預演一次沒問題，實際執行才不會卡在半路。
+ * 匯入。先 `dryRun: true` 跑一次再真的跑，是呼叫端（API）的責任：寫入是一個專案一個 batch，
+ * 途中遇到格式錯誤，前面幾個專案已經寫進去了——預演一次沒問題，實際執行才不會卡在半路。
  */
 export async function runImport(db: D1Database, actor: AuthUser, payload: unknown, options: ImportOptions): Promise<ImportStats> {
   const { mode } = options;
   const dryRun = options.dryRun === true;
-  const run = async (statement: D1PreparedStatement) => { if (!dryRun) await statement.run(); };
+  // 寫入先收著，每個專案做完再用一個 batch 送出：一個專案要嘛整個寫進去、要嘛都沒寫，
+  // 而且一百多列只算一次呼叫，不會撞上 Worker 單次請求能呼叫 D1 的次數上限。
+  const pending: D1PreparedStatement[] = [];
+  const run = async (statement: D1PreparedStatement) => { if (!dryRun) pending.push(statement); };
+  const flush = async () => { if (pending.length) await db.batch(pending.splice(0, pending.length)); };
   const root = object(payload);
   if (!root) throw new ImportValidationError("JSON 根節點必須是物件");
   const projects = objects(root.projects, "projects");
@@ -236,7 +272,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
 
   const issues: string[] = [];
   if (mode === "member" && regEntries.length) issues.push("法規動態僅限管理員匯入");
-  const planned = await planProjects(db, actor, mode, projects, groups, issues);
+  const planned = await planProjects(db, actor, mode, projects, groups, issues, stats.warnings);
   if (issues.length) throw new ImportValidationError(issues[0], issues);
 
   for (const { item, label, externalKey, name, existing, group } of planned) {
@@ -289,6 +325,12 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       stats.projects.created += 1;
     }
     const projectGroup = group ?? groups.get(existing?.group_id ?? "") ?? { id: "", name: "", type: "general" };
+    // 這次匯入才建立的專案是空的：查重複、查排序位置都不必問資料庫。每一筆都問的話，
+    // 一份百來列的表光預演就要幾百次查詢，核准時預演兩次再寫一次，會撞上 Worker 單次請求的上限。
+    const fresh = !existing;
+    /** 這個專案在這次匯入已經寫過的項目。寫入要等整個專案做完才送出，查資料庫看不到它們；同一份表重複的列靠這裡擋。 */
+    const written = new Set<string>();
+    const krPositions = new Map<string, number>();
 
     for (const goal of objects(item.quarter_goals, `${label}.quarter_goals`)) {
       const quarter = text(goal.quarter) ?? currentTaipeiQuarter();
@@ -302,22 +344,25 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       const quarter = text(kr.quarter) ?? currentTaipeiQuarter();
       const krStatus = text(kr.status) ?? "未開始";
       if (!title || !/^\d{4}Q[1-4]$/.test(quarter) || !["未開始", "進行中", "完成", "暫停"].includes(krStatus)) throw new ImportValidationError(`${label}: KR 格式不正確`);
-      if (await db.prepare("SELECT id FROM key_results WHERE project_id=? AND quarter=? AND title=?").bind(projectId, quarter, title).first()) continue;
+      const krKey = `kr\u0000${quarter}\u0000${title}`;
+      if (written.has(krKey) || (!fresh && await db.prepare("SELECT id FROM key_results WHERE project_id=? AND quarter=? AND title=?").bind(projectId, quarter, title).first())) continue;
+      written.add(krKey);
       const krOwner = person(kr.owner_email);
       if (krOwner.warning) stats.warnings.push(`${label}/KR ${title}: ${krOwner.warning}`);
-      const position = await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM key_results WHERE project_id=? AND quarter=?").bind(projectId, quarter).first<number>("value");
+      const position = krPositions.get(quarter) ?? (fresh ? 0 : await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM key_results WHERE project_id=? AND quarter=?").bind(projectId, quarter).first<number>("value") ?? 0);
+      krPositions.set(quarter, position + 1);
       await run(db.prepare("INSERT INTO key_results (id,project_id,title,owner_id,quarter,status,note,position) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(createId("kr"), projectId, title, krOwner.userId, quarter, krStatus, krOwner.notePrefix, position ?? 0));
+        .bind(createId("kr"), projectId, title, krOwner.userId, quarter, krStatus, krOwner.notePrefix, position));
     }
 
-    const stages = await stageNamesForProject(db, projectId);
+    const stages = fresh ? new Map<string, string>() : await stageNamesForProject(db, projectId);
     let requestedStages: string[] = [];
     if (item.stages !== undefined) {
       if (!Array.isArray(item.stages) || !item.stages.every((stage) => typeof stage === "string" && stage.trim())) throw new ImportValidationError(`${label}.stages 必須是字串陣列`);
       requestedStages = item.stages.map((stage) => String(stage).trim());
     } else if (stages.size === 0) {
-      const preferredNames = projectGroup.type === "clinical" ? ["臨床試驗流程"] : projectGroup.type === "bd" ? ["BD 查驗登記流程"] : ["一般專案"];
-      const template = templateRows.results.find((row) => row.group_id === projectGroup.id) ?? templateRows.results.find((row) => preferredNames.includes(row.name)) ?? templateRows.results.find((row) => row.name === "一般專案");
+      const wanted = objects(item.tasks, `${label}.tasks`).map((task) => text(task.stage)).filter((stage): stage is string => !!stage);
+      const template = chooseStageTemplate(templateRows.results, projectGroup, wanted);
       try { requestedStages = template ? JSON.parse(template.stages_json) as string[] : ["待辦", "進行中", "完成"]; } catch { requestedStages = ["待辦", "進行中", "完成"]; }
     }
     for (const stageName of requestedStages) {
@@ -327,6 +372,8 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       stages.set(stageName, stageId);
     }
 
+    const taskPositions = new Map<string, number>();
+    let milestonePosition: number | null = fresh ? 0 : null;
     for (const task of objects(item.tasks, `${label}.tasks`)) {
       const title = text(task.title);
       const stageName = text(task.stage) ?? stages.keys().next().value;
@@ -340,13 +387,16 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
         await run(db.prepare("INSERT INTO stages (id,project_id,name,color,position) VALUES (?,?,?,?,?)").bind(stageId, projectId, stageName, stageColorFor(stageName), stages.size));
         stages.set(stageName, stageId);
       }
-      if (await db.prepare("SELECT id FROM tasks WHERE project_id=? AND stage_id=? AND title=?").bind(projectId, stageId, title).first()) { stats.tasks.skipped += 1; continue; }
+      const taskKey = `task\u0000${stageId}\u0000${title}`;
+      if (written.has(taskKey) || (!fresh && await db.prepare("SELECT id FROM tasks WHERE project_id=? AND stage_id=? AND title=?").bind(projectId, stageId, title).first())) { stats.tasks.skipped += 1; continue; }
+      written.add(taskKey);
       const assignee = person(task.assignee_email);
       if (assignee.warning) stats.warnings.push(`${label}/task ${title}: ${assignee.warning}`);
       const done = task.done === true || task.done === 1 ? 1 : 0;
-      const position = await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM tasks WHERE stage_id=?").bind(stageId).first<number>("value");
+      const position = taskPositions.get(stageId) ?? (fresh ? 0 : await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM tasks WHERE stage_id=?").bind(stageId).first<number>("value") ?? 0);
+      taskPositions.set(stageId, position + 1);
       await run(db.prepare("INSERT INTO tasks (id,project_id,stage_id,title,description,assignee_id,start_date,due_date,position,done,done_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-        .bind(createId("task"), projectId, stageId, title, assignee.notePrefix, assignee.userId, startDate, dueDate, position ?? 0, done, done ? new Date().toISOString() : null));
+        .bind(createId("task"), projectId, stageId, title, assignee.notePrefix, assignee.userId, startDate, dueDate, position, done, done ? new Date().toISOString() : null));
       stats.tasks.created += 1;
     }
 
@@ -359,14 +409,18 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
         if (kind === "event" && !dueDate) throw new ImportValidationError(`${label}.${field}[].due_date 必填`);
         const rangeError = milestoneDateRangeError(dueDate, endDate);
         if (rangeError) throw new ImportValidationError(`${label}.${field}「${title}」：${rangeError}`);
-        if (await db.prepare("SELECT id FROM milestones WHERE project_id=? AND kind=? AND title=? AND due_date IS ?").bind(projectId, kind, title, dueDate).first()) {
+        const milestoneKey = `${kind}\u0000${title}\u0000${dueDate ?? ""}`;
+        if (written.has(milestoneKey) || (!fresh && await db.prepare("SELECT id FROM milestones WHERE project_id=? AND kind=? AND title=? AND due_date IS ?").bind(projectId, kind, title, dueDate).first())) {
           stats[field].skipped += 1;
           continue;
         }
-        const position = await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM milestones WHERE project_id=?").bind(projectId).first<number>("value");
+        written.add(milestoneKey);
+        milestonePosition ??= await db.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM milestones WHERE project_id=?").bind(projectId).first<number>("value") ?? 0;
+        const position = milestonePosition;
+        milestonePosition += 1;
         const done = kind === "event" ? 1 : (milestone.done === true || milestone.done === 1 ? 1 : 0);
         await run(db.prepare("INSERT INTO milestones (id,project_id,title,due_date,end_date,done,done_at,position,kind) VALUES (?,?,?,?,?,?,?,?,?)")
-          .bind(createId(kind === "event" ? "evt" : "ms"), projectId, title, dueDate, endDate, done, done ? new Date().toISOString() : null, position ?? 0, kind));
+          .bind(createId(kind === "event" ? "evt" : "ms"), projectId, title, dueDate, endDate, done, done ? new Date().toISOString() : null, position, kind));
         stats[field].created += 1;
       }
     }
@@ -378,7 +432,9 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       const writer = author(update.author_email);
       if (writer.warning) stats.warnings.push(`${label}/update ${updateDate}: ${writer.warning}`);
       const content = prefixed(writer.notePrefix, rawContent);
-      if (await db.prepare("SELECT id FROM progress_updates WHERE project_id=? AND substr(created_at,1,10)=? AND substr(content,1,40)=?").bind(projectId, updateDate, content.slice(0, 40)).first()) { stats.progress_updates.skipped += 1; continue; }
+      const updateKey = `update\u0000${updateDate}\u0000${content.slice(0, 40)}`;
+      if (written.has(updateKey) || (!fresh && await db.prepare("SELECT id FROM progress_updates WHERE project_id=? AND substr(created_at,1,10)=? AND substr(content,1,40)=?").bind(projectId, updateDate, content.slice(0, 40)).first())) { stats.progress_updates.skipped += 1; continue; }
+      written.add(updateKey);
       await run(db.prepare("INSERT INTO progress_updates (id,project_id,author_id,content,progress_snapshot,created_at) VALUES (?,?,?,?,?,?)")
         .bind(createId("upd"), projectId, writer.userId, content, item.progress === undefined ? null : Math.round(numberIn(item.progress, 0, 100, 0)), `${updateDate}T04:00:00.000Z`));
       stats.progress_updates.created += 1;
@@ -391,7 +447,9 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
         const recordDate = date(enrollment.record_date ?? enrollment.date, `${label}.clinical.enrollments[].record_date`, false) as string;
         const count = Math.max(0, Math.round(Number(enrollment.count) || 0));
         const site = text(enrollment.site);
-        if (await db.prepare("SELECT id FROM clinical_enrollments WHERE project_id=? AND record_date=? AND COALESCE(site,'')=COALESCE(?,'') AND count=?").bind(projectId, recordDate, site, count).first()) continue;
+        const enrollmentKey = `enr\u0000${recordDate}\u0000${site ?? ""}\u0000${count}`;
+        if (written.has(enrollmentKey) || (!fresh && await db.prepare("SELECT id FROM clinical_enrollments WHERE project_id=? AND record_date=? AND COALESCE(site,'')=COALESCE(?,'') AND count=?").bind(projectId, recordDate, site, count).first())) continue;
+        written.add(enrollmentKey);
         const writer = person(enrollment.author_email);
         if (writer.warning) stats.warnings.push(`${label}/enrollment ${recordDate}: ${writer.warning}`);
         await run(db.prepare("INSERT INTO clinical_enrollments (id,project_id,record_date,site,count,note,created_by) VALUES (?,?,?,?,?,?,?)")
@@ -403,10 +461,14 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
       const licenseName = text(license.name);
       const expiresAt = date(license.expires_at, `${label}.licenses[].expires_at`, false) as string;
       if (!licenseName) throw new ImportValidationError(`${label}: licenses[].name 必填`);
-      if (await db.prepare("SELECT id FROM licenses WHERE project_id=? AND name=? AND expires_at=?").bind(projectId, licenseName, expiresAt).first()) continue;
+      const licenseKey = `lic\u0000${licenseName}\u0000${expiresAt}`;
+      if (written.has(licenseKey) || (!fresh && await db.prepare("SELECT id FROM licenses WHERE project_id=? AND name=? AND expires_at=?").bind(projectId, licenseName, expiresAt).first())) continue;
+      written.add(licenseKey);
       await run(db.prepare("INSERT INTO licenses (id,project_id,name,subject,authority,license_no,issued_at,expires_at,status,note,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
         .bind(createId("lic"), projectId, licenseName, text(license.subject) ?? "產品", text(license.authority) ?? "TFDA", text(license.license_no), date(license.issued_at, `${label}.licenses[].issued_at`), expiresAt, text(license.status) ?? "有效", text(license.note) ?? "", actor.id));
     }
+    // 這個專案的寫入在這裡送出：CCR 要在資料庫裡依序取號、自動進度要讀剛寫進去的任務，都得先寫進去。
+    await flush();
     for (const ccr of objects(item.ccrs, `${label}.ccrs`)) await createCcrFromImport(db, projectId, ccr, actor.id, "", dryRun);
 
     // 匯進來的任務可能已經標完成；自動進度不重算的話，專案會一直顯示 0%。
@@ -414,17 +476,21 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     if (!dryRun && item.progress === undefined) await recomputeAutoProgress(db, projectId, actor.id);
   }
 
+  const writtenEntries = new Set<string>();
   for (const [entryIndex, entry] of regEntries.entries()) {
     const entryDate = date(entry.entry_date, `reg_entries[${entryIndex}].entry_date`, false) as string;
     const title = text(entry.title);
     const entryType = text(entry.entry_type) ?? "announcement";
     const productLine = text(entry.product_line);
     if (!title || !productLine || !["announcement", "meeting"].includes(entryType) || !["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"].includes(productLine)) throw new ImportValidationError(`reg_entries[${entryIndex}] 資料不正確`);
-    if (await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=?").bind(entryDate, title).first()) { stats.reg_entries.skipped += 1; continue; }
+    const entryKey = `${entryDate}\u0000${title}`;
+    if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=?").bind(entryDate, title).first()) { stats.reg_entries.skipped += 1; continue; }
+    writtenEntries.add(entryKey);
     await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
       .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id));
     stats.reg_entries.created += 1;
   }
+  await flush();
   return stats;
 }
 
