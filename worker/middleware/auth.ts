@@ -1,7 +1,8 @@
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import type { AppContext, AuthUser } from "../types";
+import type { AppContext } from "../types";
 import { sha256 } from "../services/crypto";
+import { findSessionUser } from "../services/session-user";
 
 const PUBLIC_PATHS = new Set([
   "/api/health",
@@ -26,12 +27,7 @@ export const sessionAuth: MiddlewareHandler<AppContext> = async (c, next) => {
   const token = getCookie(c, "sid");
   if (!token) return c.json({ error: "請先登入" }, 401);
   const sessionId = await sha256(token);
-  const user = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.role, u.group_id, g.name AS group_name, g.type AS group_type,
-           u.must_change_password, u.email_notifications, u.onboarding_done, u.approval_status
-    FROM sessions s JOIN users u ON u.id = s.user_id JOIN groups g ON g.id = u.group_id
-    WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1 AND u.approval_status = 'approved'
-  `).bind(sessionId).first<AuthUser>();
+  const user = await findSessionUser(c.env.DB, token);
   if (!user) return c.json({ error: "登入已失效" }, 401);
   const expiresAt = new Date(Date.now() + 30 * 86_400_000);
   await c.env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?").bind(expiresAt.toISOString(), sessionId).run();

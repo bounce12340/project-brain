@@ -75,6 +75,7 @@ jobs:
           # 而且四項能力探測本來就涵蓋它——token 失效的話這四項會一起失敗。
           need "accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?per_page=1" "Account → D1（套 migration 用）"
           need "accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" "Account → Workers Scripts（上傳 Worker 用）"
+          need "accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces?per_page=1" "Account → Workers KV Storage（AI 連接器的 OAuth 資料用）"
           if [ "$(probe "zones?name=$zone_name")" = "200" ]; then
             echo "✅ Zone → Zone 讀得到 $zone_name"
             zone_id=$(grep -o '"id":"[0-9a-f]\{32\}"' /tmp/cf-probe.json | head -1 | cut -d'"' -f4) || true
