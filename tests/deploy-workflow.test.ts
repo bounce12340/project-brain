@@ -44,7 +44,7 @@ describe("部署步驟的順序與把關", () => {
   it("開跑前一次驗完所有權限，不是失敗一次才知道缺一項", () => {
     // 前兩次自動部署各只暴露一個缺的權限，每補一項就得再等一輪 CI。
     const preflight = deployJob.slice(order("d1/database"), order("npm run build"));
-    for (const permission of ["d1/database", "workers/scripts", "workers/routes"]) {
+    for (const permission of ["d1/database", "workers/scripts", "storage/kv/namespaces", "workers/routes"]) {
       expect(preflight, permission).toContain(permission);
     }
     // 探到第一個缺的就中斷的話，就退回一輪只驗一項了。

@@ -3,12 +3,14 @@
   "name": "project-brain",
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-21",
-  "compatibility_flags": ["nodejs_compat"],
+  // global_fetch_strictly_public：AI 連接器接受 Client ID Metadata Document 時，對外抓取不走同網域路由（防 SSRF）。
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    // /mcp、/oauth 與 /.well-known 是 AI 連接器（MCP + OAuth）用的，不能被前端 SPA 接走。
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/*", "/.well-known/*"]
   },
   "d1_databases": [
     {
@@ -19,6 +21,8 @@
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "project-brain-files" }],
+  // AI 連接器的 OAuth 授權、token 與已連接的工具。
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "fd392aa43f9347f0810fe9bcd665e93b" }],
   "ai": { "binding": "AI" },
   "triggers": { "crons": ["0 1 * * *", "30 0 * * 1", "30 0 1 * *"] },
   "routes": [{ "pattern": "projects.uic-ai.com", "custom_domain": true }],
