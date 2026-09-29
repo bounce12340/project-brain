@@ -16,7 +16,11 @@ https://projects.uic-ai.com/mcp
 claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
 ```
 
-之後在 Claude Code 裡執行 `/mcp` 完成授權。其他支援 MCP（Streamable HTTP + OAuth）的工具填同一個網址。
+之後在 Claude Code 裡執行 `/mcp` 完成授權。
+
+**ChatGPT**：在設定開啟開發者模式，到「外掛程式」按「＋」新增：網址填連接器網址，驗證方式選 OAuth，Client ID 與 Secret 留空（ChatGPT 會自己註冊）。之後一樣在艾爾水晶的授權頁按「允許」。
+
+其他支援 MCP（Streamable HTTP + OAuth）的工具填同一個網址。
 
 個人設定頁的「AI 連接器」列出連接器網址、已連接的 AI 工具與權限，可以隨時中斷；中斷後那個工具的 token 立刻失效。
 
@@ -47,7 +51,7 @@ claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
 
 ## 技術細節
 
-- **OAuth**：[`@cloudflare/workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider)（`worker/index.ts`）。支援動態註冊（`/oauth/register`）與 Client ID Metadata Document；PKCE S256；refresh token 閒置 30 天才過期。授權、token 與 grant 存在 KV `OAUTH_KV`（`project-brain-oauth`）；token 只存雜湊，props 加密。每日排程順便清掉過期資料。
+- **OAuth**：[`@cloudflare/workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider)（`worker/index.ts`）。支援動態註冊（`/oauth/register`）與 Client ID Metadata Document；PKCE S256；refresh token 閒置 30 天才過期。不宣告 RFC 9207（授權回應附 `iss`），導回 AI 工具時也不附 `iss`（`worker/mcp/issuer-identification.ts`）：宣告之後 ChatGPT 改用共用的固定回呼網址 `https://chatgpt.com/connector_platform_oauth_redirect`，按了「允許」之後 ChatGPT 顯示「缺少 OAuth 回呼資料」；不宣告時 ChatGPT 用每個連線各自的 `https://chatgpt.com/connector/oauth/{callback_id}`，就能連上。Codex 0.143 起也會在回呼時丟掉 `iss` 又要求一定要有。授權、token 與 grant 存在 KV `OAUTH_KV`（`project-brain-oauth`）；token 只存雜湊，props 加密。每日排程順便清掉過期資料。
 - **端點**：`/mcp`（需要 token）、`/oauth/authorize`（網站自己的授權頁，`worker/routes/oauth.ts`）、`/oauth/token`、`/oauth/register`、`/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`。這些路徑都列在 `wrangler.jsonc` 的 `run_worker_first`，不會被前端 SPA 接走。
 - **MCP 傳輸**：無狀態的 Streamable HTTP（`worker/mcp/protocol.ts`），每個 POST 直接回 JSON，不開 SSE、不發 session。協定版本與官方 SDK 1.30 相同（2025-11-25、2025-06-18、2025-03-26、2024-11-05），通知回 202，不支援的 `MCP-Protocol-Version` 回 400。
 - **部署需求**：Cloudflare API token 需要 Account → Workers KV Storage（CI 的權限檢查會先驗）；`compatibility_flags` 需要 `global_fetch_strictly_public`（Client ID Metadata Document 對外抓取時防 SSRF）。
@@ -56,4 +60,4 @@ claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
 
 - `tests/mcp-protocol.test.ts`：版本協商、通知、錯誤碼、唯讀連線看不到寫入工具、參數檢查。
 - `tests/mcp-tools.test.ts`：在套好 migrations 的 SQLite 上呼叫每個工具，含權限與稽核紀錄。
-- `tests/mcp-oauth.test.ts`：以正式的 Worker 進入點走完整流程——401 → 找到授權伺服器 → 動態註冊 → 登入與同意（含拒絕、跳脫、改密碼）→ 換 token → 呼叫工具 → 中斷連線後 token 失效。KV 用 `tests/helpers/memory-kv.ts`。
+- `tests/mcp-oauth.test.ts`：以正式的 Worker 進入點走完整流程——401 → 找到授權伺服器 → 動態註冊 → 登入與同意（含拒絕、跳脫、改密碼）→ 換 token → 呼叫工具 → 中斷連線後 token 失效；ChatGPT 以各自的回呼網址連接，導回時不附 `iss`。KV 用 `tests/helpers/memory-kv.ts`。

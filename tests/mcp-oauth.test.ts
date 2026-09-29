@@ -24,22 +24,22 @@ async function login(userId: string): Promise<string> {
   return `sid=${token}`;
 }
 
-async function register(name = "Claude") {
-  const response = await fetchWorker("/oauth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_name: name, redirect_uris: [REDIRECT], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }) });
+async function register(name = "Claude", redirect = REDIRECT) {
+  const response = await fetchWorker("/oauth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_name: name, redirect_uris: [redirect], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }) });
   expect(response.status).toBe(201);
   return (await response.json() as { client_id: string }).client_id;
 }
 
-async function authorizeUrl(clientId: string) {
+async function authorizeUrl(clientId: string, redirect = REDIRECT, overrides: Record<string, string> = {}) {
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  const query = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, state: "st-1", code_challenge: challenge, code_challenge_method: "S256", scope: "mcp:read", resource: `${BASE}/mcp` });
+  const query = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: redirect, state: "st-1", code_challenge: challenge, code_challenge_method: "S256", scope: "mcp:read", resource: `${BASE}/mcp`, ...overrides });
   return { path: `/oauth/authorize?${query}`, verifier };
 }
 
 /** 使用者在授權頁按下「允許」或「拒絕」，回傳導回 AI 工具的網址。 */
-async function consent(clientId: string, session: string, options: { write?: boolean; decision?: "approve" | "deny" } = {}) {
-  const { path, verifier } = await authorizeUrl(clientId);
+async function consent(clientId: string, session: string, options: { write?: boolean; decision?: "approve" | "deny"; redirect?: string } = {}) {
+  const { path, verifier } = await authorizeUrl(clientId, options.redirect);
   const page = await fetchWorker(path, { headers: { Cookie: session } });
   expect(page.status).toBe(200);
   const html = await page.text();
@@ -87,6 +87,8 @@ describe("AI 工具找到授權的方式", () => {
     const server = await (await fetchWorker("/.well-known/oauth-authorization-server")).json() as Record<string, unknown>;
     expect(server).toMatchObject({ issuer: BASE, authorization_endpoint: `${BASE}/oauth/authorize`, token_endpoint: `${BASE}/oauth/token`, registration_endpoint: `${BASE}/oauth/register` });
     expect(server.scopes_supported).toEqual(["mcp:read", "mcp:write"]);
+    // 不宣告 RFC 9207：ChatGPT 才會用每個連線各自的回呼網址，而不是會失敗的共用網址。
+    expect(server).not.toHaveProperty("authorization_response_iss_parameter_supported");
   });
 });
 
@@ -116,6 +118,18 @@ describe("授權頁", () => {
     expect(`${location.origin}${location.pathname}`).toBe(REDIRECT);
     expect(location.searchParams.get("error")).toBe("access_denied");
     expect(location.searchParams.get("code")).toBeNull();
+    expect(location.searchParams.has("iss")).toBe(false);
+  });
+
+  it("請求本身有錯（例如不支援的 response_type）時帶著錯誤回到 AI 工具，也不附 iss", async () => {
+    const { path } = await authorizeUrl(await register(), REDIRECT, { response_type: "token" });
+    const response = await fetchWorker(path, { headers: { Cookie: await login("elvis") } });
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("Location")!);
+    expect(`${location.origin}${location.pathname}`).toBe(REDIRECT);
+    expect(location.searchParams.get("error")).toBe("unsupported_response_type");
+    expect(location.searchParams.get("state")).toBe("st-1");
+    expect(location.searchParams.has("iss")).toBe(false);
   });
 
   it("還沒改預設密碼的帳號不能連接", async () => {
@@ -123,6 +137,22 @@ describe("授權頁", () => {
     const page = await fetchWorker(path, { headers: { Cookie: await login("newbie") } });
     expect(page.status).toBe(403);
     expect(await page.text()).toContain("請先變更密碼");
+  });
+});
+
+describe("ChatGPT", () => {
+  it("用每個連線各自的回呼網址連接：按「允許」後只帶 code 與 state 回去，換得到 token", async () => {
+    const callback = "https://chatgpt.com/connector/oauth/cb_7f3a";
+    const clientId = await register("ChatGPT", callback);
+    const { location, verifier } = await consent(clientId, await login("elvis"), { redirect: callback });
+    expect(`${location.origin}${location.pathname}`).toBe(callback);
+    expect([...location.searchParams.keys()].sort()).toEqual(["code", "state"]);
+    expect(location.searchParams.get("state")).toBe("st-1");
+    const token = await fetchWorker("/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code: location.searchParams.get("code")!, redirect_uri: callback, client_id: clientId, code_verifier: verifier, resource: `${BASE}/mcp` }) });
+    expect(token.status).toBe(200);
+    const { access_token } = await token.json() as { access_token: string };
+    expect((await mcp(access_token, "tools/list")).status).toBe(200);
+    expect(await env.DB.prepare("SELECT summary FROM audit_log WHERE action='mcp_connect'").first()).toEqual({ summary: "連接 AI 工具「ChatGPT」（查看與修改）" });
   });
 });
 

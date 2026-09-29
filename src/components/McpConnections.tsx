@@ -36,6 +36,7 @@ export function McpConnections() {
       <li>{t("mcp.step1")}</li><li>{t("mcp.step2")}</li><li>{t("mcp.step3")}</li>
     </ol>
     <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.otherTools")} <code className="break-all">claude mcp add --transport http project-brain {endpoint}</code></p>
+    <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.chatgpt")}</p>
     <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.examples")}</p>
     <h3 className="mt-5 text-sm font-semibold">{t("mcp.connected")}</h3>
     {!connections ? <p className="mt-2 text-sm text-star-dim">{t("common.loading")}</p> : connections.length ? <ul className="mt-2 divide-y divide-nexus-line border-y border-nexus-line">

@@ -5,6 +5,7 @@ import { originGuard, sessionAuth } from "./middleware/auth";
 import { mountApiRoutes } from "./api";
 import { oauthRoutes } from "./routes/oauth";
 import { handleMcp, MCP_SCOPES, type McpProps } from "./mcp/handler";
+import { AUTHORIZATION_SERVER_METADATA_PATH, withoutIssuerIdentification } from "./mcp/issuer-identification";
 import { runDailyWorkflow } from "./services/cron";
 import { regenerateMonthlyReports, regenerateWeeklyReports } from "./services/reports";
 import { scheduledJobForCron } from "./services/schedule";
@@ -54,7 +55,10 @@ function oauthProvider(env: Env): OAuthProvider<Env> {
 }
 
 export default {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext) => oauthProvider(env).fetch(request, env, ctx),
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const response = await oauthProvider(env).fetch(request, env, ctx);
+    return request.method === "GET" && new URL(request.url).pathname === AUTHORIZATION_SERVER_METADATA_PATH ? withoutIssuerIdentification(response) : response;
+  },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const job = scheduledJobForCron(controller.cron);
     if (job === "daily-reminders") {
