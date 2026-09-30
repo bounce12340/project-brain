@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatDate } from "../api";
-import { HelpTip } from "../components/HelpTip";
 import { Empty, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 
@@ -28,7 +27,7 @@ export function NotificationsPage() {
 
   return <>
     <PageHeader
-      title={<>{t("notifications.title")}<HelpTip topic="notifications" /></>}
+      title={t("notifications.title")}
       description={t("notifications.description")}
       actions={<button className="btn-secondary" onClick={() => void api("/notifications/read-all", { method: "POST" }).then(load)}>{t("notifications.readAll")}</button>}
     />

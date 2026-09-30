@@ -5,7 +5,6 @@ import { CHART } from "../chartTheme";
 import { PageHeader, RiskBadge } from "../components/UI";
 import { addDays, daysBetween, ganttPosition } from "../utils/dates";
 import { useT } from "../i18n/LangContext";
-import { HelpTip } from "../components/HelpTip";
 import { GanttLegend } from "../components/GanttLegend";
 import { GANTT_TASK_HEIGHT, ganttDonePatternId, ganttYearMarkers, getTaskGanttStyle, isGanttOverdue } from "../gantt";
 import { projectSpan } from "../timeline-span";
@@ -71,7 +70,7 @@ export function TimelinePage() {
   const legendStages = legendTasks.map((task) => ({ id: task.stage_id, name: task.stage_name, color: task.stage_color, position: task.stage_position }));
 
   return <>
-    <PageHeader title={<span data-tour="timeline-lanes">{t("timeline.title")}<HelpTip topic="timelineLanes" /></span>} description={t("timeline.description")} />
+    <PageHeader title={<span data-tour="timeline-lanes">{t("timeline.title")}</span>} description={t("timeline.description")} />
     <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
     <section className="panel overflow-x-auto !px-0"><div style={{ width: label + width }}>
       <div className="pl-5"><GanttLegend stages={legendStages} tasks={legendTasks} milestones={projects.flatMap((project) => project.markers).map((marker) => ({ kind: marker.kind, due_date: marker.due_date, end_date: marker.end_date, done: marker.done }))} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} /></div>
