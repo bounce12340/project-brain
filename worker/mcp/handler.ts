@@ -9,6 +9,12 @@ export interface McpProps { userId: string; clientName?: string }
 
 export const MCP_SCOPES = { read: "mcp:read", write: "mcp:write" } as const;
 
+/** 圖示放在網站的 public/ 底下；網址跟著這次請求的網域走，本機測試也對得上。 */
+export const serverIcons = (requestUrl: string) => [
+  { src: new URL("/icon-512.png", requestUrl).href, mimeType: "image/png", sizes: ["512x512"] },
+  { src: new URL("/favicon.svg", requestUrl).href, mimeType: "image/svg+xml", sizes: ["any"] },
+];
+
 /**
  * /mcp：OAuth 驗過 token 之後才會進到這裡，ctx.props 是授權時存的資料，
  * ctx.auth.scope 是使用者在授權頁勾選的權限。
@@ -16,7 +22,7 @@ export const MCP_SCOPES = { read: "mcp:read", write: "mcp:write" } as const;
 export async function handleMcp(request: Request, env: Env, ctx: OAuthResourceContext<McpProps>): Promise<Response> {
   return handleMcpRequest<ToolContext>(request, {
     tools: MCP_TOOLS,
-    info: MCP_SERVER_INFO,
+    info: { ...MCP_SERVER_INFO, icons: serverIcons(request.url) },
     canWrite: ctx.auth.scope.includes(MCP_SCOPES.write),
     async context() {
       const user = await loadActiveUser(env.DB, ctx.props.userId);

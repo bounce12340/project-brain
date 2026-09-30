@@ -38,13 +38,6 @@ describe("表單控制項都拿得到可存取名稱", () => {
 });
 
 describe("同一頁的重複名稱要能分辨", () => {
-  it("說明按鈕帶上該欄位的定義，不是每個都叫同一個名字", () => {
-    // 專案詳情頁一次會有 13 個說明按鈕。
-    const source = read("components/HelpTip.tsx");
-    expect(source).toContain("${content.what}");
-    expect(source).not.toContain('aria-label={lang === "zh" ? "顯示欄位說明" : "Show field help"}');
-  });
-
   it("列表中的刪除與狀態控制項要說明操作對象", () => {
     for (const [file, needle] of [
       ["pages/TodosPage.tsx", 'a11y.deleteNamed", { title: item.title }'],

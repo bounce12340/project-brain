@@ -162,6 +162,10 @@ describe("連上之後", () => {
     expect(scope.split(" ").sort()).toEqual(["mcp:read", "mcp:write"]);
     const init = await mcp(access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect(init.body?.result.serverInfo.title).toBe("艾爾水晶");
+    expect(init.body?.result.serverInfo.icons).toEqual([
+      { src: `${BASE}/icon-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+      { src: `${BASE}/favicon.svg`, mimeType: "image/svg+xml", sizes: ["any"] },
+    ]);
     const tools = (await mcp(access_token, "tools/list")).body!.result.tools.map((tool: { name: string }) => tool.name);
     expect(tools).toEqual(expect.arrayContaining(["list_projects", "get_project", "add_progress_update", "create_task"]));
     const listed = await mcp(access_token, "tools/call", { name: "list_projects", arguments: {} });

@@ -41,7 +41,9 @@ export interface McpTool<Ctx> {
 /** 使用者看得懂、AI 可以轉述的失敗（找不到專案、沒有權限…）。回成 isError，而不是協定錯誤。 */
 export class ToolError extends Error {}
 
-export interface ServerInfo { name: string; title: string; version: string; instructions: string }
+/** MCP 2025-11-25 起 serverInfo 可以帶圖示，連接器清單會拿來顯示；舊版用戶端會忽略這個欄位。 */
+export interface ServerIcon { src: string; mimeType: string; sizes: string[] }
+export interface ServerInfo { name: string; title: string; version: string; instructions: string; icons?: ServerIcon[] }
 
 interface HandlerOptions<Ctx> {
   tools: McpTool<Ctx>[];
@@ -105,8 +107,8 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
     case "initialize": {
       const requested = typeof params.protocolVersion === "string" ? params.protocolVersion : "";
       const protocolVersion = (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested) ? requested : LATEST_PROTOCOL_VERSION;
-      const { name, title, version, instructions } = options.info;
-      return { jsonrpc: "2.0", id, result: { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name, title, version }, instructions } };
+      const { name, title, version, instructions, icons } = options.info;
+      return { jsonrpc: "2.0", id, result: { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name, title, version, ...(icons?.length ? { icons } : {}) }, instructions } };
     }
     case "ping":
       return { jsonrpc: "2.0", id, result: {} };

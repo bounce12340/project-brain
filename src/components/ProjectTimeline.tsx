@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, patchBody, today } from "../api";
 import { ErrorBox } from "./UI";
-import { HelpTip } from "./HelpTip";
 import { useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { buildProjectTimeline, timelineCounts, todayDividerIndex } from "../project-timeline";
@@ -44,7 +43,7 @@ export function ProjectTimeline({ projectId, milestones, canEdit, reload }: {
   };
 
   return <section data-tour="project-milestones" className="panel">
-    <h2 className="mb-1 font-bold">{t("timeline.heading")}<HelpTip topic="milestones" /></h2>
+    <h2 className="mb-1 font-bold">{t("timeline.heading")}</h2>
     <p className="mb-4 text-sm text-star-dim">{t("timeline.summary", counts)}</p>
     {error && <ErrorBox message={error} />}
     <div className="space-y-2">{items.length ? items.map((row, index) => <div key={row.item.id}>
@@ -70,14 +69,14 @@ export function ProjectTimeline({ projectId, milestones, canEdit, reload }: {
     </div>) : <p className="empty-inline text-sm text-star-dim">{t("timeline.empty")}</p>}</div>
 
     {canEdit && <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={add}>
-      <label><span className="label">{t("compose.kind")}<HelpTip topic="historyEvents" /></span>
+      <label><span className="label">{t("compose.kind")}</span>
         <select aria-label={t("a11y.timelineKind")} value={kind} onChange={(event) => setKind(event.target.value as Milestone["kind"])}>
           <option value="event">{t("timeline.kindEvent")}</option>
           <option value="milestone">{t("timeline.kindMilestone")}</option>
         </select></label>
       <input name="title" maxLength={80} placeholder={t(kind === "event" ? "project.newHistoryEvent" : "project.newMilestone")} required />
       <input aria-label={t("common.date")} name="due_date" type="date" required={kind === "event"} />
-      <label><span className="label">{t("project.endDateOptional")}<HelpTip topic="milestonePeriods" /></span>
+      <label><span className="label">{t("project.endDateOptional")}</span>
         <input aria-label={t("project.endDateOptional")} name="end_date" type="date" /></label>
       <button className="btn" disabled={busy}>{t(busy ? "common.processing" : "common.add")}</button>
     </form>}

@@ -14,7 +14,8 @@ const STYLE = `
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; background: var(--void); color: var(--star); font: 15px/1.7 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; display: grid; place-items: center; padding: 24px 16px; }
 main { width: 100%; max-width: 520px; background: var(--nexus); border: 1px solid var(--line); border-top: 2px solid var(--gold); padding: 28px 24px; }
-.brand { color: var(--gold); font-weight: 700; letter-spacing: .08em; font-size: 13px; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--gold); font-weight: 700; letter-spacing: .08em; font-size: 13px; }
+.brand img { width: 24px; height: 24px; }
 h1 { font-size: 20px; line-height: 1.5; margin: 8px 0 16px; }
 p { margin: 0 0 12px; }
 .dim { color: var(--dim); font-size: 13px; }
@@ -32,7 +33,7 @@ a { color: var(--psi); }`;
 
 /** Worker 直接輸出的單頁（授權頁、取消通知信），和網站同一套配色。body 由呼叫端負責跳脫。 */
 export function page(title: string, body: string): string {
-  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head><body><main><div class="brand">艾爾水晶</div>${body}</main></body></html>`;
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>${STYLE}</style></head><body><main><div class="brand"><img src="/favicon.svg" alt="" width="24" height="24">艾爾水晶</div>${body}</main></body></html>`;
 }
 
 export function consentPage(details: ConsentDescription, handle: string, user: Pick<AuthUser, "name" | "email">): string {

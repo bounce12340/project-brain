@@ -22,6 +22,8 @@ claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
 
 其他支援 MCP（Streamable HTTP + OAuth）的工具填同一個網址。
 
+表單要圖示時用 <https://projects.uic-ai.com/icon-512.png>（512×512 PNG）。連線時 `initialize` 回傳的 `serverInfo.icons` 也帶著這張圖與 `favicon.svg`，支援 MCP 2025-11-25 圖示欄位的工具會自己顯示。
+
 個人設定頁的「AI 連接器」列出連接器網址、已連接的 AI 工具與權限，可以隨時中斷；中斷後那個工具的 token 立刻失效。
 
 ## 工具

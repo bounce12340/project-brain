@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, patchBody, today } from "../api";
-import { HelpTip } from "../components/HelpTip";
 import { Empty, PageHeader } from "../components/UI";
 import { useT } from "../i18n/LangContext";
 import type { Project } from "../types";
@@ -55,7 +54,7 @@ export function TodosPage() {
   };
 
   return <>
-    <PageHeader title={<>{t("todos.title")}<HelpTip topic="todos" /></>} description={t("todos.description")} />
+    <PageHeader title={t("todos.title")} description={t("todos.description")} />
     {toast && <div className="fixed right-5 top-20 z-50 rounded-lg bg-ok px-4 py-3 text-sm text-white shadow-lg">{toast}</div>}
     <form className="panel mb-6 grid gap-3 md:grid-cols-4" onSubmit={add}>
       <input name="title" placeholder={t("todos.placeholder")} required />

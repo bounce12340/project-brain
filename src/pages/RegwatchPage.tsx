@@ -4,7 +4,6 @@ import { api, patchBody, today } from "../api";
 import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
 import type { RegEntry } from "../types";
 import { useT } from "../i18n/LangContext";
-import { HelpTip } from "../components/HelpTip";
 
 const productLines = ["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"];
 const currentTaipeiYear = Number(today().slice(0, 4));
@@ -141,12 +140,12 @@ export function RegwatchPage() {
   return <><PageHeader title={t("nav.regwatch")} description={t(draftMode ? "regwatch.draftDescription" : "regwatch.description")} actions={data.can_manage && <div className="flex flex-wrap gap-2">{(draftMode || data.pending_count > 0) && <button className="badge border-warn text-warn" onClick={() => { setDraftMode(!draftMode); setPage(1); }}>{draftMode ? t("regwatch.backPublished") : t("regwatch.pending", { count: data.pending_count })}</button>}{draftMode && <button className="btn" onClick={() => void approveAll()}>{t("regwatch.approveAll")}</button>}<button className="btn-secondary" disabled={fetchingTfda} onClick={() => void fetchTfda()}>{t(fetchingTfda ? "regwatch.tfdaFetching" : "regwatch.tfdaFetch")}</button><button className="btn-secondary" onClick={() => setAiOpen(true)}>{t("regwatch.aiImport")}</button><button className="btn" onClick={() => setEditing("new")}>{t("regwatch.new")}</button></div>} />
     {toast && <div className="fixed right-5 top-20 z-50 max-w-lg rounded-lg bg-ok px-4 py-3 text-sm text-white shadow-lg" role="status">{toast}</div>}
     <section className="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-star-dim" aria-label={t("help.fieldGuide")}>
-      <span>{t("regwatch.announcedDate")}<HelpTip topic="announcementDate" /></span>
-      <span>{t("regwatch.productLine")}<HelpTip topic="productLine" /></span>
-      <span>{t("common.category")}<HelpTip topic="category" /></span>
-      <span data-tour="regwatch-drafts">{t("regwatch.tfdaDraft")}<HelpTip topic="tfdaDrafts" /></span>
-      <span data-tour="regwatch-ai-mode">{t("regwatch.mode")}<HelpTip topic="aiImportMode" /></span>
-      <span data-tour="regwatch-attachments">{t("task.attachments")}<HelpTip topic="regwatchAttachments" /></span>
+      <span>{t("regwatch.announcedDate")}</span>
+      <span>{t("regwatch.productLine")}</span>
+      <span>{t("common.category")}</span>
+      <span data-tour="regwatch-drafts">{t("regwatch.tfdaDraft")}</span>
+      <span data-tour="regwatch-ai-mode">{t("regwatch.mode")}</span>
+      <span data-tour="regwatch-attachments">{t("task.attachments")}</span>
     </section>
     <section data-tour="regwatch" className="panel mb-5 flex flex-wrap gap-3"><select aria-label={t("regwatch.productLine")} value={filters.product_line} onChange={(event) => changeFilter("product_line", event.target.value)}><option value="">{t("regwatch.allProducts")}</option>{productLines.map((value) => <option key={value}>{value}</option>)}</select><select aria-label={t("a11y.filterEntryType")} value={filters.entry_type} onChange={(event) => changeFilter("entry_type", event.target.value)}><option value="">{t("regwatch.allTypes")}</option><option value="announcement">{t("regwatch.announcement")}</option><option value="meeting">{t("regwatch.meeting")}</option></select><select aria-label={t("regwatch.year")} value={filters.year} onChange={(event) => changeFilter("year", event.target.value)}><option value="">{t("regwatch.allYears")}</option>{regwatchYears.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label={t("regwatch.month")} value={filters.month} disabled={!filters.year} onChange={(event) => changeFilter("month", event.target.value)}><option value="">{t("regwatch.allMonths")}</option>{regwatchMonths.map(({ value, label }) => <option key={value} value={value}>{t(label)}</option>)}</select><input className="min-w-52 flex-1" placeholder={t("regwatch.search")} value={filters.keyword} onChange={(event) => changeFilter("keyword", event.target.value)} /></section>
     {draftMode && data.can_manage && <section className="mb-3 flex flex-wrap items-center gap-3" aria-label={t("regwatch.selectionTools")}><button className="btn-secondary" type="button" onClick={toggleAll}>{t(allVisibleSelected ? "regwatch.clearSelection" : "regwatch.selectAll")}</button><span className="text-sm text-star-dim" role="status">{t("regwatch.selectedCount", { count: selectedIds.size })}</span></section>}

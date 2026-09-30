@@ -6,7 +6,6 @@ import { api, patchBody } from "../api";
 import type { KeyResult, Metadata } from "../types";
 import { Empty, ErrorBox, Loading } from "./UI";
 import { useT } from "../i18n/LangContext";
-import { HelpTip } from "./HelpTip";
 import type { TransKey } from "../i18n/translations";
 
 function currentQuarter(): string { const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", year: "numeric", month: "numeric" }).formatToParts(); const year = Number(parts.find((part) => part.type === "year")?.value); const month = Number(parts.find((part) => part.type === "month")?.value); return `${year}Q${Math.floor((month - 1) / 3) + 1}`; }
@@ -60,7 +59,7 @@ export function OkrPanel({ projectId, metadata, onChanged }: { projectId: string
   if (loadError) return <ErrorBox message={loadError} />; if (!data) return <Loading />;
   return <section className="panel mt-6"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">OKR</h2><p className="text-sm text-star-dim">{t("okr.description")}</p></div><select aria-label={t("a11y.quarter")} value={quarter} onChange={(event) => setQuarter(event.target.value)}>{quarterOptions().map((value) => <option key={value}>{value}</option>)}</select></div>
     {actionError && <ErrorBox message={actionError} />}
-    <div className="mb-2 text-sm font-semibold text-gold-bright">{t("okr.objectiveLabel")}<HelpTip topic="objective" /></div>
+    <div className="mb-2 text-sm font-semibold text-gold-bright">{t("okr.objectiveLabel")}</div>
     {/* 一個專案的一個季度只會有一個目標——project_quarter_goals 上有 UNIQUE(project_id, quarter)，
         後端是 upsert，所以儲存是覆蓋而不是新增。先前目標只存在於輸入框裡，那個版面跟下方
         「新增 KR」的表單長得一樣，於是被讀成「新增一筆」，按完沒有出現新項目就像壞掉。
@@ -79,7 +78,7 @@ export function OkrPanel({ projectId, metadata, onChanged }: { projectId: string
       </form>
       {data.objective?.objective && <p className="mt-2 text-xs text-star-dim">{t("okr.onePerQuarter")}</p>}
     </>}
-    <div className="mb-2 mt-5 text-sm font-semibold text-gold-bright">{t("okr.keyResultsLabel")}<HelpTip topic="keyResults" /></div>
+    <div className="mb-2 mt-5 text-sm font-semibold text-gold-bright">{t("okr.keyResultsLabel")}</div>
     <DndContext collisionDetection={closestCenter} onDragEnd={(event) => void dragEnd(event)}><SortableContext items={ids} strategy={verticalListSortingStrategy}><div className="space-y-2">{data.key_results.map((item) => <SortableKr key={item.id} item={item} canEdit={data.can_edit} onUpdate={update} onRemove={remove} />)}{data.key_results.length === 0 && <Empty>{t("okr.empty")}</Empty>}</div></SortableContext></DndContext>
     {data.can_edit && <form className="mt-5 grid gap-3 md:grid-cols-4" onSubmit={createKr}><input name="title" placeholder={t("okr.newKr")} required /><select aria-label={t("a11y.krOwner")} name="owner_id"><option value="">{t("okr.noOwner")}</option>{metadata?.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select><select aria-label={t("a11y.krStatus")} name="status"><option value="未開始">{t("okr.notStarted")}</option><option value="進行中">{t("okr.inProgress")}</option><option value="完成">{t("okr.completed")}</option><option value="暫停">{t("okr.paused")}</option></select><input name="note" placeholder={t("common.notes")} /><button className="btn md:col-span-4" disabled={busy}>{t(busy ? "common.processing" : "okr.add")}</button></form>}
   </section>;
