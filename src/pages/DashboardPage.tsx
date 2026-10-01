@@ -85,11 +85,14 @@ export function DashboardPage() {
   if (!data) return <Loading />;
   const selectable = visible.filter((project) => canArchive(project, user));
   const pending = archivableSelection(visible, selected, user).length;
-  const cards = [[t("dashboard.activeProjects"), data.kpis.active_projects, "text-psi"], [t("dashboard.overdueMilestones"), data.kpis.overdue_milestones, "text-danger"], [t("dashboard.todayTodos"), data.kpis.today_todos, "text-warn"], [t("dashboard.weekUpdates"), data.kpis.week_updates, "text-ok"], [`${data.v6.quarter} KR`, `${data.v6.key_results.completed}/${data.v6.key_results.total}`, "text-gold-bright"]] as const;
+  // 只有需要處理的數字才上色：逾期是章紅、今天要做的是琥珀，其他維持墨色。
+  const cards = [[t("dashboard.activeProjects"), data.kpis.active_projects, "text-star"], [t("dashboard.overdueMilestones"), data.kpis.overdue_milestones, data.kpis.overdue_milestones > 0 ? "text-danger" : "text-star"], [t("dashboard.todayTodos"), data.kpis.today_todos, data.kpis.today_todos > 0 ? "text-warn" : "text-star"], [t("dashboard.weekUpdates"), data.kpis.week_updates, "text-star"], [`${data.v6.quarter} KR`, `${data.v6.key_results.completed}/${data.v6.key_results.total}`, "text-star"]] as const;
   return <><PageHeader title={t("nav.dashboard")} description={t("dashboard.description")} />
-    <div data-tour="kpi" className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">{cards.map(([label, value, color]) => <div className="panel !p-4 sm:!p-5" key={label}><p className="text-sm text-star-dim">{label}</p><p className={`mt-1 text-2xl font-black sm:mt-2 sm:text-3xl ${color}`}>{value}</p></div>)}</div>
+    {/* 收文登記簿的一列：五個數字共用一張紙，用細線分欄，不再是五個一樣的方塊。 */}
+    <dl data-tour="kpi" className="mb-6 grid grid-cols-2 gap-px border border-nexus-line bg-nexus-line shadow-[0_1px_0_rgb(var(--color-nexus-line))] lg:grid-cols-5">{cards.map(([label, value, color], index) => <div className={`bg-nexus px-4 py-3 sm:px-5 sm:py-4 ${index === cards.length - 1 ? "col-span-2 lg:col-span-1" : ""}`} key={label}><dt className="text-sm text-star-dim">{label}</dt><dd className={`mt-1 font-serif text-3xl font-bold leading-tight ${color}`}>{value}</dd></div>)}</dl>
     {data.v6.license_alerts.length > 0 && <section className="panel mb-6 border-danger"><h2 className="font-bold text-danger">{t("dashboard.licenseAlerts")}</h2><div className="mt-3 grid gap-3 md:grid-cols-2">{data.v6.license_alerts.map((item) => <Link className="border border-nexus-line p-3 hover:border-danger" to={`/projects/${item.project_id}`} key={item.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.name}</p><p className="text-xs text-star-dim">{item.project_name} · {item.subject}</p></div><span className="badge text-danger">{item.expires_at}</span></div></Link>)}</div></section>}
-    <div className="grid gap-6 lg:grid-cols-3"><section className="panel lg:col-span-2">
+    {/* items-start：左欄專案少的時候不要被右欄撐高，留下一大片空白。 */}
+    <div className="grid items-start gap-6 lg:grid-cols-3"><section className="panel lg:col-span-2">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-bold">{t("dashboard.groupProgress")}<span className="ml-2 text-sm font-normal text-star-dim">{t("common.items", { count: visible.length })}</span></h2>
         <div className="flex flex-wrap items-center gap-3">
@@ -101,12 +104,12 @@ export function DashboardPage() {
       {error && <ErrorBox message={error} />}
       <div className="space-y-4">{visible.length ? visible.map((project) => {
         const expanded = open.has(project.id);
-        return <div className={`border transition hover:shadow-[0_0_14px_rgb(var(--color-psi)/.25)] ${expanded ? "border-psi" : "border-nexus-line"}`} key={project.id}>
+        return <div className={`border border-l-4 bg-nexus-raised transition ${expanded ? "border-psi border-l-psi" : "border-nexus-line border-l-gold-dim hover:border-l-gold"}`} key={project.id}>
           <div className="flex items-start gap-2 p-3">
             {canArchive(project, user) && <label className="touch-target shrink-0 cursor-pointer"><input type="checkbox" className="h-4 w-4" checked={selected.has(project.id)} onChange={() => toggle(project.id)} aria-label={t("dashboard.selectProject", { name: project.name })} /></label>}
             {/* 整列是展開快覽的按鈕；進專案內頁的連結在快覽裡，兩者不能巢狀。 */}
             <button type="button" className="block min-w-0 flex-1 text-left" aria-expanded={expanded} aria-controls={`glance-${project.id}`} aria-label={t("glance.toggle", { name: project.name })} onClick={() => toggleOpen(project.id)}>
-              <div className="mb-2 flex justify-between gap-3"><span className="font-medium"><span aria-hidden="true" className={`mr-1.5 inline-block text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex items-center gap-2 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div>
+              <div className="mb-2 flex justify-between gap-3"><span className="font-serif font-semibold"><span aria-hidden="true" className={`mr-1.5 inline-block font-sans text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex shrink-0 items-center gap-3 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div>
               <ProgressBar value={project.progress} />
             </button>
           </div>

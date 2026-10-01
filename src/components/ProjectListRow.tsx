@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ProgressBar } from "./UI";
+import { ProgressBar, StatusStamp } from "./UI";
 import { ProjectGlance } from "./ProjectGlance";
 import { useT } from "../i18n/LangContext";
 import type { Project } from "../types";
@@ -19,19 +19,19 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
   tour?: boolean;
 }) {
   const t = useT();
-  const statusLabel = { active: t("status.active"), paused: t("status.paused"), done: t("status.done"), archived: t("status.archived") };
-  return <div data-tour={tour ? "project-card" : undefined} className="border border-nexus-line bg-nexus-raised">
+  return <div data-tour={tour ? "project-card" : undefined} className={`border border-l-4 border-nexus-line bg-nexus-raised transition-colors ${expanded ? "border-l-psi" : "border-l-gold-dim hover:border-l-gold"}`}>
     <div className="flex items-center gap-2 px-3">
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
         aria-expanded={expanded} aria-label={t("projects.rowToggle", { name: project.name })} onClick={onToggle}>
         <span aria-hidden="true" className={`shrink-0 text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{project.visibility === "private" && "🔒 "}{project.name}</span>
+          <span className="block truncate font-serif font-semibold">{project.visibility === "private" && "🔒 "}{project.name}</span>
           <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-star-dim">
             <span className="badge">{project.group_name}</span>
             {project.product && <span className="badge">{project.product}</span>}
             {project.site && <span>{project.site}</span>}
-            <span>{statusLabel[project.status]}</span>
+            {/* 進行中是常態不蓋章；只有例外狀態（暫停等）才蓋，才看得出來。 */}
+            {project.status !== "active" && <StatusStamp status={project.status} />}
             {related.length > 0 && <span className="text-psi">{t("projects.related")} {related.length}</span>}
           </span>
         </span>

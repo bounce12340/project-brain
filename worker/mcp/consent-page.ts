@@ -9,14 +9,14 @@ import type { AuthUser } from "../types";
 export const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 const STYLE = `
-:root { color-scheme: dark light; --void:#070b14; --nexus:#0d1526; --line:#1c2a47; --star:#e6edf7; --dim:#93a4c0; --gold:#e8c878; --psi:#35c8ff; --warn:#f0b44c; }
-@media (prefers-color-scheme: light) { :root { --void:#f1ede3; --nexus:#fbf9f4; --line:#d8d0bc; --star:#1b2436; --dim:#55617a; --gold:#8a6d1f; --psi:#0b76b8; --warn:#9a6a14; } }
+:root { color-scheme: light dark; --void:#eceff1; --nexus:#fafbfb; --line:#cdd3d9; --star:#1e2638; --dim:#5b6577; --gold:#1e2638; --psi:#2a5da8; --warn:#9a5b0e; --ink:#1f2a44; --tab:#e3dcc8; }
+@media (prefers-color-scheme: dark) { :root { --void:#12161d; --nexus:#1a2029; --line:#333d4b; --star:#dde2ea; --dim:#9aa3b2; --gold:#e9e4d6; --psi:#8fb6f2; --warn:#e3a852; --ink:#3d65a8; --tab:#34322c; } }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; background: var(--void); color: var(--star); font: 15px/1.7 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; display: grid; place-items: center; padding: 24px 16px; }
-main { width: 100%; max-width: 520px; background: var(--nexus); border: 1px solid var(--line); border-top: 2px solid var(--gold); padding: 28px 24px; }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--gold); font-weight: 700; letter-spacing: .08em; font-size: 13px; }
+main { width: 100%; max-width: 520px; background: var(--nexus); border: 1px solid var(--line); border-top: 6px solid var(--tab); padding: 28px 24px; box-shadow: 0 10px 24px -18px rgba(31, 42, 68, .45); }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--gold); font-weight: 700; letter-spacing: .04em; font-size: 14px; font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
 .brand img { width: 24px; height: 24px; }
-h1 { font-size: 20px; line-height: 1.5; margin: 8px 0 16px; }
+h1 { font-size: 20px; line-height: 1.5; margin: 8px 0 16px; font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
 p { margin: 0 0 12px; }
 .dim { color: var(--dim); font-size: 13px; }
 .warn { border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; font-size: 14px; margin: 0 0 16px; }
@@ -26,7 +26,7 @@ label { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0; }
 input[type=checkbox] { margin-top: 5px; width: 16px; height: 16px; accent-color: var(--psi); flex: none; }
 .actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
 button { font: inherit; padding: 10px 20px; border: 1px solid var(--psi); cursor: pointer; min-height: 44px; }
-.allow { background: var(--psi); color: #04121c; font-weight: 700; }
+.allow { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; }
 .deny { background: transparent; color: var(--star); border-color: var(--line); }
 strong { color: var(--star); }
 a { color: var(--psi); }`;

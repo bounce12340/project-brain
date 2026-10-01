@@ -25,14 +25,13 @@ export function NavMenu({ group, active, compact = false }: { group: NavGroup; a
   }, [open]);
 
   const label = t(group.label);
-  const trigger = compact
-    ? `whitespace-nowrap border-b-2 px-2 py-1.5 text-sm ${active ? "border-psi text-psi" : "border-transparent text-star-dim"}`
-    : `border-b-2 px-3 py-2 text-sm font-medium ${active ? "border-psi text-psi" : "border-transparent text-star-dim hover:bg-nexus-raised hover:text-star"}`;
-  return <div ref={rootRef} className="relative">
-    <button ref={buttonRef} type="button" data-tour={group.tour} className={`${trigger} inline-flex items-center gap-1`} aria-expanded={open} aria-controls={listId} aria-label={t("nav.menu", { label })} onClick={() => setOpen(!open)}>
+  // 和其他導覽項目一樣是頁籤；所在頁面屬於這個選單時，頁籤就是打開的那一張。
+  const trigger = `nav-tab whitespace-nowrap ${compact ? "!px-2" : ""} ${active || open ? "is-active" : ""}`;
+  return <div ref={rootRef} className="relative flex self-stretch">
+    <button ref={buttonRef} type="button" data-tour={group.tour} className={trigger} aria-expanded={open} aria-controls={listId} aria-label={t("nav.menu", { label })} onClick={() => setOpen(!open)}>
       {label}<span aria-hidden="true" className={`text-xs transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
     </button>
-    {open && <ul id={listId} className="absolute left-0 top-full z-40 mt-1 min-w-44 border border-gold-dim bg-nexus py-1 shadow-2xl">
+    {open && <ul id={listId} className="absolute left-0 top-full z-40 min-w-44 border border-t-0 border-gold bg-void py-1 shadow-[0_14px_28px_-12px_rgb(var(--color-psi-deep)/.45)]">
       {group.items.map((item) => <li key={item.to}><NavLink to={item.to} end={item.to === "/projects"} onClick={() => setOpen(false)} className={({ isActive }) => `flex w-full items-center justify-start whitespace-nowrap px-4 py-2 text-sm ${isActive ? "bg-nexus-raised font-semibold text-psi" : "text-star hover:bg-nexus-raised hover:text-psi"}`}>{t(item.label)}</NavLink></li>)}
     </ul>}
   </div>;

@@ -6,16 +6,10 @@ const crystal = readFileSync(resolve("src/components/AuthCrystal.tsx"), "utf8");
 const css = readFileSync(resolve("src/styles.css"), "utf8");
 
 describe("v9.1 auth crystal", () => {
-  it("uses the specified slender six-facet SVG geometry and gold frame", () => {
-    expect(crystal).toContain('viewBox="0 0 100 180"');
-    expect(crystal.match(/<polygon/g)).toHaveLength(8);
-    for (const color of ["#1A6FA8", "#35C8FF", "#12507E", "#2AA6DB", "#0E3A5C", "#1E86C2"]) {
-      expect(crystal).toContain(`fill="${color}"`);
-    }
-    expect(crystal).toContain('points="50,4 78,42 70,130 50,176 30,130 22,42"');
-    expect(crystal).toContain('stroke="#C8A24A"');
-    expect(crystal).toContain('strokeWidth="1.5"');
-    expect((78 - 22) / (176 - 4)).toBeLessThanOrEqual(0.6);
+  it("shows the static brand emblem (the site icon) instead of the glowing SVG crystal", () => {
+    expect(crystal).toContain('src="/favicon.svg"');
+    expect(crystal).toContain('aria-hidden="true"');
+    expect(crystal).not.toContain("<polygon");
   });
 
   it("keeps the shared crystal in normal flow before auth headings", () => {
@@ -33,10 +27,12 @@ describe("v9.1 auth crystal", () => {
     expect(css).not.toContain(".login-panel::after");
   });
 
-  it("uses an 80px crystal, theme-specific halo, and reduced-motion fallback", () => {
-    expect(css).toMatch(/\.auth-crystal-svg\s*\{[^}]*height: 80px/);
-    expect(css).toContain(':root[data-theme="light"] .auth-crystal-halo');
-    expect(css).toContain("animation: crystal-pulse 4s ease-in-out infinite");
-    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*\.auth-crystal-halo\s*\{ animation: none; \}/);
+  it("keeps the cover quiet: no pulsing halo or drifting stars, UIC INTERNAL is a stamp", () => {
+    expect(css).toMatch(/\.auth-crystal-svg\s*\{[^}]*height: 56px/);
+    expect(css).not.toContain("crystal-pulse");
+    expect(css).not.toContain("star-drift");
+    for (const file of ["src/pages/LoginPage.tsx", "src/pages/RegisterPage.tsx"]) {
+      expect(readFileSync(resolve(file), "utf8")).toContain('<span className="stamp stamp-red !text-sm">{t("app.internal")}</span>');
+    }
   });
 });

@@ -16,11 +16,11 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => { api<{ unread: number }>("/notifications").then((data) => setUnread(data.unread)).catch(() => undefined); }, []);
   const notificationsLabel = unread > 0 ? t("nav.unread", { label: t("nav.notifications"), count: unread }) : t("nav.notifications");
   return <div className="min-h-screen bg-void">
-    <nav data-tour="nav" className="sticky top-0 z-30 border-b border-gold bg-void/95 backdrop-blur">
+    <nav data-tour="nav" className="sticky top-0 z-30 border-b border-gold backdrop-blur">
       {/* 手機上圖示佔掉的寬度從間距拿回來，否則 360–390px 的「登出」會被擠成兩行。 */}
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 lg:gap-5">
-        <NavLink to="/" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-base font-black text-gold-bright sm:text-lg lg:mr-2 lg:gap-2"><img src="/favicon.svg" alt="" width={24} height={24} className="h-6 w-6 lg:h-7 lg:w-7" />{t("app.brand")}</NavLink>
-        <div className="hidden flex-1 items-center gap-1 lg:flex">
+        <NavLink to="/" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-serif text-base font-bold text-gold-bright sm:text-lg lg:mr-2 lg:gap-2"><img src="/favicon.svg" alt="" width={24} height={24} className="h-6 w-6 lg:h-7 lg:w-7" />{t("app.brand")}</NavLink>
+        <div className="hidden flex-1 items-end gap-1 self-stretch lg:flex">
           <NavLink to="/" end className={({ isActive }) => topLink(isActive)}>{t("nav.dashboard")}</NavLink>
           {NAV_GROUPS.map((group) => <NavMenu key={group.key} group={group} active={activeGroup === group.key} />)}
           <NavLink data-tour="notification-nav" to="/notifications" className={({ isActive }) => `relative ${topLink(isActive)} ${unread > 0 ? "has-unread" : ""}`}>{notificationsLabel}</NavLink>
@@ -30,7 +30,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
       {/* 手機版同一套階層：最上層只剩四、五項，不必再橫向捲動，展開的選單也不會被捲動容器裁掉。
           左右內距收到 px-2，管理員多一個「管理」時 360px 也還是一行；觸控範圍仍有 44px。 */}
-      <div className="flex flex-wrap gap-0.5 border-t border-gold-dim px-2 py-2 lg:hidden">
+      <div className="flex flex-wrap items-end gap-0.5 border-t border-gold-dim/60 px-2 lg:hidden">
         <NavLink to="/" end className={({ isActive }) => mobileLink(isActive)}>{t("nav.dashboard")}</NavLink>
         {NAV_GROUPS.map((group) => <NavMenu key={group.key} group={group} active={activeGroup === group.key} compact />)}
         <NavLink to="/notifications" className={({ isActive }) => `relative ${mobileLink(isActive)} ${unread > 0 ? "has-unread" : ""}`}>{notificationsLabel}</NavLink>
@@ -41,5 +41,6 @@ export function Layout({ children }: { children: ReactNode }) {
   </div>;
 }
 
-const topLink = (isActive: boolean) => `border-b-2 px-3 py-2 text-sm font-medium ${isActive ? "border-psi text-psi" : "border-transparent text-star-dim hover:bg-nexus-raised hover:text-star"}`;
-const mobileLink = (isActive: boolean) => `whitespace-nowrap border-b-2 px-2 py-1.5 text-sm ${isActive ? "border-psi text-psi" : "border-transparent text-star-dim"}`;
+// 導覽項目是卷宗的頁籤（樣式在 styles.css 的 .nav-tab）：目前所在的那一張和桌面同色、接到底下的頁面。
+const topLink = (isActive: boolean) => `nav-tab ${isActive ? "is-active" : ""}`;
+const mobileLink = (isActive: boolean) => `nav-tab whitespace-nowrap !px-2 ${isActive ? "is-active" : ""}`;

@@ -15,12 +15,20 @@ export function Empty({ children }: { children: ReactNode }) { return <div class
 export function ErrorBox({ message }: { message: string }) { const t = useT(); return <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger">{translateBackendError(message, t)}</div>; }
 export function Loading() { const t = useT(); return <div className="py-20 text-center text-star-dim">{t("common.loading")}</div>; }
 
+/** 專案狀態蓋成章：進行中是墨色、暫停琥珀、完成綠、歸檔淡墨。 */
+export function StatusStamp({ status }: { status: "active" | "paused" | "done" | "archived" }) {
+  const t = useT();
+  const tone = { active: "stamp-ink", paused: "stamp-amber", done: "stamp-green", archived: "stamp-faint" }[status];
+  return <span className={`stamp ${tone}`}>{t(`status.${status}`)}</span>;
+}
+
 export function RiskBadge({ level }: { level?: string | null }) {
   const t = useT();
-  if (!level) return <span className="badge">{t("risk.unanalyzed")}</span>;
+  // 還沒分析就不蓋章——章代表有結論。
+  if (!level) return <span className="text-xs text-star-dim">{t("risk.unanalyzed")}</span>;
   const style = level === "high" ? "risk-high" : level === "medium" ? "risk-medium" : "risk-low";
   const label = level === "high" ? t("risk.high") : level === "medium" ? t("risk.medium") : t("risk.low");
-  return <span className={`inline-flex px-2.5 py-1 text-xs font-semibold ${style}`}>{label}</span>;
+  return <span className={style}>{label}</span>;
 }
 
 export function Markdown({ content }: { content: string }) {

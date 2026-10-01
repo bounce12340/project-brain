@@ -26,10 +26,10 @@ export function AiSidebar() {
   return <>
     {/* 名稱固定為「AI 小幫手」，開合狀態交給 aria-expanded。名稱跟著狀態變的話，
         面板打開時它會跟標題列的「收起」同名，靠名稱定位的工具就分不出要按哪一顆。 */}
-    <button className="btn-secondary fixed bottom-5 right-5 z-40 !px-4 shadow-lg" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
+    <button className="fixed bottom-6 right-0 z-40 border border-r-0 border-gold bg-[rgb(var(--color-tab))] px-3 py-2 font-serif text-sm font-semibold text-star shadow-[0_8px_18px_-10px_rgb(var(--color-psi-deep)/.5)] hover:bg-nexus" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
       {t("ai.open")}
     </button>
-    {open && <aside aria-label={t("ai.title")} className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-gold bg-void shadow-2xl sm:w-[26rem]">
+    {open && <aside aria-label={t("ai.title")} className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-gold bg-nexus shadow-2xl sm:w-[26rem]">
       <header className="flex items-center gap-2 border-b border-gold-dim px-4 py-3">
         <h2 className="flex-1 text-base font-semibold text-gold-bright">{t("ai.title")}</h2>
         <button className="text-sm text-star-dim" aria-label={t("ai.close")} onClick={() => { setOpen(false); writeOpen(false); }}>✕</button>

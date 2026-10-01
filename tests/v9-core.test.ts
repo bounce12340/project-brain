@@ -37,19 +37,23 @@ describe("v9 i18n", () => {
 });
 
 describe("v9 theme", () => {
-  it("defaults theme to dark and restores only a valid light preference", () => {
-    expect(normalizeTheme(undefined)).toBe("dark");
-    expect(readStoredTheme({ getItem: (key) => key === THEME_STORAGE_KEY ? "light" : null })).toBe("light");
-    expect(readStoredTheme({ getItem: () => "system" })).toBe("dark");
+  it("defaults to the light dossier theme and restores only a valid dark preference", () => {
+    expect(normalizeTheme(undefined)).toBe("light");
+    expect(readStoredTheme({ getItem: (key) => key === THEME_STORAGE_KEY ? "dark" : null })).toBe("dark");
+    expect(readStoredTheme({ getItem: () => "system" })).toBe("light");
   });
   it("defines both token palettes and a pre-render FOUC guard", () => {
     const css = readFileSync(resolve("src/styles.css"), "utf8");
     const html = readFileSync(resolve("index.html"), "utf8");
     expect(css).toContain(':root[data-theme="dark"]'); expect(css).toContain(':root[data-theme="light"]');
-    expect(html).toContain('localStorage.getItem("AIUR_THEME")'); expect(html).toContain('data-theme="dark"');
+    expect(html).toContain('localStorage.getItem("AIUR_THEME")'); expect(html).toContain('data-theme="light"'); expect(html).toContain('t==="dark"?"dark":"light"');
   });
   it("meets light-palette contrast targets for text and interactive colors", () => {
-    const colors = { void: "#F1EDE3", nexus: "#FBF9F4", raised: "#FFFFFF", goldBright: "#8A6D1F", psi: "#0B76B8", star: "#1B2436", starDim: "#55617A", ok: "#1F7A56", warn: "#9A6A14", danger: "#C22F40" };
+    // 送審卷宗的淺色 token（styles.css 的 :root）
+    const colors = { void: "#ECEFF1", nexus: "#FAFBFB", raised: "#FFFFFF", goldBright: "#1E2638", psi: "#2A5DA8", star: "#1E2638", starDim: "#5B6577", ok: "#2F7A5B", warn: "#9A5B0E", danger: "#B23A3A" };
+    const css = readFileSync(resolve("src/styles.css"), "utf8");
+    const rgb = (hex: string) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)).join(" ");
+    for (const [token, hex] of [["void", colors.void], ["nexus", colors.nexus], ["psi", colors.psi], ["star", colors.star], ["star-dim", colors.starDim], ["ok", colors.ok], ["warn", colors.warn], ["danger", colors.danger]] as const) expect(css, token).toContain(`--color-${token}: ${rgb(hex)};`);
     expect(contrast(colors.star, colors.nexus)).toBeGreaterThanOrEqual(7);
     expect(contrast(colors.starDim, colors.nexus)).toBeGreaterThanOrEqual(4.5);
     for (const key of ["goldBright", "psi", "ok", "warn", "danger"] as const) expect(contrast(colors[key], colors.raised), key).toBeGreaterThanOrEqual(3);
