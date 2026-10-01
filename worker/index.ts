@@ -10,6 +10,7 @@ import { AUTHORIZATION_SERVER_METADATA_PATH, withoutIssuerIdentification } from 
 import { runDailyWorkflow } from "./services/cron";
 import { regenerateMonthlyReports, regenerateWeeklyReports } from "./services/reports";
 import { scheduledJobForCron } from "./services/schedule";
+import { refreshStaleProjectRisks } from "./services/project-risk";
 
 const app = new Hono<AppContext>();
 
@@ -70,6 +71,9 @@ export default {
     }
     else if (job === "weekly-reports") ctx.waitUntil(regenerateWeeklyReports(env).then((result) => console.log(JSON.stringify({ message: "AI 週報完成", ...result }))));
     else if (job === "monthly-reports") ctx.waitUntil(regenerateMonthlyReports(env).then((result) => console.log(JSON.stringify({ message: "AI 月報完成", ...result }))));
+    else if (job === "project-risk") ctx.waitUntil(refreshStaleProjectRisks(env).then((result) => {
+      if (result.analyzed || result.failed) console.log(JSON.stringify({ message: "AI 風險分析排程", ...result }));
+    }).catch((error) => console.error(JSON.stringify({ message: "AI 風險分析排程失敗", error: String(error) }))));
     else console.log(JSON.stringify({ message: "未知排程", cron: controller.cron }));
   },
 } satisfies ExportedHandler<Env>;

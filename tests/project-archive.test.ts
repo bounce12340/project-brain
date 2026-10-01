@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVE_STATUSES, ARCHIVE_STATUSES, archiveDate, archiveSummary,
+  ACTIVE_STATUSES, ARCHIVE_STATUSES, archiveDate, archivePeriod, archiveSummary, plainExcerpt,
   archivableSelection, bucketOf, bucketStatuses, canArchive, deleteConfirmed, groupArchiveByYear, ongoingOnly, statusQuery,
 } from "../src/project-archive";
 import { requestedStatuses } from "../worker/routes/projects";
@@ -172,5 +172,22 @@ describe("deleteConfirmed", () => {
     expect(deleteConfirmed("確定", "刪除")).toBe(false);
     expect(deleteConfirmed("刪", "刪除")).toBe(false);
     expect(deleteConfirmed("刪除專案", "刪除")).toBe(false);
+  });
+});
+
+describe("歸檔長條的簡歷", () => {
+  it("把專案背景的 Markdown 符號拿掉，只留文字", () => {
+    expect(plainExcerpt("## 背景\n- **TFDA** 查驗登記\n- 參考 [官網](https://example.com)\n\n> 注意 `CTD` 格式")).toBe("背景 TFDA 查驗登記 參考 官網 注意 CTD 格式");
+  });
+
+  it("太長就截斷補「…」，空的回空字串", () => {
+    expect(plainExcerpt("一二三四五六", 4)).toBe("一二三四…");
+    expect(plainExcerpt("一二三四", 4)).toBe("一二三四");
+    expect(plainExcerpt(null)).toBe("");
+  });
+
+  it("期間是起始日到歸檔日；沒有起始日就只有歸檔日", () => {
+    expect(archivePeriod({ start_date: "2026-01-05", archived_at: "2026-08-27 03:07:26", last_activity_at: "2026-08-20" })).toEqual({ start: "2026-01-05", end: "2026-08-27" });
+    expect(archivePeriod({ start_date: null, archived_at: null, last_activity_at: "2026-08-20 10:00:00" })).toEqual({ start: null, end: "2026-08-20" });
   });
 });

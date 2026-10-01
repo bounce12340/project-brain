@@ -94,3 +94,25 @@ export function deleteConfirmed(typed: string | null | undefined, required: stri
   if (typeof typed !== "string") return false;
   return typed.trim().toLowerCase() === required.trim().toLowerCase();
 }
+
+/**
+ * 歸檔長條上的一句簡介：專案背景是 Markdown，拿掉標題、清單、粗體、連結等符號後取前段。
+ * 太長時在 max 字截斷並補「…」。
+ */
+export function plainExcerpt(text: string | null | undefined, max = 140): string {
+  const plain = (text ?? "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_`~|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const chars = [...plain];
+  return chars.length > max ? `${chars.slice(0, max).join("").trimEnd()}…` : plain;
+}
+
+/** 歸檔長條的「期間」：起始日到歸檔日（沒有起始日就只寫歸檔日）。 */
+export function archivePeriod(project: Pick<Project, "start_date" | "archived_at" | "last_activity_at">): { start: string | null; end: string } {
+  return { start: project.start_date ? project.start_date.slice(0, 10) : null, end: archiveDate(project) };
+}

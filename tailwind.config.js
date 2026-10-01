@@ -14,7 +14,9 @@ export default {
         danger: "rgb(var(--color-danger) / <alpha-value>)"
       },
       fontFamily: {
-        sans: ["Noto Sans TC", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"]
+        sans: ["Noto Sans TC", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "PingFang TC", "Microsoft JhengHei", "sans-serif"],
+        // 標題與章用明體，像公文與送審文件；沒載到時退回系統的宋體／新細明體。
+        serif: ["Noto Serif TC", "Songti TC", "PMingLiU", "MingLiU", "serif"]
       },
       fontSize: {
         xs: ["13px", { lineHeight: "18px" }],

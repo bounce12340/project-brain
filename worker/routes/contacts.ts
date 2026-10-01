@@ -15,6 +15,7 @@ export const CONTACT_FIELDS = {
   department: 100,
   name: 60,
   title: 60,
+  phone_area: 8,
   phone: 60,
   mobile: 60,
   email: 200,
@@ -22,7 +23,7 @@ export const CONTACT_FIELDS = {
   notes: 2000,
 } as const;
 type ContactField = keyof typeof CONTACT_FIELDS;
-const LABELS: Record<ContactField, string> = { organization: "醫院／公司", department: "部門", name: "姓名", title: "職稱", phone: "電話", mobile: "手機", email: "Email", address: "地址", notes: "備註" };
+const LABELS: Record<ContactField, string> = { organization: "醫院／公司", department: "部門", name: "姓名", title: "職稱", phone_area: "區碼", phone: "電話", mobile: "手機", email: "Email", address: "地址", notes: "備註" };
 const REQUIRED: ContactField[] = ["organization", "name"];
 
 interface ContactRow { id: string; organization: string; name: string; created_by: string | null }
@@ -38,10 +39,12 @@ function cleanFields(body: Record<string, unknown>, partial: boolean): { error: 
     const raw = body[field];
     if (raw !== null && raw !== undefined && typeof raw !== "string") return { error: `${LABELS[field]}格式不正確` };
     const text = (raw ?? "").normalize("NFC");
-    const value = field === "notes" || field === "address" ? text.trim() : text.replace(/\s+/g, " ").trim();
+    // 區碼常被寫成「(02)」或「02 」：括號與空白拿掉，只留數字（國際碼可帶 +）。
+    const value = field === "phone_area" ? text.replace(/[()\s]/g, "") : field === "notes" || field === "address" ? text.trim() : text.replace(/\s+/g, " ").trim();
     if (REQUIRED.includes(field) && !value) return { error: `請填寫${LABELS[field]}` };
     if ([...value].length > max) return { error: `${LABELS[field]}不能超過 ${max} 字` };
     if (field === "email" && value && !isValidEmail(value.toLowerCase())) return { error: "Email 格式不正確" };
+    if (field === "phone_area" && !/^\+?\d*$/.test(value)) return { error: "區碼只能填數字，例如 02" };
     values[field] = field === "email" ? value.toLowerCase() : value;
   }
   return { values };

@@ -12,7 +12,7 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const OVERDUE_SITES = [
   ["儀表板 KPI", "worker/routes/general.ts"],
   ["報表的逾期清單", "worker/services/reports.ts"],
-  ["AI 風險輸入", "worker/routes/reports.ts"],
+  ["AI 風險輸入", "worker/services/project-risk.ts"],
   ["每日提醒信", "worker/services/cron.ts"],
 ] as const;
 

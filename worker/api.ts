@@ -14,6 +14,7 @@ import { adminImportRoutes, importRoutes } from "./routes/import";
 import { v7Routes } from "./routes/v7";
 import { mcpGrantRoutes } from "./routes/mcp-grants";
 import { contactsRoutes } from "./routes/contacts";
+import { meetingsRoutes } from "./routes/meetings";
 
 /**
  * 掛上所有 /api 路由。網站（登入 cookie）與 MCP 連接器（OAuth token）共用同一份，
@@ -36,6 +37,7 @@ export function mountApiRoutes(app: Hono<AppContext>): void {
   app.route("/api", importRoutes);
   app.route("/api", mcpGrantRoutes);
   app.route("/api", contactsRoutes);
+  app.route("/api", meetingsRoutes);
   app.route("/api/admin", adminImportRoutes);
   app.route("/api/admin", adminRoutes);
 }
