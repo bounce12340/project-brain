@@ -30,7 +30,7 @@ describe("SPEC-V12-4 history event model and progress exclusions", () => {
       "../worker/services/cron.ts",
       "../worker/services/reports.ts",
       "../worker/routes/general.ts",
-      "../worker/routes/reports.ts",
+      "../worker/services/project-risk.ts",
     ];
     for (const path of files) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");

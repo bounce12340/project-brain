@@ -8,11 +8,11 @@ import type { TransKey } from "../i18n/translations";
 /** 聯絡人資料庫：外部醫院、公司的窗口。大家都能查看、新增與修改；刪除限建立的人與管理員。 */
 interface Contact {
   id: string; organization: string; department: string; name: string; title: string;
-  phone: string; mobile: string; email: string; address: string; notes: string;
+  phone_area: string; phone: string; mobile: string; email: string; address: string; notes: string;
   created_by: string | null; created_by_name: string | null; updated_by_name: string | null; updated_at: string;
 }
-type Draft = Pick<Contact, "organization" | "department" | "name" | "title" | "phone" | "mobile" | "email" | "address" | "notes">;
-const EMPTY: Draft = { organization: "", department: "", name: "", title: "", phone: "", mobile: "", email: "", address: "", notes: "" };
+type Draft = Pick<Contact, "organization" | "department" | "name" | "title" | "phone_area" | "phone" | "mobile" | "email" | "address" | "notes">;
+const EMPTY: Draft = { organization: "", department: "", name: "", title: "", phone_area: "", phone: "", mobile: "", email: "", address: "", notes: "" };
 const FIELDS: ReadonlyArray<{ key: keyof Draft; label: TransKey; type?: string; max: number; required?: boolean; wide?: boolean; placeholder?: TransKey }> = [
   { key: "organization", label: "contacts.organization", max: 100, required: true, placeholder: "contacts.organizationPlaceholder" },
   { key: "department", label: "contacts.department", max: 100 },
@@ -23,6 +23,9 @@ const FIELDS: ReadonlyArray<{ key: keyof Draft; label: TransKey; type?: string; 
   { key: "email", label: "contacts.email", type: "email", max: 200 },
   { key: "address", label: "contacts.address", max: 300, wide: true },
 ];
+
+/** 「(02) 2312-3456」：區碼放括號裡；沒有區碼就只顯示號碼。 */
+export const formatPhone = (area: string, phone: string) => [area && `(${area})`, phone].filter(Boolean).join(" ");
 
 /** 全形半形、大小寫不影響搜尋。 */
 const fold = (value: string) => value.normalize("NFKC").toLowerCase();
@@ -39,7 +42,7 @@ export function ContactsPage() {
   const shown = useMemo(() => {
     const words = fold(query).split(/\s+/).filter(Boolean);
     if (!contacts || !words.length) return contacts ?? [];
-    return contacts.filter((contact) => { const text = fold([contact.organization, contact.department, contact.name, contact.title, contact.phone, contact.mobile, contact.email, contact.address, contact.notes].join(" ")); return words.every((word) => text.includes(word)); });
+    return contacts.filter((contact) => { const text = fold([contact.organization, contact.department, contact.name, contact.title, contact.phone_area, contact.phone, formatPhone(contact.phone_area, contact.phone), contact.mobile, contact.email, contact.address, contact.notes].join(" ")); return words.every((word) => text.includes(word)); });
   }, [contacts, query]);
 
   // 編輯的卡片可能在很下面，表單在最上面：打開時捲過去並把游標放進第一格。
@@ -64,7 +67,7 @@ export function ContactsPage() {
   const form = editing && <form className="panel mb-6" onSubmit={save} aria-labelledby="contact-form-title">
     <h2 id="contact-form-title" className="mb-4 font-bold">{t(editing.id ? "contacts.editTitle" : "contacts.newTitle")}</h2>
     <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-      {FIELDS.map((field) => <div key={field.key} className={field.wide ? "sm:col-span-2" : ""}><label className="label" htmlFor={`contact-${field.key}`}>{t(field.label)}{field.required && <span className="text-danger"> *</span>}</label><input id={`contact-${field.key}`} className="w-full" type={field.type ?? "text"} maxLength={field.max} required={field.required} placeholder={field.placeholder ? t(field.placeholder) : undefined} value={editing.draft[field.key]} onChange={(event) => setField(field.key, event.target.value)} /></div>)}
+      {FIELDS.map((field) => field.key === "phone" ? <div key="phone"><label className="label" htmlFor="contact-phone">{t("contacts.phone")}</label><div className="flex gap-2"><input id="contact-phone_area" aria-label={t("contacts.phoneArea")} className="w-20 shrink-0" type="tel" inputMode="numeric" maxLength={8} placeholder={t("contacts.phoneAreaPlaceholder")} value={editing.draft.phone_area} onChange={(event) => setField("phone_area", event.target.value)} /><input id="contact-phone" className="min-w-0 flex-1" type="tel" maxLength={60} placeholder={t("contacts.phonePlaceholder")} value={editing.draft.phone} onChange={(event) => setField("phone", event.target.value)} /></div></div> : <div key={field.key} className={field.wide ? "sm:col-span-2" : ""}><label className="label" htmlFor={`contact-${field.key}`}>{t(field.label)}{field.required && <span className="text-danger"> *</span>}</label><input id={`contact-${field.key}`} className="w-full" type={field.type ?? "text"} maxLength={field.max} required={field.required} placeholder={field.placeholder ? t(field.placeholder) : undefined} value={editing.draft[field.key]} onChange={(event) => setField(field.key, event.target.value)} /></div>)}
       <div className="sm:col-span-2"><label className="label" htmlFor="contact-notes">{t("contacts.notes")}</label><textarea id="contact-notes" className="w-full" rows={3} maxLength={2000} placeholder={t("contacts.notesPlaceholder")} value={editing.draft.notes} onChange={(event) => setField("notes", event.target.value)} /></div>
     </div>
     {error && <div className="mt-4"><ErrorBox message={error} /></div>}
@@ -82,7 +85,7 @@ export function ContactsPage() {
         <p className="text-xs font-semibold text-gold-bright break-words">{contact.organization}{contact.department && <span className="text-star-dim"> · {contact.department}</span>}</p>
         <h2 className="mt-1 text-lg font-bold break-words">{contact.name}{contact.title && <span className="ml-2 text-sm font-normal text-star-dim">{contact.title}</span>}</h2>
         <dl className="mt-3 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
-          {contact.phone && <><dt className="text-star-dim">{t("contacts.phone")}</dt><dd className="break-all"><a className="text-psi" href={`tel:${contact.phone.replace(/[^\d+#,]/g, "")}`}>{contact.phone}</a></dd></>}
+          {(contact.phone || contact.phone_area) && <><dt className="text-star-dim">{t("contacts.phone")}</dt><dd className="break-all"><a className="text-psi" href={`tel:${`${contact.phone_area}${contact.phone}`.replace(/[^\d+#,]/g, "")}`}>{formatPhone(contact.phone_area, contact.phone)}</a></dd></>}
           {contact.mobile && <><dt className="text-star-dim">{t("contacts.mobile")}</dt><dd className="break-all"><a className="text-psi" href={`tel:${contact.mobile.replace(/[^\d+]/g, "")}`}>{contact.mobile}</a></dd></>}
           {contact.email && <><dt className="text-star-dim">{t("contacts.email")}</dt><dd className="break-all"><a className="text-psi" href={`mailto:${contact.email}`}>{contact.email}</a></dd></>}
           {contact.address && <><dt className="text-star-dim">{t("contacts.address")}</dt><dd className="break-words">{contact.address}</dd></>}

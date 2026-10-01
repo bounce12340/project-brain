@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../worker/index";
 import { sha256 } from "../worker/services/crypto";
@@ -14,7 +15,7 @@ const as = (userId: string, path: string, init: RequestInit = {}) => worker.fetc
 const create = (userId: string, body: unknown) => as(userId, "/contacts", { method: "POST", body: JSON.stringify(body) });
 const list = async (userId = "elvis") => (await (await as(userId, "/contacts")).json() as { contacts: Array<Record<string, string | null>> }).contacts;
 
-const NTUH = { organization: "臺大醫院", department: "藥劑部", name: "王小明", title: "主任", phone: "02-2312-3456 #1234", mobile: "0912-345-678", email: "Ming.Wang@NTUH.gov.tw", address: "台北市中正區中山南路 7 號", notes: "負責新藥進用\n週三下午較好聯絡" };
+const NTUH = { organization: "臺大醫院", department: "藥劑部", name: "王小明", title: "主任", phone_area: "02", phone: "2312-3456 #1234", mobile: "0912-345-678", email: "Ming.Wang@NTUH.gov.tw", address: "台北市中正區中山南路 7 號", notes: "負責新藥進用\n週三下午較好聯絡" };
 
 beforeEach(async () => {
   const { db } = createTestD1();
@@ -101,6 +102,35 @@ describe("刪除", () => {
       { user_id: "elvis", summary: "刪除聯絡人「A／一」" },
       { user_id: "boss", summary: "刪除聯絡人「B／二」" },
     ]);
+  });
+});
+
+describe("電話區碼獨立一格", () => {
+  it("區碼的括號與空白拿掉，只收數字（國際碼可帶 +）", async () => {
+    expect((await create("elvis", { organization: "A", name: "一", phone_area: " (04) ", phone: "3702-2680" })).status).toBe(201);
+    expect((await create("elvis", { organization: "B", name: "二", phone_area: "+886", phone: "2-2312-3456" })).status).toBe(201);
+    const [first, second] = await list();
+    expect([first.phone_area, first.phone]).toEqual(["04", "3702-2680"]);
+    expect(second.phone_area).toBe("+886");
+    const refused = await create("elvis", { organization: "C", name: "三", phone_area: "台北" });
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toEqual({ error: "區碼只能填數字，例如 02" });
+  });
+
+  it("既有資料：看得出區碼的才拆開，手機門號與分機不受影響", async () => {
+    const rows = [
+      ["a", "04-3702-2680", "04", "3702-2680"],
+      ["b", "(02)2312-3456 #12", "02", "2312-3456 #12"],
+      ["c", "049-222-3333", "049", "222-3333"],
+      ["d", "0912-345-678", "", "0912-345-678"],
+      ["e", "23123456", "", "23123456"],
+      ["f", "", "", ""],
+    ];
+    for (const [id, phone] of rows) await env.DB.prepare("INSERT INTO contacts (id,organization,name,phone) VALUES (?,?,?,?)").bind(id, `機構${id}`, `人${id}`, phone).run();
+    // 套用 migration 裡拆區碼的那兩段（欄位已經在測試資料庫裡了）
+    const migration = readFileSync(new URL("../migrations/0020_contact_phone_area.sql", import.meta.url), "utf8");
+    for (const statement of migration.split(";").map((part) => part.replace(/^\s*--.*$/gm, "").trim()).filter((part) => part.startsWith("UPDATE"))) await env.DB.prepare(statement).run();
+    for (const [id, , area, phone] of rows) expect(await env.DB.prepare("SELECT phone_area, phone FROM contacts WHERE id=?").bind(id).first(), id).toEqual({ phone_area: area, phone });
   });
 });
 

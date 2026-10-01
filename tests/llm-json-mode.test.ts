@@ -10,7 +10,8 @@ import { buildPlanPrompt } from "../worker/services/assistant";
  * 參考：https://api-docs.deepseek.com/guides/json_mode
  */
 
-const routes = readFileSync(new URL("../worker/routes/reports.ts", import.meta.url), "utf8");
+// AI 風險分析的提詞搬到 services/project-risk.ts（排程與路由共用），一起檢查。
+const routes = ["../worker/routes/reports.ts", "../worker/services/project-risk.ts"].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 
 /**
  * 取出每一個帶 `json: true` 的 llmChat 呼叫的提詞部分。

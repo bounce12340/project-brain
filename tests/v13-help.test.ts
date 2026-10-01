@@ -48,9 +48,9 @@ describe("SPEC-V13 tours and manual", () => {
 
   it("points data-tour steps at attributes present outside the tour definition", () => {
     const targets = [
-      "src/components/AutomationPanel.tsx", "src/components/Layout.tsx", "src/components/ProgressComposer.tsx",
-      "src/components/ProjectCard.tsx", "src/components/ProjectTimeline.tsx",
-      "src/components/ProjectFiles.tsx",
+      "src/components/AutomationPanel.tsx", "src/components/Layout.tsx", "src/nav-structure.ts", "src/components/ProgressComposer.tsx",
+      "src/components/ProjectTimeline.tsx",
+      "src/components/ProjectFiles.tsx", "src/components/ProjectListRow.tsx",
       "src/components/TaskDrawer.tsx", "src/components/TaskViews.tsx", "src/pages/DashboardPage.tsx",
       "src/pages/ProjectDetailPage.tsx", "src/pages/ProjectsPage.tsx", "src/pages/RegwatchPage.tsx",
       "src/pages/ReportsPage.tsx", "src/pages/TimelinePage.tsx",

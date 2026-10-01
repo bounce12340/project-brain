@@ -8,6 +8,7 @@ import { useLang, useT } from "../i18n/LangContext";
 import { dashboardGroups, filterMine, filterProjectsByGroup, filterUpdatesByGroup, mineToggleUseful, readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine } from "../dashboard-filter";
 import { archivableSelection, canArchive, ongoingOnly, deleteConfirmed } from "../project-archive";
 import { ProjectGlance } from "../components/ProjectGlance";
+import { DashboardMeetings } from "../components/DashboardMeetings";
 import type { Project } from "../types";
 
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
@@ -114,7 +115,10 @@ export function DashboardPage() {
       }) : <Empty>{t(mine ? "dashboard.noMine" : "dashboard.noProjects")}</Empty>}</div>
       {selectable.length > 0 && <p className="mt-4 text-sm text-star-dim">{t("dashboard.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>}
     </section>
-      <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}{group && <span className="ml-2 text-sm font-normal text-star-dim">{groups.find((item) => item.id === group)?.name}</span>}</h2><div className="space-y-4">{visibleUpdates.length ? visibleUpdates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 text-sm text-star-dim">{item.content}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>) : <Empty>{t(group ? "dashboard.noActivityInGroup" : "dashboard.noActivity")}</Empty>}</div></section>
+      <div className="space-y-6">
+        <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}{group && <span className="ml-2 text-sm font-normal text-star-dim">{groups.find((item) => item.id === group)?.name}</span>}</h2><div className="space-y-4">{visibleUpdates.length ? visibleUpdates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 text-sm text-star-dim">{item.content}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>) : <Empty>{t(group ? "dashboard.noActivityInGroup" : "dashboard.noActivity")}</Empty>}</div></section>
+        <DashboardMeetings />
+      </div>
     </div>
     <Suspense fallback={<div className="mt-6 grid gap-6 lg:grid-cols-3">{[0, 1, 2].map((i) => <section className="panel h-[318px]" key={i} />)}</div>}>
       <DashboardCharts groupStatus={data.charts.group_status} clinical={clinical} bdFees={data.charts.bd_fees} />
