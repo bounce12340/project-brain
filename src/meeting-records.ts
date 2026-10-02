@@ -4,10 +4,21 @@ export type RecordKind = "meeting" | "course";
 
 export interface MeetingRecord {
   id: string; kind: RecordKind; title: string; starts_at: string; ends_at: string | null;
-  location: string; attendees: string; organizer: string; summary: string;
+  location: string; attendees: string; organizer: string; summary: string; category: string;
   project_id: string | null; project_name: string | null;
   created_by: string | null; created_by_name: string | null; updated_by_name: string | null;
   created_at: string; updated_at: string; can_edit: boolean;
+}
+
+/** 外訓的分類代碼（與 worker/routes/meetings.ts 同一份）；顯示名稱在翻譯檔的 category.* 。 */
+export const COURSE_CATEGORIES = ["drug", "regenerative", "food", "device", "cosmetic", "other"] as const;
+export type CourseCategory = typeof COURSE_CATEGORIES[number];
+/** 分類篩選：某個分類、"none"（還沒分類的），或 null（不篩）。 */
+export type CategoryFilter = CourseCategory | "none" | null;
+export const cleanCategoryFilter = (value: string | null | undefined): CategoryFilter =>
+  value === "none" || (COURSE_CATEGORIES as readonly string[]).includes(value ?? "") ? value as CourseCategory | "none" : null;
+export function categoryMatches(record: Pick<MeetingRecord, "category">, filter: CategoryFilter): boolean {
+  return filter === null || (filter === "none" ? !record.category : record.category === filter);
 }
 
 const ZH_WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -107,15 +118,17 @@ export function rangeLabel(range: MonthRange, lang: "zh" | "en"): string | null 
 /**
  * 複製到報告用的純文字清單：一行一筆、依時間先後，欄位名稱由呼叫端給（中英文）。
  *   公司外訓（2026/10，共 2 筆）
- *   1. 2026/10/01（四）09:00–16:00　GDP 實務研習｜主辦：TFDA｜地點：臺大醫院｜參加：Elvis
+ *   1. 2026/10/01（四）09:00–16:00　GDP 實務研習｜分類：藥品｜主辦：TFDA｜地點：臺大醫院｜參加：Elvis
  */
-export function recordsReport(records: MeetingRecord[], heading: string, labels: { organizer: string; location: string; attendees: string; project: string }, lang: "zh" | "en"): string {
+export interface ReportLabels { organizer: string; location: string; attendees: string; project: string; category: string; categoryNames: Partial<Record<string, string>> }
+export function recordsReport(records: MeetingRecord[], heading: string, labels: ReportLabels, lang: "zh" | "en"): string {
   const sorted = [...records].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   const gap = lang === "zh" ? "　" : "  ";
   const sep = lang === "zh" ? "｜" : " | ";
   const colon = lang === "zh" ? "：" : ": ";
   const lines = sorted.map((record, index) => {
     const parts = [
+      record.kind === "course" && record.category ? `${labels.category}${colon}${labels.categoryNames[record.category] ?? record.category}` : "",
       record.kind === "course" && record.organizer ? `${labels.organizer}${colon}${record.organizer}` : "",
       record.kind === "meeting" && record.project_name ? `${labels.project}${colon}${record.project_name}` : "",
       record.location ? `${labels.location}${colon}${record.location}` : "",

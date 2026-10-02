@@ -58,6 +58,40 @@ describe("新增與查看", () => {
   });
 });
 
+describe("外訓分類", () => {
+  const GDP = { kind: "course", title: "GDP 實務研習", starts_at: "2026-09-20T09:00", organizer: "TFDA", category: "drug" };
+  it("分類存得進去；沒選就是空字串；可以改，也記在稽核紀錄", async () => {
+    expect((await create("elvis", GDP)).status).toBe(201);
+    expect((await create("elvis", { ...GDP, title: "還沒分類的課", category: undefined })).status).toBe(201);
+    const byTitle = Object.fromEntries((await list("elvis", "?kind=course")).map((item) => [item.title, item.category]));
+    expect(byTitle).toEqual({ "GDP 實務研習": "drug", "還沒分類的課": "" });
+    const course = (await list("elvis", "?kind=course")).find((item) => item.title === "GDP 實務研習")!;
+    expect((await as("elvis", `/meetings/${course.id}`, { method: "PATCH", body: JSON.stringify({ category: "regenerative" }) })).status).toBe(200);
+    expect((await as("elvis", `/meetings/${course.id}`, { method: "PATCH", body: JSON.stringify({ category: "" }) })).status).toBe(200);
+    expect((await env.DB.prepare("SELECT summary FROM audit_log WHERE action='update' ORDER BY created_at, rowid").all()).results).toEqual([
+      { summary: "更新外訓紀錄「GDP 實務研習」（2026-09-20 09:00）：分類" },
+      { summary: "更新外訓紀錄「GDP 實務研習」（2026-09-20 09:00）：分類" },
+    ]);
+    expect((await list("elvis", "?kind=course")).find((item) => item.id === course.id)?.category).toBe("");
+  });
+
+  it("只收認得的分類；會議沒有分類", async () => {
+    for (const category of ["藥品", "DRUG", 3]) {
+      const refused = await create("elvis", { ...GDP, category });
+      expect(refused.status, String(category)).toBe(422);
+      expect(await refused.json()).toEqual({ error: "分類不正確" });
+    }
+    const meeting = await create("elvis", { ...KICKOFF, category: "food" });
+    expect(meeting.status).toBe(422);
+    expect(await meeting.json()).toEqual({ error: "只有外訓紀錄有分類" });
+    await create("elvis", KICKOFF);
+    const [saved] = await list("elvis", "?kind=meeting");
+    expect(saved.category).toBe("");
+    expect((await as("elvis", `/meetings/${saved.id}`, { method: "PATCH", body: JSON.stringify({ category: "food" }) })).status).toBe(422);
+    expect(await list("elvis", "?kind=course")).toEqual([]);
+  });
+});
+
 describe("欄位檢查", () => {
   it("名稱與開始時間必填；時間要是真的時間；結束不能早於開始", async () => {
     const cases: Array<[unknown, string]> = [
