@@ -5,7 +5,7 @@ import { canViewProject } from "../services/permissions";
 import { taipeiDateTime } from "../services/time";
 
 /**
- * 會議記錄與外出上課紀錄。
+ * 會議記錄與公司外訓紀錄。
  * 所有登入的人都看得到；掛在專案底下的會議只有看得到那個專案的人看得到。
  * 修改與刪除限建立的人與管理員。每一筆新增、修改、刪除都記稽核紀錄。
  */
@@ -13,13 +13,13 @@ export const meetingsRoutes = new Hono<AppContext>();
 
 export type MeetingKind = "meeting" | "course";
 const KINDS = new Set<MeetingKind>(["meeting", "course"]);
-const KIND_LABEL: Record<MeetingKind, string> = { meeting: "會議記錄", course: "上課紀錄" };
+const KIND_LABEL: Record<MeetingKind, string> = { meeting: "會議記錄", course: "外訓紀錄" };
 
 export const MEETING_TEXT_FIELDS = { title: 120, location: 200, attendees: 500, organizer: 120, summary: 5000 } as const;
 type TextField = keyof typeof MEETING_TEXT_FIELDS;
 const LABELS: Record<TextField | "starts_at" | "ends_at" | "project_id", string> = { title: "名稱", location: "地點", attendees: "與會人員", organizer: "主辦單位", summary: "摘要", starts_at: "開始時間", ends_at: "結束時間", project_id: "相關專案" };
 const MULTILINE: TextField[] = ["summary"];
-/** 首頁「近期會議與上課」各列幾筆。 */
+/** 首頁「近期會議與外訓」各列幾筆。 */
 export const OVERVIEW_LIMIT = 5;
 
 interface MeetingRow {
@@ -124,7 +124,7 @@ meetingsRoutes.get("/meetings", async (c) => {
   return c.json({ meetings: result.results.filter((row) => visibleTo(user, row)).map((row) => present(user, row)) });
 });
 
-/** 首頁用：接下來的（最近的先）與剛結束的（最新的先），會議與上課一起列。 */
+/** 首頁用：接下來的（最近的先）與剛結束的（最新的先），會議與外訓一起列。 */
 meetingsRoutes.get("/meetings/overview", async (c) => {
   const user = c.get("user");
   const now = taipeiNow();

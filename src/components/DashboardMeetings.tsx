@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useLang, useT } from "../i18n/LangContext";
 import { formatRecordTime, type MeetingRecord } from "../meeting-records";
 
-/** 首頁的「近期會議與上課」：接下來的與剛結束的各幾筆，點了到會議記錄或上課紀錄那一筆。 */
+/** 首頁的「近期會議與外訓」：接下來的與剛結束的各幾筆，點了到會議記錄或外訓紀錄那一筆。 */
 export function DashboardMeetings() {
   const t = useT(); const { lang } = useLang();
   const [data, setData] = useState<{ upcoming: MeetingRecord[]; recent: MeetingRecord[] } | null>(null);

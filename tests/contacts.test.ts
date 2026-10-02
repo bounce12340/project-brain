@@ -15,7 +15,7 @@ const as = (userId: string, path: string, init: RequestInit = {}) => worker.fetc
 const create = (userId: string, body: unknown) => as(userId, "/contacts", { method: "POST", body: JSON.stringify(body) });
 const list = async (userId = "elvis") => (await (await as(userId, "/contacts")).json() as { contacts: Array<Record<string, string | null>> }).contacts;
 
-const NTUH = { organization: "臺大醫院", department: "藥劑部", name: "王小明", title: "主任", phone_area: "02", phone: "2312-3456 #1234", mobile: "0912-345-678", email: "Ming.Wang@NTUH.gov.tw", address: "台北市中正區中山南路 7 號", notes: "負責新藥進用\n週三下午較好聯絡" };
+const NTUH = { organization: "臺大醫院", department: "藥劑部", name: "王小明", title: "主任", phone_area: "02", phone: "2312-3456", phone_ext: "1234", mobile: "0912-345-678", email: "Ming.Wang@NTUH.gov.tw", address: "台北市中正區中山南路 7 號", notes: "負責新藥進用\n週三下午較好聯絡" };
 
 beforeEach(async () => {
   const { db } = createTestD1();
@@ -131,6 +131,51 @@ describe("電話區碼獨立一格", () => {
     const migration = readFileSync(new URL("../migrations/0020_contact_phone_area.sql", import.meta.url), "utf8");
     for (const statement of migration.split(";").map((part) => part.replace(/^\s*--.*$/gm, "").trim()).filter((part) => part.startsWith("UPDATE"))) await env.DB.prepare(statement).run();
     for (const [id, , area, phone] of rows) expect(await env.DB.prepare("SELECT phone_area, phone FROM contacts WHERE id=?").bind(id).first(), id).toEqual({ phone_area: area, phone });
+  });
+});
+
+describe("電話分機（選填）", () => {
+  it("分機的記號與空白拿掉，只收數字；不填也可以", async () => {
+    const cases: Array<[string, string]> = [["一", " #35 "], ["二", "分機 1234"], ["三", "ext. 12"], ["四", "EXT:7"], ["五", "轉 88"], ["六", ""]];
+    for (const [name, phone_ext] of cases) expect((await create("elvis", { organization: "A", name, phone_area: "02", phone: "2356-7417", phone_ext })).status, name).toBe(201);
+    const byName = Object.fromEntries((await list()).map((contact) => [contact.name, contact.phone_ext]));
+    expect(byName).toEqual({ 一: "35", 二: "1234", 三: "12", 四: "7", 五: "88", 六: "" });
+    expect((await create("elvis", { organization: "B", name: "沒填", phone: "2356-7417" })).status).toBe(201);
+    expect((await list()).find((contact) => contact.name === "沒填")?.phone_ext).toBe("");
+    for (const phone_ext of ["12a", "1-2", "1".repeat(11)]) {
+      const refused = await create("elvis", { organization: "C", name: `錯${phone_ext}`, phone_ext });
+      expect(refused.status, phone_ext).toBe(422);
+      expect(await refused.json(), phone_ext).toEqual({ error: phone_ext.length > 10 ? "分機不能超過 10 字" : "分機只能填數字，例如 1234" });
+    }
+  });
+
+  it("修改分機會記在稽核紀錄", async () => {
+    await create("elvis", NTUH);
+    const [contact] = await list();
+    expect((await as("intern", `/contacts/${contact.id}`, { method: "PATCH", body: JSON.stringify({ phone_ext: "#5678" }) })).status).toBe(200);
+    expect((await list())[0].phone_ext).toBe("5678");
+    expect(await env.DB.prepare("SELECT summary FROM audit_log WHERE action='update'").first()).toEqual({ summary: "更新聯絡人「臺大醫院／王小明」：分機" });
+  });
+
+  it("既有資料：號碼裡的分機拆到分機欄，看不懂的寫法不動", async () => {
+    const rows = [
+      ["a", "2356-7417#35", "2356-7417", "35"],
+      ["b", "2312-3456 #1234", "2312-3456", "1234"],
+      ["c", "2312-3456 分機 12", "2312-3456", "12"],
+      ["d", "2312-3456 分機：12", "2312-3456", "12"],
+      ["e", "2312-3456 ext. 99", "2312-3456", "99"],
+      ["f", "2312-3456 Ext 7", "2312-3456", "7"],
+      ["g", "2312-3456轉66", "2312-3456", "66"],
+      ["h", "2312-3456 #12 或 #13", "2312-3456 #12 或 #13", ""],
+      ["i", "#12", "#12", ""],
+      ["j", "3702-2680", "3702-2680", ""],
+      ["k", "", "", ""],
+    ];
+    for (const [id, phone] of rows) await env.DB.prepare("INSERT INTO contacts (id,organization,name,phone) VALUES (?,?,?,?)").bind(id, `機構${id}`, `人${id}`, phone).run();
+    // 套用 migration 裡拆分機的那幾段（欄位已經在測試資料庫裡了）
+    const migration = readFileSync(new URL("../migrations/0022_contact_phone_ext.sql", import.meta.url), "utf8");
+    for (const statement of migration.split(";").map((part) => part.replace(/^\s*--.*$/gm, "").trim()).filter((part) => part.startsWith("UPDATE"))) await env.DB.prepare(statement).run();
+    for (const [id, , phone, ext] of rows) expect(await env.DB.prepare("SELECT phone, phone_ext FROM contacts WHERE id=?").bind(id).first(), id).toEqual({ phone, phone_ext: ext });
   });
 });
 

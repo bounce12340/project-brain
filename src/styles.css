@@ -98,6 +98,10 @@
   .btn { @apply inline-flex items-center justify-center bg-psi-deep px-4 py-2 text-sm font-semibold text-white hover:bg-psi; }
   :root[data-theme="dark"] .btn:hover { @apply bg-psi text-void; }
   .btn-secondary { @apply inline-flex items-center justify-center border border-star/40 bg-transparent px-4 py-2 text-sm font-semibold text-star hover:border-star hover:bg-nexus-raised; }
+  /* 篩選的快速選項：像卷宗側邊的小索引籤，按下去的那個換成深藍。 */
+  .filter-chip { @apply inline-flex items-center border border-nexus-line bg-nexus px-3 py-1.5 text-sm font-medium text-star-dim hover:border-star/40 hover:text-star; }
+  .filter-chip[aria-pressed="true"] { @apply border-psi-deep bg-psi-deep font-semibold text-white; }
+  :root[data-theme="dark"] .filter-chip[aria-pressed="true"] { @apply border-psi bg-psi text-void; }
   .btn-danger { @apply inline-flex items-center justify-center bg-danger px-4 py-2 text-sm font-semibold text-white hover:brightness-110; }
   .regwatch-row-delete { @apply inline-flex h-8 w-8 shrink-0 items-center justify-center text-star-dim hover:text-danger; }
   .regwatch-row-delete:hover { box-shadow: 0 0 12px rgb(var(--color-danger) / .35); }

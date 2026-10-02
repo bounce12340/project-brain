@@ -5,7 +5,7 @@ import { sha256 } from "../worker/services/crypto";
 import { createTestD1 } from "./helpers/d1-sqlite";
 import { createMemoryKV } from "./helpers/memory-kv";
 
-/** 會議記錄與外出上課：大家都看得到；掛在專案底下的跟著專案的權限；改與刪限建立的人與管理員。 */
+/** 會議記錄與公司外訓：大家都看得到；掛在專案底下的跟著專案的權限；改與刪限建立的人與管理員。 */
 
 const BASE = "http://127.0.0.1:8787";
 let env: Env;
@@ -46,7 +46,7 @@ describe("新增與查看", () => {
     expect(await env.DB.prepare("SELECT action, entity_type, summary FROM audit_log WHERE entity_type='meeting'").first()).toEqual({ action: "create", entity_type: "meeting", summary: "新增會議記錄「Q4 啟動會議」（2026-10-01 14:00）" });
   });
 
-  it("上課紀錄與會議分開列；主辦單位存得進去", async () => {
+  it("外訓紀錄與會議分開列；主辦單位存得進去", async () => {
     await create("elvis", { ...KICKOFF, project_id: null });
     await create("elvis", { kind: "course", title: "GDP 實務課程", starts_at: "2026-09-20T09:00", location: "臺大醫院國際會議中心", organizer: "TFDA", summary: "溫控運輸的稽核重點" });
     const courses = await list("intern", "?kind=course");
@@ -134,7 +134,7 @@ describe("修改與刪除", () => {
   });
 });
 
-describe("首頁的近期會議與上課", () => {
+describe("首頁的近期會議與外訓", () => {
   it("接下來的由近到遠、剛結束的由新到舊，各最多 5 筆，並依專案權限篩", async () => {
     for (let day = 1; day <= 6; day += 1) await create("elvis", { ...KICKOFF, project_id: null, title: `未來${day}`, starts_at: `2099-01-0${day}T09:00`, ends_at: null });
     await create("elvis", { kind: "course", title: "過去的課", starts_at: "2020-01-01T09:00" });

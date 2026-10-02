@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, jsonBody, patchBody } from "../api";
 import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
-import { formatRecordTime, recordMatches, splitRecords, taipeiNowLocal, type MeetingRecord, type RecordKind } from "../meeting-records";
+import { cleanMonth, formatRecordTime, inMonthRange, monthPresets, normalizeRange, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal, type MeetingRecord, type MonthRange, type RecordKind } from "../meeting-records";
 import type { Project } from "../types";
 
-/** 會議記錄與外出上課共用這一頁；差在文字、會議可掛專案、上課多一格主辦單位。 */
+/** 會議記錄與公司外訓共用這一頁；差在文字、會議可掛專案、外訓多一格主辦單位。 */
 interface Draft { title: string; starts_at: string; ends_at: string; location: string; attendees: string; organizer: string; summary: string; project_id: string }
 const EMPTY: Draft = { title: "", starts_at: "", ends_at: "", location: "", attendees: "", organizer: "", summary: "", project_id: "" };
 
@@ -26,6 +26,10 @@ const COPY: Record<RecordKind, Record<"title" | "description" | "add" | "newTitl
 const SUMMARY_PREVIEW_LINES = 6;
 const SUMMARY_PREVIEW_CHARS = 280;
 
+const MONTHS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+const monthName = (month: string, lang: "zh" | "en") => new Intl.DateTimeFormat(lang === "zh" ? "zh-TW" : "en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2000, Number(month) - 1, 1)));
+const sameRange = (a: MonthRange, b: MonthRange) => { const x = normalizeRange(a); const y = normalizeRange(b); return x.from === y.from && x.to === y.to; };
+
 export function MeetingsPage() { return <RecordsPage kind="meeting" />; }
 export function CoursesPage() { return <RecordsPage kind="course" />; }
 
@@ -35,17 +39,73 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   const [records, setRecords] = useState<MeetingRecord[] | null>(null);
   const [projects, setProjects] = useState<Array<Pick<Project, "id" | "name">>>([]);
   const [query, setQuery] = useState("");
+  // 年月範圍放在網址上（?from=2026-10&to=2026-10），重新整理或把連結傳給別人都還是同一段期間。
+  const [params, setParams] = useSearchParams();
+  const range = useMemo<MonthRange>(() => ({ from: cleanMonth(params.get("from")), to: cleanMonth(params.get("to")) }), [params]);
+  const [copyNote, setCopyNote] = useState(""); const [copyFallback, setCopyFallback] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; draft: Draft; projectName: string | null } | null>(null);
   const [error, setError] = useState(""); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
   const load = () => api<{ meetings: MeetingRecord[] }>(`/meetings?kind=${kind}`).then((data) => setRecords(data.meetings)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : t("error.operation")));
-  useEffect(() => { setRecords(null); setEditing(null); setQuery(""); setMessage(""); setError(""); void load(); }, [kind]);
+  useEffect(() => { setRecords(null); setEditing(null); setQuery(""); setMessage(""); setError(""); setCopyNote(""); setCopyFallback(null); void load(); }, [kind]);
   // 會議可以掛在進行中或暫停的專案底下。
   useEffect(() => { if (kind === "meeting") api<{ projects: Project[] }>("/projects?status=active,paused").then((data) => setProjects(data.projects.map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")))).catch(() => undefined); }, [kind]);
   // 從首頁點進來時帶 #id：載入後捲到那一筆。
   useEffect(() => { if (records && location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "center" }); }, [records, location.hash]);
 
-  const shown = useMemo(() => (records ?? []).filter((record) => recordMatches(record, query)), [records, query]);
+  const shown = useMemo(() => (records ?? []).filter((record) => recordMatches(record, query) && inMonthRange(record, range)), [records, query, range]);
   const { upcoming, past } = useMemo(() => splitRecords(shown, taipeiNowLocal()), [shown]);
+
+  const setRange = (next: MonthRange) => {
+    const updated = new URLSearchParams(params);
+    for (const end of ["from", "to"] as const) { const value = next[end]; if (value) updated.set(end, value); else updated.delete(end); }
+    setParams(updated, { replace: true }); setCopyNote(""); setCopyFallback(null);
+  };
+  const ranged = Boolean(range.from || range.to);
+  const now = taipeiNowLocal();
+  const presets = monthPresets(now);
+  const years = [...new Set([...recordYears(records ?? [], now), ...[range.from, range.to].flatMap((value) => value ? [value.slice(0, 4)] : [])])].sort((a, b) => b.localeCompare(a));
+  const periodLabel = rangeLabel(range, lang);
+
+  // 複製成一行一筆的清單，月報或 email 直接貼上；瀏覽器不給用剪貼簿時，把清單放在方框裡讓人手動選。
+  const copyList = async () => {
+    const heading = periodLabel ? t("records.reportHeading", { title: t(copy.title), range: periodLabel, count: shown.length }) : t("records.reportHeadingAll", { title: t(copy.title), count: shown.length });
+    const report = recordsReport(shown, heading, { organizer: t("courses.organizer"), location: t("records.location"), attendees: t(copy.attendees), project: t("meetings.project") }, lang);
+    try { await navigator.clipboard.writeText(report); setCopyFallback(null); setCopyNote(t("records.copied", { count: shown.length })); }
+    catch { setCopyFallback(report); setCopyNote(t("records.copyFailed")); }
+  };
+
+  const monthPicker = (end: "from" | "to") => {
+    const value = range[end]; const year = value?.slice(0, 4) ?? ""; const month = value?.slice(5, 7) ?? "";
+    // 只選年份時，起從 1 月、迄到 12 月，選「2026 至 2026」就是整年。
+    const defaultMonth = end === "from" ? "01" : "12";
+    return <span className="flex items-center gap-1">
+      <select aria-label={t(end === "from" ? "records.fromYear" : "records.toYear")} value={year} onChange={(event) => setRange({ ...range, [end]: event.target.value ? `${event.target.value}-${month || defaultMonth}` : null })}>
+        <option value="">{t("records.anyYear")}</option>
+        {years.map((option) => <option key={option} value={option}>{t("records.yearOption", { year: option })}</option>)}
+      </select>
+      <select aria-label={t(end === "from" ? "records.fromMonth" : "records.toMonth")} value={month} disabled={!year} onChange={(event) => setRange({ ...range, [end]: `${year}-${event.target.value}` })}>
+        {!year && <option value="">—</option>}
+        {MONTHS.map((option) => <option key={option} value={option}>{monthName(option, lang)}</option>)}
+      </select>
+    </span>;
+  };
+  const preset = (label: TransKey, value: MonthRange) => <button key={label} type="button" className="filter-chip" aria-pressed={sameRange(range, value)} onClick={() => setRange(value)}>{t(label)}</button>;
+
+  const filters = records && records.length > 0 && <div className="mb-5 space-y-3 border-y border-nexus-line py-3">
+    <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <legend className="sr-only">{t("records.period")}</legend>
+      <span aria-hidden="true" className="text-sm font-semibold text-star-dim">{t("records.period")}</span>
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-2">{monthPicker("from")}<span className="text-sm text-star-dim">{t("records.rangeTo")}</span>{monthPicker("to")}</span>
+      <span className="flex flex-wrap gap-1.5">{preset("records.thisMonth", presets.thisMonth)}{preset("records.lastMonth", presets.lastMonth)}{preset("records.thisYear", presets.thisYear)}{preset("records.allTime", { from: null, to: null })}</span>
+    </fieldset>
+    <div className="flex flex-wrap items-center gap-3">
+      <input aria-label={t("records.search")} className="min-w-0 flex-1 basis-56" type="search" placeholder={t("records.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
+      <span className="text-sm text-star-dim">{periodLabel ? t("records.countInRange", { range: periodLabel, shown: shown.length, total: records.length }) : t(query.trim() ? "records.countFiltered" : "records.count", { shown: shown.length, total: records.length })}</span>
+      <button type="button" className="btn-secondary" disabled={!shown.length} title={t("records.copyHint")} onClick={() => void copyList()}>{t("records.copyList")}</button>
+    </div>
+    {copyNote && <p role="status" className={`text-sm ${copyFallback ? "text-warn" : "text-ok"}`}>{copyNote}</p>}
+    {copyFallback && <textarea aria-label={t("records.copyList")} className="w-full font-mono text-xs" rows={Math.min(12, copyFallback.split("\n").length + 1)} readOnly value={copyFallback} onFocus={(event) => event.currentTarget.select()} />}
+  </div>;
 
   const openForm = (id: string | null, draft: Draft, projectName: string | null = null) => {
     setError(""); setMessage(""); setEditing({ id, draft, projectName });
@@ -106,8 +166,8 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
     {error && !editing && <ErrorBox message={error} />}
     {message && <div role="status" className="mb-4 rounded-lg border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
     {form}
-    {records && records.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-3"><input aria-label={t("records.search")} className="min-w-0 flex-1" type="search" placeholder={t("records.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} /><span className="text-sm text-star-dim">{t(query.trim() ? "records.countFiltered" : "records.count", { shown: shown.length, total: records.length })}</span></div>}
-    {!records ? <Loading /> : !records.length ? <Empty>{t(copy.empty)}</Empty> : !shown.length ? <Empty>{t("records.noMatch")}</Empty> : <>{section("records.upcoming", upcoming)}{section("records.past", past)}</>}
+    {filters}
+    {!records ? <Loading /> : !records.length ? <Empty>{t(copy.empty)}</Empty> : !shown.length ? <Empty>{t(ranged && !query.trim() ? "records.noMatchRange" : "records.noMatch")}</Empty> : <>{section("records.upcoming", upcoming)}{section("records.past", past)}</>}
   </>;
 }
 
