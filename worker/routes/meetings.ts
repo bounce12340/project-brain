@@ -14,16 +14,20 @@ export const meetingsRoutes = new Hono<AppContext>();
 export type MeetingKind = "meeting" | "course";
 const KINDS = new Set<MeetingKind>(["meeting", "course"]);
 const KIND_LABEL: Record<MeetingKind, string> = { meeting: "會議記錄", course: "外訓紀錄" };
+/** 外訓的分類代碼；畫面上的名稱在前端翻譯檔。 */
+export const COURSE_CATEGORIES = ["drug", "regenerative", "food", "device", "cosmetic", "other"] as const;
+const CATEGORY_SET = new Set<string>(COURSE_CATEGORIES);
 
 export const MEETING_TEXT_FIELDS = { title: 120, location: 200, attendees: 500, organizer: 120, summary: 5000 } as const;
 type TextField = keyof typeof MEETING_TEXT_FIELDS;
-const LABELS: Record<TextField | "starts_at" | "ends_at" | "project_id", string> = { title: "名稱", location: "地點", attendees: "與會人員", organizer: "主辦單位", summary: "摘要", starts_at: "開始時間", ends_at: "結束時間", project_id: "相關專案" };
+type Field = TextField | "starts_at" | "ends_at" | "project_id" | "category";
+const LABELS: Record<Field, string> = { title: "名稱", location: "地點", attendees: "與會人員", organizer: "主辦單位", summary: "摘要", starts_at: "開始時間", ends_at: "結束時間", project_id: "相關專案", category: "分類" };
 const MULTILINE: TextField[] = ["summary"];
 /** 首頁「近期會議與外訓」各列幾筆。 */
 export const OVERVIEW_LIMIT = 5;
 
 interface MeetingRow {
-  id: string; kind: MeetingKind; title: string; starts_at: string; ends_at: string | null; location: string; attendees: string; organizer: string; summary: string;
+  id: string; kind: MeetingKind; title: string; starts_at: string; ends_at: string | null; location: string; attendees: string; organizer: string; summary: string; category: string;
   project_id: string | null; created_by: string | null; updated_by: string | null; created_at: string; updated_at: string;
 }
 interface ListedRow extends MeetingRow {
@@ -46,11 +50,11 @@ async function readObject(request: Request): Promise<Record<string, unknown>> {
   return typeof body === "object" && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : {};
 }
 
-type Cleaned = { error: string } | { values: Partial<Record<TextField | "starts_at" | "ends_at" | "project_id", string | null>> };
+type Cleaned = { error: string } | { values: Partial<Record<Field, string | null>> };
 
 /** 只收認得的欄位；單行欄位的連續空白併成一個。partial 是修改：沒送的欄位不動。 */
 function cleanFields(body: Record<string, unknown>, partial: boolean): Cleaned {
-  const values: Partial<Record<TextField | "starts_at" | "ends_at" | "project_id", string | null>> = {};
+  const values: Partial<Record<Field, string | null>> = {};
   for (const [field, max] of Object.entries(MEETING_TEXT_FIELDS) as Array<[TextField, number]>) {
     if (!(field in body)) {
       if (!partial && field === "title") return { error: "請填寫名稱" };
@@ -79,6 +83,11 @@ function cleanFields(body: Record<string, unknown>, partial: boolean): Cleaned {
     if (raw === null || raw === "") values.project_id = null;
     else if (typeof raw !== "string") return { error: "相關專案格式不正確" };
     else values.project_id = raw;
+  }
+  if ("category" in body) {
+    const raw = body.category ?? "";
+    if (typeof raw !== "string" || (raw !== "" && !CATEGORY_SET.has(raw))) return { error: "分類不正確" };
+    values.category = raw;
   }
   return { values };
 }
@@ -146,12 +155,13 @@ meetingsRoutes.post("/meetings", async (c) => {
   const cleaned = cleanFields(body, false);
   if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
   const values = cleaned.values;
+  if (kind === "meeting" && values.category) return c.json({ error: "只有外訓紀錄有分類" }, 422);
   if (values.ends_at && values.ends_at < values.starts_at!) return c.json({ error: "結束時間不能早於開始時間" }, 422);
   const projectError = await checkProject(c.env.DB, user, values.project_id);
   if (projectError) return c.json({ error: projectError }, 422);
   const id = createId(kind === "meeting" ? "meeting" : "course");
-  await c.env.DB.prepare(`INSERT INTO meetings (id,kind,title,starts_at,ends_at,location,attendees,organizer,summary,project_id,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, kind, values.title, values.starts_at, values.ends_at ?? null, values.location ?? "", values.attendees ?? "", values.organizer ?? "", values.summary ?? "", values.project_id ?? null, user.id, user.id).run();
+  await c.env.DB.prepare(`INSERT INTO meetings (id,kind,title,starts_at,ends_at,location,attendees,organizer,summary,category,project_id,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, kind, values.title, values.starts_at, values.ends_at ?? null, values.location ?? "", values.attendees ?? "", values.organizer ?? "", values.summary ?? "", values.category ?? "", values.project_id ?? null, user.id, user.id).run();
   await writeAudit(c.env.DB, user, "create", kind, id, `新增${describe({ kind, title: values.title!, starts_at: values.starts_at! })}`);
   return c.json({ id }, 201);
 });
@@ -167,8 +177,9 @@ meetingsRoutes.patch("/meetings/:id", async (c) => {
   if (user.role !== "admin" && current.created_by !== user.id) return c.json({ error: "只有建立這筆紀錄的人或管理員可以修改" }, 403);
   const cleaned = cleanFields(await readObject(c.req.raw), true);
   if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
-  const changes = Object.entries(cleaned.values) as Array<[keyof typeof LABELS, string | null]>;
+  const changes = Object.entries(cleaned.values) as Array<[Field, string | null]>;
   if (!changes.length) return c.json({ ok: true });
+  if (current.kind === "meeting" && cleaned.values.category) return c.json({ error: "只有外訓紀錄有分類" }, 422);
   const startsAt = cleaned.values.starts_at ?? current.starts_at;
   const endsAt = "ends_at" in cleaned.values ? cleaned.values.ends_at : current.ends_at;
   if (endsAt && endsAt < startsAt) return c.json({ error: "結束時間不能早於開始時間" }, 422);

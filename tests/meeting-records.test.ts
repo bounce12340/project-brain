@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanMonth, formatRecordTime, inMonthRange, monthPresets, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal } from "../src/meeting-records";
+import { categoryMatches, cleanCategoryFilter, cleanMonth, COURSE_CATEGORIES, formatRecordTime, inMonthRange, monthPresets, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal } from "../src/meeting-records";
 
 describe("會議與外訓的時間顯示", () => {
   it("同一天寫成「日期 開始–結束」，沒有結束時間就只有開始", () => {
@@ -75,17 +75,37 @@ describe("年月範圍篩選", () => {
 });
 
 describe("複製到報告的清單", () => {
-  const base = { id: "", ends_at: null, location: "", attendees: "", organizer: "", summary: "很長的摘要不放進清單", project_id: null, project_name: null, created_by: null, created_by_name: null, updated_by_name: null, created_at: "", updated_at: "", can_edit: false };
-  it("一行一筆、依時間先後；外訓帶主辦單位，空的欄位不寫", () => {
+  const base = { id: "", ends_at: null, location: "", attendees: "", organizer: "", category: "", summary: "很長的摘要不放進清單", project_id: null, project_name: null, created_by: null, created_by_name: null, updated_by_name: null, created_at: "", updated_at: "", can_edit: false };
+  const labels = { organizer: "主辦", location: "地點", attendees: "參加", project: "專案", category: "分類", categoryNames: { drug: "藥品", device: "醫療器材" } };
+  it("一行一筆、依時間先後；外訓帶分類與主辦單位，空的欄位不寫", () => {
     const report = recordsReport([
       { ...base, kind: "course", title: "藥物安全研討會", starts_at: "2026-10-20T13:30", location: "線上" },
-      { ...base, kind: "course", title: "GDP 實務研習", starts_at: "2026-10-01T09:00", ends_at: "2026-10-01T16:00", organizer: "TFDA", location: "臺大醫院", attendees: "Elvis" },
-    ], "公司外訓（2026/10，共 2 筆）", { organizer: "主辦", location: "地點", attendees: "參加", project: "專案" }, "zh");
+      { ...base, kind: "course", title: "GDP 實務研習", starts_at: "2026-10-01T09:00", ends_at: "2026-10-01T16:00", category: "drug", organizer: "TFDA", location: "臺大醫院", attendees: "Elvis" },
+    ], "公司外訓（2026/10，共 2 筆）", labels, "zh");
     expect(report).toBe([
       "公司外訓（2026/10，共 2 筆）",
-      "1. 2026/10/01（四）09:00–16:00　GDP 實務研習｜主辦：TFDA｜地點：臺大醫院｜參加：Elvis",
+      "1. 2026/10/01（四）09:00–16:00　GDP 實務研習｜分類：藥品｜主辦：TFDA｜地點：臺大醫院｜參加：Elvis",
       "2. 2026/10/20（二）13:30　藥物安全研討會｜地點：線上",
     ].join("\n"));
     expect(report).not.toContain("很長的摘要");
+  });
+});
+
+describe("外訓分類", () => {
+  it("前端與後端的分類代碼是同一份", async () => {
+    const { COURSE_CATEGORIES: server } = await import("../worker/routes/meetings");
+    expect([...COURSE_CATEGORIES]).toEqual([...server]);
+  });
+
+  it("網址帶來的分類不認得就當不篩；none 是還沒分類的", () => {
+    expect(cleanCategoryFilter("drug")).toBe("drug");
+    expect(cleanCategoryFilter("none")).toBe("none");
+    expect(cleanCategoryFilter("藥品")).toBeNull();
+    expect(cleanCategoryFilter(null)).toBeNull();
+    expect(categoryMatches({ category: "drug" }, "drug")).toBe(true);
+    expect(categoryMatches({ category: "food" }, "drug")).toBe(false);
+    expect(categoryMatches({ category: "" }, "none")).toBe(true);
+    expect(categoryMatches({ category: "food" }, "none")).toBe(false);
+    expect(categoryMatches({ category: "food" }, null)).toBe(true);
   });
 });

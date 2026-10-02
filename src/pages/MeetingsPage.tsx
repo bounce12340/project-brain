@@ -4,12 +4,12 @@ import { api, jsonBody, patchBody } from "../api";
 import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
-import { cleanMonth, formatRecordTime, inMonthRange, monthPresets, normalizeRange, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal, type MeetingRecord, type MonthRange, type RecordKind } from "../meeting-records";
+import { categoryMatches, cleanCategoryFilter, cleanMonth, COURSE_CATEGORIES, formatRecordTime, inMonthRange, monthPresets, normalizeRange, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal, type CategoryFilter, type MeetingRecord, type MonthRange, type RecordKind } from "../meeting-records";
 import type { Project } from "../types";
 
-/** 會議記錄與公司外訓共用這一頁；差在文字、會議可掛專案、外訓多一格主辦單位。 */
-interface Draft { title: string; starts_at: string; ends_at: string; location: string; attendees: string; organizer: string; summary: string; project_id: string }
-const EMPTY: Draft = { title: "", starts_at: "", ends_at: "", location: "", attendees: "", organizer: "", summary: "", project_id: "" };
+/** 會議記錄與公司外訓共用這一頁；差在文字、會議可掛專案、外訓多了分類與主辦單位。 */
+interface Draft { title: string; starts_at: string; ends_at: string; location: string; attendees: string; organizer: string; category: string; summary: string; project_id: string }
+const EMPTY: Draft = { title: "", starts_at: "", ends_at: "", location: "", attendees: "", organizer: "", category: "", summary: "", project_id: "" };
 
 const COPY: Record<RecordKind, Record<"title" | "description" | "add" | "newTitle" | "editTitle" | "name" | "namePlaceholder" | "attendees" | "attendeesPlaceholder" | "summary" | "summaryPlaceholder" | "empty", TransKey>> = {
   meeting: {
@@ -28,6 +28,7 @@ const SUMMARY_PREVIEW_CHARS = 280;
 
 const MONTHS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
 const monthName = (month: string, lang: "zh" | "en") => new Intl.DateTimeFormat(lang === "zh" ? "zh-TW" : "en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2000, Number(month) - 1, 1)));
+const categoryKey = (code: string) => `category.${code}` as TransKey;
 const sameRange = (a: MonthRange, b: MonthRange) => { const x = normalizeRange(a); const y = normalizeRange(b); return x.from === y.from && x.to === y.to; };
 
 export function MeetingsPage() { return <RecordsPage kind="meeting" />; }
@@ -42,6 +43,8 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   // 年月範圍放在網址上（?from=2026-10&to=2026-10），重新整理或把連結傳給別人都還是同一段期間。
   const [params, setParams] = useSearchParams();
   const range = useMemo<MonthRange>(() => ({ from: cleanMonth(params.get("from")), to: cleanMonth(params.get("to")) }), [params]);
+  // 分類只有外訓有（?category=drug，還沒分類的是 none）。
+  const category: CategoryFilter = kind === "course" ? cleanCategoryFilter(params.get("category")) : null;
   const [copyNote, setCopyNote] = useState(""); const [copyFallback, setCopyFallback] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; draft: Draft; projectName: string | null } | null>(null);
   const [error, setError] = useState(""); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
@@ -52,7 +55,7 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   // 從首頁點進來時帶 #id：載入後捲到那一筆。
   useEffect(() => { if (records && location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "center" }); }, [records, location.hash]);
 
-  const shown = useMemo(() => (records ?? []).filter((record) => recordMatches(record, query) && inMonthRange(record, range)), [records, query, range]);
+  const shown = useMemo(() => (records ?? []).filter((record) => recordMatches(record, query) && inMonthRange(record, range) && categoryMatches(record, category)), [records, query, range, category]);
   const { upcoming, past } = useMemo(() => splitRecords(shown, taipeiNowLocal()), [shown]);
 
   const setRange = (next: MonthRange) => {
@@ -60,6 +63,12 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
     for (const end of ["from", "to"] as const) { const value = next[end]; if (value) updated.set(end, value); else updated.delete(end); }
     setParams(updated, { replace: true }); setCopyNote(""); setCopyFallback(null);
   };
+  const setCategory = (next: string) => {
+    const updated = new URLSearchParams(params);
+    if (next) updated.set("category", next); else updated.delete("category");
+    setParams(updated, { replace: true }); setCopyNote(""); setCopyFallback(null);
+  };
+  const categoryName = (code: string) => code === "none" ? t("records.uncategorized") : t(categoryKey(code));
   const ranged = Boolean(range.from || range.to);
   const now = taipeiNowLocal();
   const presets = monthPresets(now);
@@ -68,8 +77,10 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
 
   // 複製成一行一筆的清單，月報或 email 直接貼上；瀏覽器不給用剪貼簿時，把清單放在方框裡讓人手動選。
   const copyList = async () => {
-    const heading = periodLabel ? t("records.reportHeading", { title: t(copy.title), range: periodLabel, count: shown.length }) : t("records.reportHeadingAll", { title: t(copy.title), count: shown.length });
-    const report = recordsReport(shown, heading, { organizer: t("courses.organizer"), location: t("records.location"), attendees: t(copy.attendees), project: t("meetings.project") }, lang);
+    const title = category ? t("records.titleWithCategory", { title: t(copy.title), category: categoryName(category) }) : t(copy.title);
+    const heading = periodLabel ? t("records.reportHeading", { title, range: periodLabel, count: shown.length }) : t("records.reportHeadingAll", { title, count: shown.length });
+    const categoryNames = Object.fromEntries(COURSE_CATEGORIES.map((code) => [code, categoryName(code)]));
+    const report = recordsReport(shown, heading, { organizer: t("courses.organizer"), location: t("records.location"), attendees: t(copy.attendees), project: t("meetings.project"), category: t("courses.category"), categoryNames }, lang);
     try { await navigator.clipboard.writeText(report); setCopyFallback(null); setCopyNote(t("records.copied", { count: shown.length })); }
     catch { setCopyFallback(report); setCopyNote(t("records.copyFailed")); }
   };
@@ -99,8 +110,13 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
       <span className="flex flex-wrap gap-1.5">{preset("records.thisMonth", presets.thisMonth)}{preset("records.lastMonth", presets.lastMonth)}{preset("records.thisYear", presets.thisYear)}{preset("records.allTime", { from: null, to: null })}</span>
     </fieldset>
     <div className="flex flex-wrap items-center gap-3">
+      {kind === "course" && <select aria-label={t("records.categoryFilter")} value={category ?? ""} onChange={(event) => setCategory(event.target.value)}>
+        <option value="">{t("records.allCategories")}</option>
+        {COURSE_CATEGORIES.map((code) => <option key={code} value={code}>{categoryName(code)}</option>)}
+        <option value="none">{t("records.uncategorized")}</option>
+      </select>}
       <input aria-label={t("records.search")} className="min-w-0 flex-1 basis-56" type="search" placeholder={t("records.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
-      <span className="text-sm text-star-dim">{periodLabel ? t("records.countInRange", { range: periodLabel, shown: shown.length, total: records.length }) : t(query.trim() ? "records.countFiltered" : "records.count", { shown: shown.length, total: records.length })}</span>
+      <span className="text-sm text-star-dim">{periodLabel ? t("records.countInRange", { range: periodLabel, shown: shown.length, total: records.length }) : t(query.trim() || category ? "records.countFiltered" : "records.count", { shown: shown.length, total: records.length })}</span>
       <button type="button" className="btn-secondary" disabled={!shown.length} title={t("records.copyHint")} onClick={() => void copyList()}>{t("records.copyList")}</button>
     </div>
     {copyNote && <p role="status" className={`text-sm ${copyFallback ? "text-warn" : "text-ok"}`}>{copyNote}</p>}
@@ -114,14 +130,14 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   const startNew = () => openForm(null, { ...EMPTY });
   const startEdit = (record: MeetingRecord) => openForm(record.id, {
     title: record.title, starts_at: record.starts_at, ends_at: record.ends_at ?? "", location: record.location, attendees: record.attendees,
-    organizer: record.organizer, summary: record.summary, project_id: record.project_id ?? "",
+    organizer: record.organizer, category: record.category ?? "", summary: record.summary, project_id: record.project_id ?? "",
   }, record.project_name);
   const setField = (key: keyof Draft, value: string) => setEditing((current) => current && { ...current, draft: { ...current.draft, [key]: value } });
 
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (!editing) return; setBusy(true); setError("");
     const { draft } = editing;
-    const body = { title: draft.title, starts_at: draft.starts_at, ends_at: draft.ends_at || null, location: draft.location, attendees: draft.attendees, summary: draft.summary, ...(kind === "meeting" ? { project_id: draft.project_id || null } : { organizer: draft.organizer }) };
+    const body = { title: draft.title, starts_at: draft.starts_at, ends_at: draft.ends_at || null, location: draft.location, attendees: draft.attendees, summary: draft.summary, ...(kind === "meeting" ? { project_id: draft.project_id || null } : { organizer: draft.organizer, category: draft.category }) };
     try {
       if (editing.id) await api(`/meetings/${editing.id}`, patchBody(body)); else await api("/meetings", jsonBody({ kind, ...body }));
       // 先重新載入清單再顯示訊息，看到「已新增」時清單裡就已經有那一筆。
@@ -142,7 +158,8 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   const form = editing && <form className="panel mb-6" onSubmit={save} aria-labelledby="record-form-title">
     <h2 id="record-form-title" className="mb-4 font-bold">{t(editing.id ? copy.editTitle : copy.newTitle)}</h2>
     <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-      <div className="sm:col-span-2"><label className="label" htmlFor="record-title">{t(copy.name)}<span className="text-danger"> *</span></label><input id="record-title" className="w-full" maxLength={120} required placeholder={t(copy.namePlaceholder)} value={editing.draft.title} onChange={(event) => setField("title", event.target.value)} /></div>
+      <div className={kind === "meeting" ? "sm:col-span-2" : ""}><label className="label" htmlFor="record-title">{t(copy.name)}<span className="text-danger"> *</span></label><input id="record-title" className="w-full" maxLength={120} required placeholder={t(copy.namePlaceholder)} value={editing.draft.title} onChange={(event) => setField("title", event.target.value)} /></div>
+      {kind === "course" && <div><label className="label" htmlFor="record-category">{t("courses.category")}</label><select id="record-category" className="w-full" value={editing.draft.category} onChange={(event) => setField("category", event.target.value)}><option value="">{t("courses.categoryNone")}</option>{COURSE_CATEGORIES.map((code) => <option key={code} value={code}>{t(categoryKey(code))}</option>)}</select></div>}
       <div><label className="label" htmlFor="record-start">{t("records.start")}<span className="text-danger"> *</span></label><input id="record-start" className="w-full" type="datetime-local" required value={editing.draft.starts_at} onChange={(event) => setField("starts_at", event.target.value)} /></div>
       <div><label className="label" htmlFor="record-end">{t("records.end")}</label><input id="record-end" className="w-full" type="datetime-local" min={editing.draft.starts_at || undefined} value={editing.draft.ends_at} onChange={(event) => setField("ends_at", event.target.value)} /></div>
       <div><label className="label" htmlFor="record-location">{t("records.location")}</label><input id="record-location" className="w-full" maxLength={200} placeholder={t("records.locationPlaceholder")} value={editing.draft.location} onChange={(event) => setField("location", event.target.value)} /></div>
@@ -167,7 +184,7 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
     {message && <div role="status" className="mb-4 rounded-lg border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
     {form}
     {filters}
-    {!records ? <Loading /> : !records.length ? <Empty>{t(copy.empty)}</Empty> : !shown.length ? <Empty>{t(ranged && !query.trim() ? "records.noMatchRange" : "records.noMatch")}</Empty> : <>{section("records.upcoming", upcoming)}{section("records.past", past)}</>}
+    {!records ? <Loading /> : !records.length ? <Empty>{t(copy.empty)}</Empty> : !shown.length ? <Empty>{t(category ? "records.noMatchFiltered" : ranged && !query.trim() ? "records.noMatchRange" : "records.noMatch")}</Empty> : <>{section("records.upcoming", upcoming)}{section("records.past", past)}</>}
   </>;
 }
 
@@ -178,7 +195,7 @@ function RecordCard({ record, lang, onEdit, onDelete }: { record: MeetingRecord;
   const [open, setOpen] = useState(false);
   return <li id={record.id} className="panel scroll-mt-24">
     <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-      <h3 className="text-lg font-bold break-words">{record.title}</h3>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><h3 className="text-lg font-bold break-words">{record.title}</h3>{record.kind === "course" && record.category && <span className="badge">{t(categoryKey(record.category))}</span>}</div>
       <span className="text-sm font-semibold text-psi">{formatRecordTime(record.starts_at, record.ends_at, lang)}</span>
     </div>
     <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useLang, useT } from "../i18n/LangContext";
+import type { TransKey } from "../i18n/translations";
 import { formatRecordTime, type MeetingRecord } from "../meeting-records";
 
 /** 首頁的「近期會議與外訓」：接下來的與剛結束的各幾筆，點了到會議記錄或外訓紀錄那一筆。 */
@@ -11,7 +12,7 @@ export function DashboardMeetings() {
   useEffect(() => { api<{ upcoming: MeetingRecord[]; recent: MeetingRecord[] }>("/meetings/overview").then(setData).catch(() => setData({ upcoming: [], recent: [] })); }, []);
   if (!data) return null;
   const item = (record: MeetingRecord) => <li key={record.id}><Link to={`/${record.kind === "meeting" ? "meetings" : "courses"}#${record.id}`} className="block border-l-2 border-gold-dim pl-3 hover:border-psi">
-    <span className="mr-2 text-xs font-semibold text-star-dim">{t(record.kind === "meeting" ? "records.kindMeeting" : "records.kindCourse")}</span>
+    <span className="mr-2 text-xs font-semibold text-star-dim">{t(record.kind === "meeting" ? "records.kindMeeting" : "records.kindCourse")}{record.kind === "course" && record.category && `・${t(`category.${record.category}` as TransKey)}`}</span>
     <span className="font-medium text-star">{record.title}</span>
     <span className="block text-xs text-star-dim">{formatRecordTime(record.starts_at, record.ends_at, lang)}{record.location && ` · ${record.location}`}{record.project_name && ` · ${record.project_name}`}</span>
   </Link></li>;
