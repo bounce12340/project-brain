@@ -12,7 +12,7 @@ export function ProgressBar({ value }: { value: number }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty-state">{children}</div>; }
-export function ErrorBox({ message }: { message: string }) { const t = useT(); return <div className="mb-4 border border-danger bg-void p-3 text-sm text-danger">{translateBackendError(message, t)}</div>; }
+export function ErrorBox({ message }: { message: string }) { const t = useT(); return <div className="mb-4 rounded-card border border-danger bg-void p-3 text-sm text-danger">{translateBackendError(message, t)}</div>; }
 export function Loading() { const t = useT(); return <div className="py-20 text-center text-star-dim">{t("common.loading")}</div>; }
 
 /** 專案狀態蓋成章：進行中是墨色、暫停琥珀、完成綠、歸檔淡墨。 */

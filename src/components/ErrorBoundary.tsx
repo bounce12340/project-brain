@@ -32,7 +32,7 @@ class Boundary extends Component<Props, State> {
     return <section className="panel" role="alert" data-error-boundary>
       <h2 className="mb-2 font-bold">{this.props.labels.title}</h2>
       <p className="mb-4 text-sm text-star-dim">{this.props.labels.hint}</p>
-      <pre className="mb-4 overflow-x-auto whitespace-pre-wrap break-words border border-nexus-line bg-void p-3 text-xs text-star-dim">{this.state.message}</pre>
+      <pre className="mb-4 overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-nexus-line bg-void p-3 text-xs text-star-dim">{this.state.message}</pre>
       <button className="btn-secondary" onClick={() => this.setState({ message: null })}>{this.props.labels.retry}</button>
     </section>;
   }

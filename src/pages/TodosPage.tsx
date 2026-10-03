@@ -55,7 +55,7 @@ export function TodosPage() {
 
   return <>
     <PageHeader title={t("todos.title")} description={t("todos.description")} />
-    {toast && <div className="fixed right-5 top-20 z-50 rounded-lg bg-ok px-4 py-3 text-sm text-white shadow-lg">{toast}</div>}
+    {toast && <div className="fixed right-5 top-20 z-50 rounded-card bg-ok px-4 py-3 text-sm text-white shadow-lg">{toast}</div>}
     <form className="panel mb-6 grid gap-3 md:grid-cols-4" onSubmit={add}>
       <input name="title" placeholder={t("todos.placeholder")} required />
       <input name="due_date" type="date" />
@@ -67,7 +67,7 @@ export function TodosPage() {
     </form>
     <div className="grid gap-5 lg:grid-cols-2">{groups.map((group) => <section className="panel" key={group.title}>
       <h2 className="mb-3 font-bold">{group.title} <span className="text-xs text-star-dim">{group.items.length}</span></h2>
-      {group.items.length ? <div className="space-y-2">{group.items.map((item) => <label className="flex items-center gap-3 rounded-lg border border-nexus-line p-3" key={item.id}>
+      {group.items.length ? <div className="space-y-2">{group.items.map((item) => <label className="flex items-center gap-3 rounded-card border border-nexus-line p-3" key={item.id}>
         <input type="checkbox" checked={!!item.done} onChange={(event) => void toggle(item, event.target.checked)} />
         <span className={`flex-1 text-sm ${item.done ? "line-through text-star-dim" : ""}`}>{item.title}{item.project_name && <small className="ml-2 text-psi">{item.project_name}</small>}</span>
         <span className="text-xs text-star-dim">{item.due_date}</span>

@@ -81,7 +81,7 @@ export function ContactsPage() {
   return <>
     <PageHeader title={t("contacts.title")} description={t("contacts.description")} actions={!editing && <button className="btn" onClick={startNew}>{t("contacts.add")}</button>} />
     {error && !editing && <ErrorBox message={error} />}
-    {message && <div role="status" className="mb-4 rounded-lg border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
+    {message && <div role="status" className="mb-4 rounded-card border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
     {form}
     <div className="mb-4 flex flex-wrap items-center gap-3"><input aria-label={t("contacts.search")} className="min-w-0 flex-1" type="search" placeholder={t("contacts.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />{contacts && <span className="text-sm text-star-dim">{t(query.trim() ? "contacts.countFiltered" : "contacts.count", { shown: shown.length, total: contacts.length })}</span>}</div>
     {!contacts ? <Loading /> : !shown.length ? <Empty>{t(contacts.length ? "contacts.noMatch" : "contacts.empty")}</Empty> : <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

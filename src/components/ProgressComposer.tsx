@@ -86,14 +86,14 @@ export function ProgressComposer({ tasks, stages, today, busy, onPublish }: {
 
     {entries.length > 0 && <div>
       <h3 className="mb-2 font-bold">{t("compose.added", { count: entries.length })}</h3>
-      <ul className="space-y-2">{entries.map((item) => <li className="flex items-start gap-3 border border-nexus-line p-3 text-sm" key={item.key}>
+      <ul className="space-y-2">{entries.map((item) => <li className="flex items-start gap-3 rounded-card border border-nexus-line p-3 text-sm" key={item.key}>
         <span className="shrink-0 font-mono text-star-dim">{entryDateLabel(item.date, today)}</span>
         <span className="min-w-0 flex-1"><span className="font-medium">{label(item.kind)}：{item.text}</span>
           <span className="mt-1 block text-xs text-star-dim">{summary(item.key)}</span></span>
         <button className="shrink-0 text-danger" type="button" aria-label={t("compose.remove", { text: item.text })}
           onClick={() => setEntries((rows) => rows.filter((row) => row.key !== item.key))}>✕</button>
       </li>)}</ul>
-      {warnProgress && <p className="mt-3 border border-warn bg-void p-3 text-sm text-warn">{t("compose.progressWarning")}</p>}
+      {warnProgress && <p className="mt-3 rounded-card border border-warn bg-void p-3 text-sm text-warn">{t("compose.progressWarning")}</p>}
       <button className="btn mt-4" type="button" disabled={busy || !entries.length}
         onClick={() => onPublish(entries, content, warnProgress)}>{t(busy ? "common.processing" : "compose.publish")}</button>
     </div>}

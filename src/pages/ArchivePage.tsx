@@ -47,7 +47,7 @@ function ArchiveBar({ project }: { project: Project }) {
   const { start, end } = archivePeriod(project);
   const date = (value: string) => formatDate(value, false, lang);
   const summary = plainExcerpt(project.goal_summary || project.description);
-  return <Link to={`/projects/${project.id}`} className="block border border-nexus-line border-l-4 border-l-gold-dim bg-nexus px-4 py-3 transition hover:border-l-psi hover:bg-nexus-raised">
+  return <Link to={`/projects/${project.id}`} className="block rounded-card border border-nexus-line border-l-4 border-l-gold-dim bg-nexus px-4 py-3 transition hover:border-l-psi hover:bg-nexus-raised">
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <h3 className="font-bold text-star">{project.visibility === "private" && "🔒 "}{project.name}</h3>
       <span className="text-xs text-star-dim">{project.group_name} · {t(project.status === "done" ? "status.done" : "status.archived")}</span>

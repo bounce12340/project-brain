@@ -226,7 +226,7 @@ function ProjectTable({ projects }: { projects: ConversionResult["projects"] }) 
 
 function CheckResult({ check, okLabel, failLabel }: { check: Check; okLabel: TransKey; failLabel: TransKey }) {
   const t = useT();
-  if (!check.ok) return <div className="border border-danger p-3 text-sm text-danger"><p className="font-semibold">{t(failLabel)}</p><ul className="mt-2 list-disc space-y-1 pl-5">{check.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>;
+  if (!check.ok) return <div className="rounded-card border border-danger p-3 text-sm text-danger"><p className="font-semibold">{t(failLabel)}</p><ul className="mt-2 list-disc space-y-1 pl-5">{check.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>;
   const { summary } = check;
   return <div className="border border-ok p-3 text-sm">
     <p className="font-semibold text-ok">{t(okLabel)}</p>

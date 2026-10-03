@@ -21,7 +21,7 @@ describe("SPEC-V10-1 法規列表列層級刪除 icon", () => {
 
   it("使用雙主題 token 呈現 star-dim、danger hover 與微光暈", () => {
     expect(css).toContain(".regwatch-row-delete");
-    expect(css).toContain("@apply inline-flex h-8 w-8 shrink-0 items-center justify-center text-star-dim hover:text-danger;");
+    expect(css).toContain("@apply inline-flex h-8 w-8 rounded-control shrink-0 items-center justify-center text-star-dim hover:text-danger;");
     expect(css).toContain("box-shadow: 0 0 12px rgb(var(--color-danger) / .35);");
     expect(css).toContain("stroke: currentColor");
     expect(css).toContain('button, input, select, textarea { @apply focus-visible:outline');
