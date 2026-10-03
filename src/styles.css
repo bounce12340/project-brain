@@ -64,7 +64,8 @@
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }
   html[data-fontsize="large"] .text-sm { font-size: 16px; line-height: 24px; }
   body { @apply min-h-screen bg-void font-sans text-star antialiased; font-variant-numeric: tabular-nums; }
-  h1, h2, h3 { letter-spacing: .01em; }
+  /* 標題用明體：像公文與送審文件的標題。 */
+  h1, h2, h3 { @apply font-serif; letter-spacing: .01em; }
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
     @apply rounded-control border border-nexus-line bg-nexus-raised px-3 py-2 text-sm text-star outline-none placeholder:text-star-dim focus:border-psi focus:ring-2 focus:ring-psi-glow;
   }
@@ -145,7 +146,7 @@
    * 紅＝高風險／逾期、琥珀＝需要注意、綠＝完成／低風險、墨＝一般狀態。
    */
   .stamp {
-    @apply inline-flex items-center whitespace-nowrap px-2 py-0.5 text-xs font-bold;
+    @apply inline-flex items-center whitespace-nowrap px-2 py-0.5 font-serif text-xs font-bold;
     border: 2px solid currentColor;
     outline: 1px solid currentColor;
     outline-offset: 2px;

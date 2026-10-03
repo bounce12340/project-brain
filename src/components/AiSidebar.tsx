@@ -26,7 +26,7 @@ export function AiSidebar() {
   return <>
     {/* 名稱固定為「AI 小幫手」，開合狀態交給 aria-expanded。名稱跟著狀態變的話，
         面板打開時它會跟標題列的「收起」同名，靠名稱定位的工具就分不出要按哪一顆。 */}
-    <button className="fixed bottom-6 right-0 z-40 rounded-l-card border border-r-0 border-gold bg-[rgb(var(--color-tab))] px-3 py-2 text-sm font-semibold text-star shadow-[0_8px_18px_-10px_rgb(var(--color-psi-deep)/.5)] hover:bg-nexus" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
+    <button className="fixed bottom-6 right-0 z-40 rounded-l-card border border-r-0 border-gold bg-[rgb(var(--color-tab))] px-3 py-2 font-serif text-sm font-semibold text-star shadow-[0_8px_18px_-10px_rgb(var(--color-psi-deep)/.5)] hover:bg-nexus" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
       {t("ai.open")}
     </button>
     {open && <aside aria-label={t("ai.title")} className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-gold bg-nexus shadow-2xl sm:w-[26rem]">
