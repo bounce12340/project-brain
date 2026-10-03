@@ -63,7 +63,7 @@ export const CHOICES = {
 };
 
 const ALIASES: Record<string, string[]> = {
-  active: ["進行中", "進行", "執行中", "active"], paused: ["暫停", "暫緩", "paused"], done: ["已完成", "完成", "結案", "done"], archived: ["已歸檔", "歸檔", "archived"],
+  active: ["進行中", "進行", "執行中", "active"], paused: ["暫停", "暫緩", "paused"], done: ["已完成", "完成", "結案", "done"], archived: ["已歸檔", "歸檔", "歸檔/封存", "封存", "已封存", "archived"],
   group: ["同組", "組內", "group"], all: ["全公司", "所有人", "公開", "all"], private: ["私人", "僅自己", "private"],
   任務: ["任務", "工作", "待辦", "task"], 里程碑: ["里程碑", "milestone"], 歷程事件: ["歷程事件", "歷程", "事件", "event"],
 };

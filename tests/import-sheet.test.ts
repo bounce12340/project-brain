@@ -161,6 +161,14 @@ describe("專案名稱寫法略有不同", () => {
     expect(result.projects.map((project) => [project.name, project.isNew])).toEqual([["GDP/GMP", true], ["化粧品GMP", true]]);
   });
 
+  it("狀態照畫面上的「歸檔/封存」或「封存」填，也算已歸檔", () => {
+    const result = workbookToPayload(book({
+      [SHEET.projects]: [header("projects"), ["舊案 A", "", "", "歸檔/封存"], ["舊案 B", "", "", "封存"], ["舊案 C", "", "", "已歸檔"]],
+    }), qa);
+    expect(errors(result)).toEqual([]);
+    expect(result.payload.projects.map((project) => project.status)).toEqual(["archived", "archived", "archived"]);
+  });
+
   it("「專案」表裡寫法不同的兩列算同一個專案，報重複", () => {
     const result = workbookToPayload(book({ [SHEET.projects]: [header("projects"), ["新案 A"], ["新案A"]] }), qa);
     expect(errors(result)[0].message).toBe("「新案A」在這張表出現了兩次，請合併成一列");
