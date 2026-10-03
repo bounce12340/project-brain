@@ -14,9 +14,15 @@ export default {
         danger: "rgb(var(--color-danger) / <alpha-value>)"
       },
       fontFamily: {
-        sans: ["Noto Sans TC", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "PingFang TC", "Microsoft JhengHei", "sans-serif"],
-        // 標題與章用明體，像公文與送審文件；沒載到時退回系統的宋體／新細明體。
-        serif: ["Noto Serif TC", "Songti TC", "PMingLiU", "MingLiU", "serif"]
+        // 一律用電腦內建的字型，不必下載：Windows 是微軟正黑體，Mac／iPhone 沒有時用蘋方，Android 用思源黑體。
+        sans: ["Microsoft JhengHei", "微軟正黑體", "PingFang TC", "Heiti TC", "Noto Sans TC", "Noto Sans CJK TC", "system-ui", "sans-serif"]
+      },
+      // 圓角分四級，越大的紙越圓：紙頁、卡片、按鈕與欄位、小標籤。數值在 styles.css 的 --radius-*。
+      borderRadius: {
+        sheet: "var(--radius-sheet)",
+        card: "var(--radius-card)",
+        control: "var(--radius-control)",
+        tag: "var(--radius-tag)"
       },
       fontSize: {
         xs: ["13px", { lineHeight: "18px" }],

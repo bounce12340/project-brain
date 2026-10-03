@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { translations } from "../src/i18n/translations";
+import { translations } from "../src/i18n/translations-all";
 
 const source = readFileSync(new URL("../src/components/OkrPanel.tsx", import.meta.url), "utf8");
 // 只取元件本體，避免把 SortableKr 的內容也算進來。

@@ -47,7 +47,7 @@ describe("touch targets", () => {
 describe("mobile density", () => {
   it("lays the dashboard KPI cards out two per row on phones", () => {
     // 一張紙上用細線分欄的登記列：手機兩欄、桌機五欄。
-    expect(dashboard).toContain('className="mb-6 grid grid-cols-2 gap-px border border-nexus-line bg-nexus-line');
+    expect(dashboard).toContain('className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-sheet border border-nexus-line bg-nexus-line');
     expect(dashboard).toContain("lg:grid-cols-5");
     expect(dashboard).not.toContain("grid gap-4 sm:grid-cols-2 lg:grid-cols-5");
   });

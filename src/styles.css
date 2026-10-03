@@ -10,8 +10,11 @@
  *   gold／gold-dim 卷宗米（標籤與分隔線）、gold-bright 標題墨色、
  *   psi 藍墨水（連結、目前位置、焦點）、psi-deep 主要按鈕的墨色、
  *   star 內文、star-dim 次要文字、ok 核准綠、warn 琥珀、danger 章紅。
+ * 圓角：像裁切過的卷宗與索引卡，四角是圓的，不是方硬的紙板。分四級，越大的紙越圓——
+ *   紙頁 14px、卡片與訊息 10px、按鈕與欄位 8px、小標籤 6px；索引標籤只圓上面兩角。
  */
 @layer base {
+  :root { --radius-sheet: 14px; --radius-card: 10px; --radius-control: 8px; --radius-tag: 6px; }
   :root, :root[data-theme="light"] {
     color-scheme: light;
     --nav-h: 56px;
@@ -61,10 +64,9 @@
   html[data-fontsize="large"] .text-xs { font-size: 14px; line-height: 20px; }
   html[data-fontsize="large"] .text-sm { font-size: 16px; line-height: 24px; }
   body { @apply min-h-screen bg-void font-sans text-star antialiased; font-variant-numeric: tabular-nums; }
-  /* 標題用明體：像公文與送審文件的標題。 */
-  h1, h2, h3 { @apply font-serif; letter-spacing: .01em; }
+  h1, h2, h3 { letter-spacing: .01em; }
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
-    @apply border border-nexus-line bg-nexus-raised px-3 py-2 text-sm text-star outline-none placeholder:text-star-dim focus:border-psi focus:ring-2 focus:ring-psi-glow;
+    @apply rounded-control border border-nexus-line bg-nexus-raised px-3 py-2 text-sm text-star outline-none placeholder:text-star-dim focus:border-psi focus:ring-2 focus:ring-psi-glow;
   }
   input[type="range"] { @apply accent-psi; }
   input[type="checkbox"], input[type="radio"] { @apply accent-psi; }
@@ -78,7 +80,7 @@
 @layer components {
   /* 紙頁：一張平放的紙，細線框、底下一點點陰影，沒有切角也沒有金框。 */
   .panel {
-    @apply border border-nexus-line bg-nexus p-5 text-star;
+    @apply rounded-sheet border border-nexus-line bg-nexus p-5 text-star;
     box-shadow: 0 1px 0 rgb(var(--color-nexus-line)), 0 10px 24px -18px rgb(var(--color-psi-deep) / .45);
   }
   .panel h1, .panel h2, .panel h3 { @apply text-gold-bright; }
@@ -87,7 +89,7 @@
   /* 只讓外觀類的屬性過場。transform 千萬不能列進來：拖曳時 dnd-kit 每一幀都在改
      transform 讓卡片跟著游標，CSS 若再把每次改動平滑 150ms，卡片就會一路落在手後面。
      hover 的浮起因此改用 translate，它獨立於 transform，不會被拖曳的位移覆蓋。 */
-  .kanban-task { transition: box-shadow .15s ease, border-color .15s ease, opacity .15s ease, translate .15s ease; }
+  .kanban-task { border-radius: var(--radius-card); transition: box-shadow .15s ease, border-color .15s ease, opacity .15s ease, translate .15s ease; }
   .kanban-task:hover { box-shadow: 0 6px 14px -8px rgb(var(--color-psi-deep) / .5); translate: 0 -2px; }
   .kanban-task.is-lifted { @apply border-gold; box-shadow: 0 14px 28px -10px rgb(var(--color-psi-deep) / .55); rotate: 1.5deg; cursor: grabbing; }
   /* 舉起來之後原位留一個淡掉的框，看得出卡片是從哪裡拿走的。 */
@@ -95,18 +97,18 @@
   .kanban-task.is-placeholder:hover { translate: none; box-shadow: none; }
   /* 拖曳中不要讓游標經過的卡片一張張亮起來，那會讓整個版面看起來在閃。 */
   .kanban-board-dragging .kanban-task:hover { box-shadow: none; translate: none; }
-  .btn { @apply inline-flex items-center justify-center bg-psi-deep px-4 py-2 text-sm font-semibold text-white hover:bg-psi; }
+  .btn { @apply inline-flex items-center rounded-control justify-center bg-psi-deep px-4 py-2 text-sm font-semibold text-white hover:bg-psi; }
   :root[data-theme="dark"] .btn:hover { @apply bg-psi text-void; }
-  .btn-secondary { @apply inline-flex items-center justify-center border border-star/40 bg-transparent px-4 py-2 text-sm font-semibold text-star hover:border-star hover:bg-nexus-raised; }
+  .btn-secondary { @apply inline-flex items-center rounded-control justify-center border border-star/40 bg-transparent px-4 py-2 text-sm font-semibold text-star hover:border-star hover:bg-nexus-raised; }
   /* 篩選的快速選項：像卷宗側邊的小索引籤，按下去的那個換成深藍。 */
-  .filter-chip { @apply inline-flex items-center border border-nexus-line bg-nexus px-3 py-1.5 text-sm font-medium text-star-dim hover:border-star/40 hover:text-star; }
+  .filter-chip { @apply inline-flex items-center rounded-full border border-nexus-line bg-nexus px-3 py-1.5 text-sm font-medium text-star-dim hover:border-star/40 hover:text-star; }
   .filter-chip[aria-pressed="true"] { @apply border-psi-deep bg-psi-deep font-semibold text-white; }
   :root[data-theme="dark"] .filter-chip[aria-pressed="true"] { @apply border-psi bg-psi text-void; }
-  .btn-danger { @apply inline-flex items-center justify-center bg-danger px-4 py-2 text-sm font-semibold text-white hover:brightness-110; }
-  .regwatch-row-delete { @apply inline-flex h-8 w-8 shrink-0 items-center justify-center text-star-dim hover:text-danger; }
+  .btn-danger { @apply inline-flex items-center rounded-control justify-center bg-danger px-4 py-2 text-sm font-semibold text-white hover:brightness-110; }
+  .regwatch-row-delete { @apply inline-flex h-8 w-8 rounded-control shrink-0 items-center justify-center text-star-dim hover:text-danger; }
   .regwatch-row-delete:hover { box-shadow: 0 0 12px rgb(var(--color-danger) / .35); }
   .regwatch-row-delete svg { @apply h-4 w-4; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.75; }
-  .progress-update-edit { @apply inline-flex h-8 w-8 shrink-0 items-center justify-center text-star-dim hover:text-psi; }
+  .progress-update-edit { @apply inline-flex h-8 w-8 rounded-control shrink-0 items-center justify-center text-star-dim hover:text-psi; }
   .progress-update-edit:hover { @apply bg-nexus-raised; }
   .progress-update-edit svg { @apply h-4 w-4; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.75; }
   /* 專案內頁的分頁是卷宗的索引標籤：沒選的是米色標籤，選中的那張和紙頁同色、接到底下的內容。 */
@@ -124,26 +126,26 @@
   }
   .project-tabs::-webkit-scrollbar { display: none; }
   .project-tabs > button { flex: 0 0 auto; white-space: nowrap; }
-  .folder-tab { @apply relative -mb-px border border-b-0 border-gold-dim px-4 py-2 text-sm font-medium text-star-dim; background: rgb(var(--color-tab)); }
+  .folder-tab { @apply relative -mb-px rounded-t-card border border-b-0 border-gold-dim px-4 py-2 text-sm font-medium text-star-dim; background: rgb(var(--color-tab)); }
   .folder-tab:hover { @apply text-star; }
   .folder-tab[aria-selected="true"], .folder-tab.is-active { @apply border-gold bg-nexus font-semibold text-star; box-shadow: 0 1px 0 rgb(var(--color-nexus)); }
   /* 標籤：檔案上貼的小標籤，標示組別、產品這類分類。 */
-  .badge { @apply inline-flex border border-gold-dim bg-nexus-raised px-2 py-0.5 text-xs font-medium text-star; }
+  .badge { @apply inline-flex rounded-tag border border-gold-dim bg-nexus-raised px-2 py-0.5 text-xs font-medium text-star; }
   .label { @apply mb-1 block text-sm font-semibold text-star-dim; }
   /* 進度是表單上的十個方格：填到哪格就塗到哪格，完成時換成核准綠。 */
-  .energy-track { @apply relative h-3 flex-1 overflow-hidden border border-nexus-line bg-nexus-raised; }
+  .energy-track { @apply relative h-3 flex-1 overflow-hidden rounded-full border border-nexus-line bg-nexus-raised; }
   .energy-track::after { content: ""; @apply pointer-events-none absolute inset-0; background-image: repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), rgb(var(--color-nexus-line)) calc(10% - 1px) 10%); }
   .energy-fill { @apply relative h-full bg-psi-deep; }
   :root[data-theme="dark"] .energy-fill { @apply bg-psi; }
   .energy-fill.is-complete { @apply bg-ok; }
-  .empty-state { @apply border border-dashed border-gold-dim px-5 py-10 text-center text-sm text-star-dim; }
+  .empty-state { @apply rounded-card border border-dashed border-gold-dim px-5 py-10 text-center text-sm text-star-dim; }
   .empty-inline::before { content: ""; @apply mr-2 inline-block h-1.5 w-1.5 rounded-full bg-gold; vertical-align: middle; }
   /*
    * 章：雙圈、微微歪斜、像墨色沒蓋滿。狀態與風險都用它；顏色只有四種，各有意思：
    * 紅＝高風險／逾期、琥珀＝需要注意、綠＝完成／低風險、墨＝一般狀態。
    */
   .stamp {
-    @apply inline-flex items-center whitespace-nowrap px-2 py-0.5 font-serif text-xs font-bold;
+    @apply inline-flex items-center whitespace-nowrap px-2 py-0.5 text-xs font-bold;
     border: 2px solid currentColor;
     outline: 1px solid currentColor;
     outline-offset: 2px;
@@ -163,14 +165,15 @@
   .risk-high { @apply stamp stamp-red; }
   /* 登入頁是卷宗的封面：一張紙頁，上方一個米色標籤寫著單位。 */
   .auth-stage { @apply relative isolate overflow-hidden bg-void; }
-  .auth-panel { @apply relative z-10 mt-7; }
+  /* 左上角接著卷宗標籤，那一角不圓，標籤才接得上。 */
+  .auth-panel { @apply relative z-10 mt-7 rounded-tl-none; }
   /* 封面上方的卷宗標籤。 */
-  .auth-panel::before { content: ""; position: absolute; left: -1px; top: -28px; width: 9rem; height: 28px; background: rgb(var(--color-tab)); border: 1px solid rgb(var(--color-gold-dim)); border-bottom: 0; }
+  .auth-panel::before { content: ""; position: absolute; left: -1px; top: -28px; width: 9rem; height: 28px; background: rgb(var(--color-tab)); border: 1px solid rgb(var(--color-gold-dim)); border-bottom: 0; border-radius: var(--radius-card) var(--radius-card) 0 0; }
   .auth-crystal { display: flex; justify-content: flex-start; margin-bottom: 16px; }
   .auth-crystal-svg { display: block; width: auto; height: 56px; }
   .recharts-cartesian-grid line { stroke: rgb(var(--color-nexus-line)); }
   .recharts-cartesian-axis-tick text, .recharts-legend-item-text { fill: rgb(var(--color-star-dim)) !important; color: rgb(var(--color-star-dim)) !important; }
-  .recharts-default-tooltip { background: rgb(var(--color-nexus-raised)) !important; border: 1px solid rgb(var(--color-nexus-line)) !important; color: rgb(var(--color-star)) !important; }
+  .recharts-default-tooltip { background: rgb(var(--color-nexus-raised)) !important; border: 1px solid rgb(var(--color-nexus-line)) !important; border-radius: var(--radius-control); color: rgb(var(--color-star)) !important; }
   .recharts-tooltip-label, .recharts-tooltip-item { color: rgb(var(--color-star)) !important; }
 }
 
@@ -184,7 +187,7 @@ nav[data-tour="nav"] > div:first-child {
   padding-top: 0;
   padding-bottom: 0;
 }
-.nav-tab { @apply relative -mb-px inline-flex items-center gap-1 self-end border border-b-0 border-transparent px-3 pb-2 pt-1.5 text-sm font-medium text-star-dim; }
+.nav-tab { @apply relative -mb-px inline-flex items-center gap-1 self-end rounded-t-control border border-b-0 border-transparent px-3 pb-2 pt-1.5 text-sm font-medium text-star-dim; }
 .nav-tab:hover { @apply text-star; }
 .nav-tab.is-active { @apply border-gold bg-void font-semibold text-star; }
 

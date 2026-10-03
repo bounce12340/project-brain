@@ -9,7 +9,7 @@ import {
   normalizeRegwatchDate,
 } from "../worker/services/regwatch-ai";
 import { mergeRegwatchAttachments, orphanRegwatchFileIds } from "../worker/services/regwatch";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 
 describe("SPEC-V10 公告日期與多檔分析", () => {
   it("prompt 強制公告日而非施行日，並把施行日放在第一個條列", () => {

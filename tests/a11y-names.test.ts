@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { translations } from "../src/i18n/translations";
+import { translations } from "../src/i18n/translations-all";
 
 const root = new URL("../src/", import.meta.url).pathname;
 const sources: Array<[string, string]> = [];

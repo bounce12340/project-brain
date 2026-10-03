@@ -181,7 +181,7 @@ function RecordsPage({ kind }: { kind: RecordKind }) {
   return <>
     <PageHeader title={t(copy.title)} description={t(copy.description)} actions={!editing && <button className="btn" onClick={startNew}>{t(copy.add)}</button>} />
     {error && !editing && <ErrorBox message={error} />}
-    {message && <div role="status" className="mb-4 rounded-lg border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
+    {message && <div role="status" className="mb-4 rounded-card border border-ok bg-void p-3 text-sm text-ok">{message}</div>}
     {form}
     {filters}
     {!records ? <Loading /> : !records.length ? <Empty>{t(copy.empty)}</Empty> : !shown.length ? <Empty>{t(category ? "records.noMatchFiltered" : ranged && !query.trim() ? "records.noMatchRange" : "records.noMatch")}</Empty> : <>{section("records.upcoming", upcoming)}{section("records.past", past)}</>}

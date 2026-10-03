@@ -26,7 +26,7 @@ export function AiSidebar() {
   return <>
     {/* 名稱固定為「AI 小幫手」，開合狀態交給 aria-expanded。名稱跟著狀態變的話，
         面板打開時它會跟標題列的「收起」同名，靠名稱定位的工具就分不出要按哪一顆。 */}
-    <button className="fixed bottom-6 right-0 z-40 border border-r-0 border-gold bg-[rgb(var(--color-tab))] px-3 py-2 font-serif text-sm font-semibold text-star shadow-[0_8px_18px_-10px_rgb(var(--color-psi-deep)/.5)] hover:bg-nexus" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
+    <button className="fixed bottom-6 right-0 z-40 rounded-l-card border border-r-0 border-gold bg-[rgb(var(--color-tab))] px-3 py-2 text-sm font-semibold text-star shadow-[0_8px_18px_-10px_rgb(var(--color-psi-deep)/.5)] hover:bg-nexus" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); writeOpen(next); }}>
       {t("ai.open")}
     </button>
     {open && <aside aria-label={t("ai.title")} className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-gold bg-nexus shadow-2xl sm:w-[26rem]">
@@ -73,7 +73,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
       {!messages.length && <p className="text-sm text-star-dim">{t(projectId ? "ai.emptyProject" : "ai.empty")}</p>}
       {messages.map((message, index) => <div key={index} className={message.role === "user" ? "text-right" : ""}>
-        <p className={`inline-block max-w-[92%] whitespace-pre-wrap border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>
+        <p className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-card border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>
       </div>)}
       {busy && <p className="text-sm text-star-dim">{t("ai.thinking")}</p>}
       {error && <p className="text-sm text-danger" role="alert">{error}</p>}
@@ -193,7 +193,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Row({ id, label, skipped, onToggle }: { id: string; label: string; skipped: Set<string>; onToggle(id: string): void }) {
-  return <label className="flex items-start gap-2 border border-nexus-line bg-nexus-raised p-2 text-sm">
+  return <label className="flex items-start gap-2 rounded-card border border-nexus-line bg-nexus-raised p-2 text-sm">
     <input type="checkbox" className="mt-0.5" checked={!skipped.has(id)} onChange={() => onToggle(id)} />
     <span className={skipped.has(id) ? "text-star-dim line-through" : ""}>{label}</span>
   </label>;

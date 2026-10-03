@@ -19,13 +19,13 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
   tour?: boolean;
 }) {
   const t = useT();
-  return <div data-tour={tour ? "project-card" : undefined} className={`border border-l-4 border-nexus-line bg-nexus-raised transition-colors ${expanded ? "border-l-psi" : "border-l-gold-dim hover:border-l-gold"}`}>
+  return <div data-tour={tour ? "project-card" : undefined} className={`rounded-card border border-l-4 border-nexus-line bg-nexus-raised transition-colors ${expanded ? "border-l-psi" : "border-l-gold-dim hover:border-l-gold"}`}>
     <div className="flex items-center gap-2 px-3">
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
         aria-expanded={expanded} aria-label={t("projects.rowToggle", { name: project.name })} onClick={onToggle}>
         <span aria-hidden="true" className={`shrink-0 text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-serif font-semibold">{project.visibility === "private" && "🔒 "}{project.name}</span>
+          <span className="block truncate font-semibold">{project.visibility === "private" && "🔒 "}{project.name}</span>
           <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-star-dim">
             <span className="badge">{project.group_name}</span>
             {project.product && <span className="badge">{project.product}</span>}

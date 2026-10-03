@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { en, translations, zh } from "../src/i18n/translations";
-import { LANG_STORAGE_KEY, normalizeLang, readStoredLang } from "../src/i18n/LangContext";
+import { en, translations, zh } from "../src/i18n/translations-all";
+import { LANG_STORAGE_KEY, loadLanguage, normalizeLang, readStoredLang } from "../src/i18n/LangContext";
 import { backendErrorKeys, translateBackendError } from "../src/i18n/errors";
 import { THEME_STORAGE_KEY, normalizeTheme, readStoredTheme } from "../src/theme/ThemeContext";
 import { aiLanguageInstruction, draftFallback, normalizeAiLang, scheduleReason, taskFallback } from "../worker/services/ai-language";
@@ -29,7 +29,9 @@ describe("v9 i18n", () => {
     expect(translateBackendError("找不到專案", (key) => en[key])).toBe("Project not found.");
     expect(translateBackendError("保留原文", (key) => en[key])).toBe("保留原文");
   });
-  it("formats relative time in the selected language", () => {
+  it("formats relative time in the selected language", async () => {
+    // 英文另成一檔，網站切到英文時會先載入；這裡比照辦理。
+    await loadLanguage("en");
     const now = Date.parse("2026-07-22T00:10:00Z");
     expect(relativeTime("2026-07-22T00:05:00Z", "zh", now)).toBe("5 分鐘前");
     expect(relativeTime("2026-07-22T00:05:00Z", "en", now)).toBe("5 minutes ago");

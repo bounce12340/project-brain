@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 import { progressLinkDrafts } from "../src/progress-links";
 import type { Stage, Task } from "../src/types";
 import {

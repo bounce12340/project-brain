@@ -26,7 +26,7 @@ export function ProjectFiles({ projectId, taskId, canEdit, compact = false, onCh
   return <section className={compact ? "" : "panel"}>
     {!compact && <h2 className="mb-4 font-bold" data-tour="project-files">{t("files.title")}</h2>}
     {error && <ErrorBox message={error} />}
-    {canEdit && <div className="mb-4 rounded-xl border-2 border-dashed border-nexus-line p-5 text-center text-sm text-star-dim" onDragOver={(e) => e.preventDefault()} onDrop={drop}><p>{t(busy ? "files.uploading" : "files.drop")}</p><input ref={input} className="mt-3 max-w-full" type="file" disabled={busy} onChange={(e) => void upload(e.target.files?.[0])} /></div>}
+    {canEdit && <div className="mb-4 rounded-card border-2 border-dashed border-nexus-line p-5 text-center text-sm text-star-dim" onDragOver={(e) => e.preventDefault()} onDrop={drop}><p>{t(busy ? "files.uploading" : "files.drop")}</p><input ref={input} className="mt-3 max-w-full" type="file" disabled={busy} onChange={(e) => void upload(e.target.files?.[0])} /></div>}
     {files.length ? <div className="divide-y divide-nexus-line">{files.map((file) => <div className="flex flex-wrap items-center gap-3 py-3 text-sm" key={file.id}><div className="min-w-0 flex-1"><p className="truncate font-medium">{file.filename}</p><p className="text-xs text-star-dim">{formatBytes(file.size)} · {file.uploaded_by_name} · {formatDate(file.created_at, true, lang)}{file.task_title ? ` · ${file.task_title}` : ""}</p></div><button className="btn-secondary !px-3 !py-1.5" onClick={() => void download(file)}>{t("common.download")}</button>{file.can_delete && <button className="text-xs text-danger" onClick={() => void remove(file)}>{t("common.delete")}</button>}</div>)}</div> : <Empty>{t("files.empty")}</Empty>}
   </section>;
 }

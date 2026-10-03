@@ -146,7 +146,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
   const insertMention = (name: string) => setComment(comment.replace(/@[^\s@]*$/, `@${name} `));
 
   return <div className="fixed inset-0 z-50 flex justify-end bg-void/80" onMouseDown={onClose}>
-    <aside data-tour="task-drawer" className="panel h-full w-full max-w-2xl overflow-y-auto p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+    <aside data-tour="task-drawer" className="panel h-full w-full max-w-2xl overflow-y-auto rounded-r-none p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
       <header className="mb-5 flex items-center justify-between">
         <h2 className="text-xl font-bold">{t("task.content")}</h2>
         <button className="btn-secondary !px-3 !py-1.5" onClick={onClose}>{t("common.close")}</button>
@@ -170,11 +170,11 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
           </select>
         </div>
 
-        <section data-task-drawer-section="dependencies" className="rounded-lg border border-nexus-line p-3">
+        <section data-task-drawer-section="dependencies" className="rounded-card border border-nexus-line p-3">
           <h3 className="font-bold">{t("task.dependencies")}</h3>
           <p className="mt-1 text-xs text-star-dim">{t("task.dependencyHint")}</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {data.tasks.filter((item) => item.id !== task.id).map((item) => <label className="flex items-center gap-2 rounded-lg border border-nexus-line p-2 text-sm" key={item.id}>
+            {data.tasks.filter((item) => item.id !== task.id).map((item) => <label className="flex items-center gap-2 rounded-card border border-nexus-line p-2 text-sm" key={item.id}>
               <input
                 type="checkbox"
                 checked={form.dependency_ids?.includes(item.id) ?? false}
@@ -212,7 +212,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
 
       <section className="mt-7 border-t pt-5">
         <h3 className="mb-3 font-bold">{t("task.comments")}</h3>
-        <div className="space-y-3">{comments.map((item) => <article className="rounded-lg bg-nexus-raised p-3" key={item.id}>
+        <div className="space-y-3">{comments.map((item) => <article className="rounded-card bg-nexus-raised p-3" key={item.id}>
           <div className="mb-2 flex justify-between text-xs text-star-dim">
             <span>{item.author_name}</span>
             <span title={formatDate(item.created_at, true, lang)}>{relativeTime(item.created_at, lang)}</span>
@@ -221,8 +221,8 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
         </article>)}</div>
         {data.permissions.can_edit && <div className="relative mt-4">
           <textarea className="min-h-20 w-full" placeholder={t("task.commentPlaceholder")} value={comment} onChange={(event) => setComment(event.target.value)} />
-          {candidates.length > 0 && <div className="absolute bottom-full mb-1 w-56 rounded-lg border bg-nexus p-1 shadow-lg">
-            {candidates.map((user) => <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-nexus-raised" key={user.id} onClick={() => insertMention(user.name)}>@{user.name}</button>)}
+          {candidates.length > 0 && <div className="absolute bottom-full mb-1 w-56 rounded-card border bg-nexus p-1 shadow-lg">
+            {candidates.map((user) => <button className="block w-full rounded-control px-3 py-2 text-left text-sm hover:bg-nexus-raised" key={user.id} onClick={() => insertMention(user.name)}>@{user.name}</button>)}
           </div>}
           <button className="btn mt-2" disabled={!comment.trim()} onClick={() => void sendComment()}>{t("task.sendComment")}</button>
         </div>}
@@ -238,7 +238,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
           <h3 className="font-bold">{t("task.aiSummary")}</h3>
           <button className="btn-secondary !px-3 !py-1.5" disabled={busy} onClick={() => void summarize()}>{t(busy ? "task.summarizing" : "task.generateSummary")}</button>
         </div>
-        {summary && <div className="rounded-lg bg-psi-deep/30 p-4 text-sm">
+        {summary && <div className="rounded-card bg-psi-deep/30 p-4 text-sm">
           <p>{summary.summary}</p>
           {summary.unresolved.length > 0 && <>
             <p className="mt-3 font-semibold">{t("task.openItems")}</p>
