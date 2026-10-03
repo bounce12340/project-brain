@@ -32,7 +32,7 @@ export function ResetPasswordPage() {
     finally { setBusy(false); }
   };
   const body = done
-    ? <><p role="status" className="mb-6 rounded-lg border border-ok bg-void p-3 text-sm leading-6 text-ok">{t("auth.resetDone")}</p><Link className="btn block w-full text-center" to="/login">{t("auth.login")}</Link></>
+    ? <><p role="status" className="mb-6 rounded-card border border-ok bg-void p-3 text-sm leading-6 text-ok">{t("auth.resetDone")}</p><Link className="btn block w-full text-center" to="/login">{t("auth.login")}</Link></>
     : valid === null ? <p className="text-sm text-star-dim">{t("common.loading")}</p>
     : !valid ? <><ErrorBox message={t("auth.resetInvalid")} /><Link className="btn block w-full text-center" to="/forgot-password">{t("auth.requestAgain")}</Link></>
     : <>

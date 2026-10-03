@@ -18,6 +18,13 @@ export default {
         // 標題與章用明體，像公文與送審文件；沒載到時退回系統的宋體／新細明體。
         serif: ["Noto Serif TC", "Songti TC", "PMingLiU", "MingLiU", "serif"]
       },
+      // 圓角分四級，越大的紙越圓：紙頁、卡片、按鈕與欄位、小標籤。數值在 styles.css 的 --radius-*。
+      borderRadius: {
+        sheet: "var(--radius-sheet)",
+        card: "var(--radius-card)",
+        control: "var(--radius-control)",
+        tag: "var(--radius-tag)"
+      },
       fontSize: {
         xs: ["13px", { lineHeight: "18px" }],
         sm: ["15px", { lineHeight: "22px" }]

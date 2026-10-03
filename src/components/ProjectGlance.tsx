@@ -88,7 +88,7 @@ function GlanceBody({ data, projectId, openLink, goal }: { data: ProjectDetail; 
 
     {goal && (project.goal_summary || project.description) && <p className="line-clamp-2 text-sm text-star-dim">{project.goal_summary || project.description}</p>}
 
-    {project.progress >= 100 && project.status === "active" && <p className="border border-ok/60 bg-void p-3 text-sm text-ok">{t("glance.completeHint")}</p>}
+    {project.progress >= 100 && project.status === "active" && <p className="rounded-card border border-ok/60 bg-void p-3 text-sm text-ok">{t("glance.completeHint")}</p>}
 
     <div className="grid gap-5 lg:grid-cols-5">
       <div className="space-y-5 lg:col-span-3">

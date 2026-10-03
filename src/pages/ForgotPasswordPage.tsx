@@ -24,7 +24,7 @@ export function ForgotPasswordPage() {
     <h1 className="mb-2 text-2xl font-black text-gold-bright">{t("auth.forgotTitle")}</h1>
     <p className="mb-6 text-sm leading-6 text-star-dim">{t("auth.forgotIntro")}</p>
     {error && <ErrorBox message={error} />}
-    {sent ? <p role="status" className="mb-6 rounded-lg border border-ok bg-void p-3 text-sm leading-6 text-ok">{sent}</p> : <>
+    {sent ? <p role="status" className="mb-6 rounded-card border border-ok bg-void p-3 text-sm leading-6 text-ok">{sent}</p> : <>
       <label className="label" htmlFor="forgot-email">{t("auth.email")}</label>
       <input id="forgot-email" className="mb-6 w-full" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
       <button className="btn w-full" disabled={busy}>{t(busy ? "common.processing" : "auth.sendResetLink")}</button>

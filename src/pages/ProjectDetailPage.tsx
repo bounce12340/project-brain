@@ -248,7 +248,7 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
     window.setTimeout(() => setToast(""), 3500);
   };
   if (!data.progress_updates) return <Loading />;
-  return <>{toast && <div className="fixed bottom-5 right-5 z-[60] border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div data-tour="progress-updates" className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <>
+  return <>{toast && <div className="fixed bottom-5 right-5 z-[60] rounded-card border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div data-tour="progress-updates" className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <>
       <div className="mb-4 flex gap-1 border-b border-nexus-line">{([["entries", "compose.modeEntries"], ["free", "compose.modeFree"]] as const).map(([key, labelKey]) => <button key={key} type="button" className={`border-b-2 px-3 py-2 text-sm font-medium ${mode === key ? "border-psi text-psi" : "border-transparent text-star-dim"}`} onClick={() => setMode(key)}>{t(labelKey)}</button>)}</div>
       {composeError && <ErrorBox message={composeError} />}
       {mode === "entries"
@@ -345,7 +345,7 @@ function RelatedStrip({ current, siblings }: { current: Project; siblings: Switc
   const t = useT();
   const related = relatedProjects(siblings, current);
   if (!related.length) return null;
-  return <div className="mb-4 flex flex-wrap items-center gap-2 border border-nexus-line bg-nexus-raised px-3 py-2">
+  return <div className="mb-4 flex flex-wrap items-center gap-2 rounded-card border border-nexus-line bg-nexus-raised px-3 py-2">
     <span className="text-xs font-semibold text-gold-bright">{t("projects.productCount", { product: current.product, count: related.length + 1 })}</span>
     {related.map((item) => <Link key={item.id} to={`/projects/${item.id}`}
       className="border border-nexus-line px-2 py-1 text-sm hover:border-psi hover:text-psi">{item.name}</Link>)}

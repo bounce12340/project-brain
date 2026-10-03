@@ -31,7 +31,7 @@ export function NavMenu({ group, active, compact = false }: { group: NavGroup; a
     <button ref={buttonRef} type="button" data-tour={group.tour} className={trigger} aria-expanded={open} aria-controls={listId} aria-label={t("nav.menu", { label })} onClick={() => setOpen(!open)}>
       {label}<span aria-hidden="true" className={`text-xs transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
     </button>
-    {open && <ul id={listId} className="absolute left-0 top-full z-40 min-w-44 border border-t-0 border-gold bg-void py-1 shadow-[0_14px_28px_-12px_rgb(var(--color-psi-deep)/.45)]">
+    {open && <ul id={listId} className="absolute left-0 top-full z-40 min-w-44 rounded-b-card rounded-tr-card border border-t-0 border-gold bg-void py-1 shadow-[0_14px_28px_-12px_rgb(var(--color-psi-deep)/.45)]">
       {group.items.map((item) => <li key={item.to}><NavLink to={item.to} end={item.to === "/projects"} onClick={() => setOpen(false)} className={({ isActive }) => `flex w-full items-center justify-start whitespace-nowrap px-4 py-2 text-sm ${isActive ? "bg-nexus-raised font-semibold text-psi" : "text-star hover:bg-nexus-raised hover:text-psi"}`}>{t(item.label)}</NavLink></li>)}
     </ul>}
   </div>;
