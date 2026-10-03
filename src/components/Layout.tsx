@@ -19,7 +19,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <nav data-tour="nav" className="sticky top-0 z-30 border-b border-gold backdrop-blur">
       {/* 手機上圖示佔掉的寬度從間距拿回來，否則 360–390px 的「登出」會被擠成兩行。 */}
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 lg:gap-5">
-        <NavLink to="/" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-serif text-base font-bold text-gold-bright sm:text-lg lg:mr-2 lg:gap-2"><img src="/favicon.svg" alt="" width={24} height={24} className="h-6 w-6 lg:h-7 lg:w-7" />{t("app.brand")}</NavLink>
+        <NavLink to="/" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-base font-bold text-gold-bright sm:text-lg lg:mr-2 lg:gap-2"><img src="/favicon.svg" alt="" width={24} height={24} className="h-6 w-6 lg:h-7 lg:w-7" />{t("app.brand")}</NavLink>
         <div className="hidden flex-1 items-end gap-1 self-stretch lg:flex">
           <NavLink to="/" end className={({ isActive }) => topLink(isActive)}>{t("nav.dashboard")}</NavLink>
           {NAV_GROUPS.map((group) => <NavMenu key={group.key} group={group} active={activeGroup === group.key} />)}

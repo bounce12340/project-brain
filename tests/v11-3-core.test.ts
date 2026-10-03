@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { v6Routes } from "../worker/routes/v6";
 import type { AppContext, AuthUser } from "../worker/types";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 import { regwatchMonths, regwatchYears } from "../src/pages/RegwatchPage";
 
 const user: AuthUser = {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 
 const page = readFileSync(resolve("src/pages/RegwatchPage.tsx"), "utf8");
 const css = readFileSync(resolve("src/styles.css"), "utf8");

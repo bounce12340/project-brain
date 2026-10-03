@@ -13,7 +13,7 @@ import {
 import { regwatchListStatus } from "../worker/services/regwatch";
 import { runDailyWorkflow } from "../worker/services/cron";
 import type { AuthUser } from "../worker/types";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 
 const fixture = readFileSync(new URL("./fixtures/tfda-rss-sample.xml", import.meta.url), "utf8");
 const items = parseTfdaRss(fixture);

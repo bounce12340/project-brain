@@ -9,7 +9,7 @@ import {
   type ProgressLinkTask,
 } from "../worker/services/progress-links";
 import type { AppContext, AuthUser } from "../worker/types";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 import { progressLinkDrafts, readProgressLinksPreference } from "../src/progress-links";
 import type { Stage, Task } from "../src/types";
 

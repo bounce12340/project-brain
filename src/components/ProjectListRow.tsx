@@ -25,7 +25,7 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
         aria-expanded={expanded} aria-label={t("projects.rowToggle", { name: project.name })} onClick={onToggle}>
         <span aria-hidden="true" className={`shrink-0 text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-serif font-semibold">{project.visibility === "private" && "🔒 "}{project.name}</span>
+          <span className="block truncate font-semibold">{project.visibility === "private" && "🔒 "}{project.name}</span>
           <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-star-dim">
             <span className="badge">{project.group_name}</span>
             {project.product && <span className="badge">{project.product}</span>}

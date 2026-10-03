@@ -29,7 +29,8 @@ describe("recharts stays off the critical path", () => {
   });
 
   it("reserves the chart height while it loads, so content does not jump", () => {
-    expect(dashboard).toMatch(/fallback=\{[^}]*h-\[318px\]/);
+    expect(dashboard).toMatch(/const chartsPlaceholder = [^\n]*h-\[318px\]/);
+    expect(dashboard).toContain("fallback={chartsPlaceholder}");
     expect(detail).toMatch(/fallback=\{[^}]*h-\[300px\]/);
   });
 });

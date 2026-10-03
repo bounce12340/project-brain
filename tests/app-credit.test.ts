@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 
 const login = readFileSync(new URL("../src/pages/LoginPage.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");

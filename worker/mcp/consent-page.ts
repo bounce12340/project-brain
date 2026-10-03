@@ -12,11 +12,11 @@ const STYLE = `
 :root { color-scheme: light dark; --void:#eceff1; --nexus:#fafbfb; --line:#cdd3d9; --star:#1e2638; --dim:#5b6577; --gold:#1e2638; --psi:#2a5da8; --warn:#9a5b0e; --ink:#1f2a44; --tab:#e3dcc8; }
 @media (prefers-color-scheme: dark) { :root { --void:#12161d; --nexus:#1a2029; --line:#333d4b; --star:#dde2ea; --dim:#9aa3b2; --gold:#e9e4d6; --psi:#8fb6f2; --warn:#e3a852; --ink:#3d65a8; --tab:#34322c; } }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: var(--void); color: var(--star); font: 15px/1.7 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; display: grid; place-items: center; padding: 24px 16px; }
+body { margin: 0; min-height: 100vh; background: var(--void); color: var(--star); font: 15px/1.7 "Microsoft JhengHei", "微軟正黑體", "PingFang TC", "Heiti TC", "Noto Sans TC", system-ui, sans-serif; display: grid; place-items: center; padding: 24px 16px; }
 main { width: 100%; max-width: 520px; background: var(--nexus); border: 1px solid var(--line); border-top: 6px solid var(--tab); padding: 28px 24px; box-shadow: 0 10px 24px -18px rgba(31, 42, 68, .45); }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--gold); font-weight: 700; letter-spacing: .04em; font-size: 14px; font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--gold); font-weight: 700; letter-spacing: .04em; font-size: 14px; }
 .brand img { width: 24px; height: 24px; }
-h1 { font-size: 20px; line-height: 1.5; margin: 8px 0 16px; font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
+h1 { font-size: 20px; line-height: 1.5; margin: 8px 0 16px; }
 p { margin: 0 0 12px; }
 .dim { color: var(--dim); font-size: 13px; }
 .warn { border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; font-size: 14px; margin: 0 0 16px; }

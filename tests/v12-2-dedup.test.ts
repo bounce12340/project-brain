@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 import { resourcesRoutes } from "../worker/routes/resources";
 import type { AppContext, AuthUser } from "../worker/types";
 

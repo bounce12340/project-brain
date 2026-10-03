@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { v7Routes } from "../worker/routes/v7";
 import { parseRegwatchDraftBatchInput } from "../worker/services/regwatch";
 import type { AppContext, AuthUser } from "../worker/types";
-import { en, zh } from "../src/i18n/translations";
+import { en, zh } from "../src/i18n/translations-all";
 import { readFileSync } from "node:fs";
 
 const manager: AuthUser = {
