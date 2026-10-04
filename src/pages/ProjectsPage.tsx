@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, today } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
+import { Empty, ErrorBox, FolderIcon, Loading, PageHeader } from "../components/UI";
 import { ProjectListRow } from "../components/ProjectListRow";
 import { groupByProduct, hasClusters, relatedProjects } from "../project-grouping";
 import { useT } from "../i18n/LangContext";
@@ -19,12 +19,15 @@ export function ProjectsPage() {
   // 廠區不放進 filters：filters 會被序列化成查詢字串送給後端，而廠區是在前端篩的。
   const [chosenSite, setChosenSite] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // 目前這份清單是不是在「沒下任何條件」時拿到的。用來分辨「完全沒有專案」與「篩選後沒有結果」；
+  // 記的是送出查詢當下的條件，不是輸入框現在的值，否則把關鍵字刪光的瞬間篩選列會被卸載、輸入框失焦。
+  const [unfiltered, setUnfiltered] = useState(false);
   // status 一律帶值：不帶的話後端回傳全部狀態，已完成與已歸檔的專案會漏進這份清單。
-  const load = () => { const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([key, value]) => value && key !== "status")), status: statusQuery("active", filters.status) }); api<{ projects: Project[] }>(`/projects?${query}`).then((data) => {
+  const load = () => { const pristine = !filters.group && !filters.status && !filters.keyword; const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([key, value]) => value && key !== "status")), status: statusQuery("active", filters.status) }); api<{ projects: Project[] }>(`/projects?${query}`).then((data) => {
     // 預設帶出自己的組別，但那一組可能一件都沒有。這時退回「全部」，而不是讓使用者
     // 對著空清單猜原因。只退一次，避免與 effect 互相觸發成迴圈。
     if (autoGroup && filters.group && !data.projects.length) { setAutoGroup(false); setFilters((current) => ({ ...current, group: "" })); return; }
-    setProjects(data.projects);
+    setProjects(data.projects); setUnfiltered(pristine);
   }); };
   useEffect(load, [filters]); useEffect(() => { api<Metadata>("/metadata").then(setMeta); }, []);
   // 廠區選單只列出目前這份清單裡有的值；選過的若因其他篩選而消失則退回「全部」。
@@ -32,18 +35,24 @@ export function ProjectsPage() {
   const unset = hasUnsetSite(projects ?? []);
   const site = resolveSite(chosenSite, sites, unset);
   const visible = filterProjectsBySite(projects ?? [], site);
-  return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={<div className="flex flex-wrap gap-2"><Link className="btn-secondary" to="/import">{t("import.entry")}</Link>{user?.role !== "intern" && <button className="btn" onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>}</div>} />
+  const canCreate = user?.role !== "intern";
+  // 一個專案都沒有：篩選列沒有東西可篩，收起來，只留一個「新增」的入口。
+  const noData = !!projects && !projects.length && unfiltered;
+  const clearFilters = () => { setAutoGroup(false); writeProjectGroup(""); setChosenSite(""); setFilters({ group: "", status: "", keyword: "" }); };
+  return <><PageHeader title={t("nav.projects")} description={t("projects.description")} actions={<div className="flex flex-wrap gap-2"><Link className="btn-secondary" to="/import">{t("import.entry")}</Link>{canCreate && <button className={noData ? "btn-secondary" : "btn"} onClick={() => setShowNew(!showNew)}>{t("projects.new")}</button>}</div>} />
     {showNew && meta && <NewProject metadata={meta} onDone={() => { setShowNew(false); load(); }} />}
-    <div className={`panel mb-5 grid gap-3 ${sites.length ? "md:grid-cols-4" : "md:grid-cols-3"}`}><select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => { setAutoGroup(false); writeProjectGroup(e.target.value); setFilters({ ...filters, group: e.target.value }); }}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} />
+    {!noData && <div className={`panel mb-5 grid gap-3 ${sites.length ? "md:grid-cols-4" : "md:grid-cols-3"}`}><select aria-label={t("a11y.filterGroup")} value={filters.group} onChange={(e) => { setAutoGroup(false); writeProjectGroup(e.target.value); setFilters({ ...filters, group: e.target.value }); }}><option value="">{t("projects.allGroups")}</option>{meta?.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select><select aria-label={t("a11y.filterStatus")} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">{t("projects.allOngoing")}</option><option value="active">{t("status.active")}</option><option value="paused">{t("status.paused")}</option></select><input placeholder={t("projects.search")} value={filters.keyword} onChange={(e) => setFilters({ ...filters, keyword: e.target.value })} />
       {/* 沒有人填過廠區時整個不顯示——一個只有「全部」可選的下拉只是噪音。 */}
       {sites.length > 0 && <select aria-label={t("a11y.filterSite")} value={site} onChange={(e) => setChosenSite(e.target.value)}>
         <option value="">{t("projects.allSites")}</option>
         {sites.map((value) => <option value={value} key={value}>{value}</option>)}
         {unset && <option value={SITE_UNSET}>{t("projects.siteUnset")}</option>}
-      </select>}</div>
+      </select>}</div>}
     {!projects ? <Loading /> : visible.length ? <ProjectSections projects={visible} open={open} onToggle={(id) => setOpen((current) => {
       const next = new Set(current); if (!next.delete(id)) next.add(id); return next;
-    })} /> : <Empty>{t("projects.notFound")}</Empty>}
+    })} /> : noData
+      ? <Empty icon={<FolderIcon />} action={canCreate && !showNew && <button className="btn" onClick={() => setShowNew(true)}>{t("projects.new")}</button>}>{t(canCreate ? "projects.empty" : "projects.emptyReadOnly")}</Empty>
+      : <Empty action={<button className="btn-secondary" onClick={clearFilters}>{t("projects.clearFilters")}</button>}>{t("projects.notFound")}</Empty>}
     <p className="mt-6 text-sm text-star-dim">{t("projects.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>
   </>;
 }

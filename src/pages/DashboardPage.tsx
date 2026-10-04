@@ -101,7 +101,7 @@ export function DashboardPage() {
         <div className="flex flex-wrap items-center gap-3">
           {mineUseful && <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={mine} onChange={(event) => chooseMine(event.target.checked)} />{t("dashboard.mineOnly")}</label>}
           {groups.length > 1 && <select className="!py-1.5 text-sm" aria-label={t("dashboard.groupFilter")} value={group} onChange={(event) => chooseGroup(event.target.value)}><option value="">{t("dashboard.allGroups")}</option>{groups.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>}
-          {selectable.length > 0 && <><button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button><button className="btn-danger !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void deleteSelected()}>{t("dashboard.deleteSelected", { count: pending })}</button></>}
+          {selectable.length > 0 && <><button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button><button className="btn-danger-quiet !py-1.5" disabled={!pending || busy} onClick={() => void deleteSelected()}>{t("dashboard.deleteSelected", { count: pending })}</button></>}
         </div>
       </div>
       {error && <ErrorBox message={error} />}
