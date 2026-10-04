@@ -35,10 +35,9 @@
   }
   *, ::before, ::after { border-color: rgb(var(--color-nexus-line)); }
   .gantt-week-label { fill: rgb(var(--color-star-dim)); }
+  /* 月份與年份是時間軸上要讀的字，兩種主題都用標題墨色；卷宗米（gold-dim）只給線與框，當文字對比不到 2:1。 */
   .gantt-month-label { fill: rgb(var(--color-gold-bright)); }
-  :root[data-theme="light"] .gantt-month-label { fill: rgb(var(--color-gold-dim)); }
   .gantt-year-label { fill: rgb(var(--color-gold-bright)); }
-  :root[data-theme="light"] .gantt-year-label { fill: rgb(var(--color-gold-dim)); }
   .gantt-sticky-labels { position: sticky; left: 0; z-index: 1; flex: 0 0 auto; }
   html { font-size: 17px; line-height: 1.65; }
   html[data-fontsize="large"] { font-size: 18.5px; }
@@ -105,7 +104,15 @@
   .filter-chip { @apply inline-flex items-center rounded-full border border-nexus-line bg-nexus px-3 py-1.5 text-sm font-medium text-star-dim hover:border-star/40 hover:text-star; }
   .filter-chip[aria-pressed="true"] { @apply border-psi-deep bg-psi-deep font-semibold text-white; }
   :root[data-theme="dark"] .filter-chip[aria-pressed="true"] { @apply border-psi bg-psi text-void; }
+  /* 實心章紅只留給確認刪除的那一步。深色主題的章紅偏亮，白字只有 3.1:1，改用桌面的深色字。 */
   .btn-danger { @apply inline-flex items-center rounded-control justify-center bg-danger px-4 py-2 text-sm font-semibold text-white hover:brightness-110; }
+  :root[data-theme="dark"] .btn-danger { @apply text-void; }
+  /* 平常就看得到的刪除：只有章紅的字，不塗底，不跟畫面上真正的主要按鈕搶。 */
+  .btn-danger-quiet { @apply inline-flex items-center rounded-control justify-center bg-transparent px-3 py-2 text-sm font-semibold text-danger hover:bg-nexus-raised; }
+  /* 不塗底的小按鈕：每一欄都會重複出現的動作（看板各欄的「＋」）用它，實心留給整個畫面唯一的主要動作。 */
+  .btn-ghost { @apply inline-flex items-center rounded-control justify-center bg-transparent px-2 py-1.5 text-sm font-semibold text-psi hover:bg-nexus-raised; }
+  /* 完成提示：一張浮起來的小紙條，綠框綠字。不用綠底白字——深色主題的核准綠很亮，白字只有 2.1:1。位置由各頁自己定。 */
+  .toast { @apply rounded-card border border-ok bg-nexus-raised px-4 py-3 text-sm font-medium text-ok shadow-lg; }
   .regwatch-row-delete { @apply inline-flex h-8 w-8 rounded-control shrink-0 items-center justify-center text-star-dim hover:text-danger; }
   .regwatch-row-delete:hover { box-shadow: 0 0 12px rgb(var(--color-danger) / .35); }
   .regwatch-row-delete svg { @apply h-4 w-4; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.75; }
@@ -140,6 +147,10 @@
   :root[data-theme="dark"] .energy-fill { @apply bg-psi; }
   .energy-fill.is-complete { @apply bg-ok; }
   .empty-state { @apply rounded-card border border-dashed border-gold-dim px-5 py-10 text-center text-sm text-star-dim; }
+  /* 空卷宗的圖示：圖示維持原尺寸，坐在一塊卷宗米色的索引卡上。 */
+  .empty-state-icon { @apply mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-card border border-gold-dim text-star-dim; background: rgb(var(--color-tab)); }
+  .empty-state-icon svg { @apply h-5 w-5; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.75; }
+  .empty-state-action { @apply mt-4 flex flex-wrap justify-center gap-2; }
   .empty-inline::before { content: ""; @apply mr-2 inline-block h-1.5 w-1.5 rounded-full bg-gold; vertical-align: middle; }
   /*
    * 章：雙圈、微微歪斜、像墨色沒蓋滿。狀態與風險都用它；顏色只有四種，各有意思：
@@ -160,7 +171,8 @@
   .stamp-green { @apply text-ok; }
   .stamp-ink { @apply text-psi-deep; }
   :root[data-theme="dark"] .stamp-ink { @apply text-star-dim; }
-  .stamp-faint { @apply text-star-dim; opacity: .75; }
+  /* 淡墨章（已歸檔）不靠透明度變淡：透明度 .75 在淺色桌面上只剩 3.1:1。改成次要文字的墨色、外圈虛線，像蓋得不完整的舊章。 */
+  .stamp-faint { @apply text-star-dim; opacity: 1; outline-style: dashed; }
   .risk-low { @apply stamp stamp-green; }
   .risk-medium { @apply stamp stamp-amber; }
   .risk-high { @apply stamp stamp-red; }
