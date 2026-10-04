@@ -63,7 +63,7 @@ type JsonRpcResponse =
 
 export const RPC = { parseError: -32700, invalidRequest: -32600, methodNotFound: -32601, invalidParams: -32602, internalError: -32603, badRequest: -32000 } as const;
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const rpcError = (id: JsonRpcId | null, code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id, error: { code, message } });
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -85,7 +85,7 @@ export async function handleMcpRequest<Ctx>(request: Request, options: HandlerOp
   if (!messages.length || !messages.every((message) => isObject(message) && message.jsonrpc === "2.0")) {
     return json(rpcError(null, RPC.invalidRequest, "Invalid Request: expected JSON-RPC 2.0 message"), 400);
   }
-  const requests = (messages as Record<string, unknown>[]).filter((message) => typeof message.method === "string" && "id" in message);
+  const requests = (messages as Record<string, unknown>[]).filter((message) => "id" in message || typeof message.method !== "string");
   // 只有通知（notifications/initialized 等）或回應：照規格回 202，不帶內容。
   if (!requests.length) return new Response(null, { status: 202 });
 
@@ -93,11 +93,15 @@ export async function handleMcpRequest<Ctx>(request: Request, options: HandlerOp
   const lazyContext = () => (context ??= options.context());
   const responses: JsonRpcResponse[] = [];
   for (const message of requests) {
+    // Valid responses to server requests may be acknowledged, but malformed requests
+    // must not disappear as if they were notifications.
+    if (!("method" in message) && isId(message.id) && (("result" in message) !== ("error" in message))) continue;
+    if (typeof message.method !== "string") { responses.push(rpcError(isId(message.id) ? message.id : null, RPC.invalidRequest, "Invalid Request: method must be a string")); continue; }
     if (!isId(message.id)) { responses.push(rpcError(null, RPC.invalidRequest, "Invalid Request: id must be a string or number")); continue; }
     if (message.params !== undefined && !isObject(message.params)) { responses.push(rpcError(message.id, RPC.invalidParams, "params must be an object")); continue; }
     responses.push(await dispatch(message as unknown as JsonRpcRequest, options, lazyContext));
   }
-  return json(batch ? responses : responses[0]);
+  return responses.length ? json(batch ? responses : responses[0]) : new Response(null, { status: 202 });
 }
 
 async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ctx>, context: () => Promise<Ctx>): Promise<JsonRpcResponse> {
@@ -113,6 +117,7 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
     case "ping":
       return { jsonrpc: "2.0", id, result: {} };
     case "tools/list":
+      if (params.cursor !== undefined) return rpcError(id, RPC.invalidParams, "This server returns all tools in one page; no cursor is supported");
       return { jsonrpc: "2.0", id, result: { tools: options.tools.filter((tool) => options.canWrite || !tool.write).map(describeTool) } };
     case "tools/call": {
       const tool = options.tools.find((item) => item.name === params.name);

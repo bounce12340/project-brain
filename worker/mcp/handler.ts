@@ -28,7 +28,7 @@ export async function handleMcp(request: Request, env: Env, ctx: OAuthResourceCo
       const user = await loadActiveUser(env.DB, ctx.props.userId);
       if (!user) throw new ToolError("這個艾爾水晶帳號已停用或尚未核准，無法使用 AI 連接器。");
       if (user.must_change_password === 1) throw new ToolError("請先登入艾爾水晶變更密碼，再使用 AI 連接器。");
-      return { user, api: internalApi(env, ctx, user), db: env.DB, clientName: ctx.props.clientName || "AI 工具" };
+      return { user, baseUrl: env.APP_BASE_URL, api: internalApi(env, ctx, user), db: env.DB, clientName: ctx.props.clientName || "AI 工具" };
     },
     onError(error, tool) {
       console.error(JSON.stringify({ message: "MCP tool failed", tool, user: ctx.props.userId, error: error instanceof Error ? error.message : String(error) }));
