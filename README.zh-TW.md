@@ -6,7 +6,7 @@
 
 > 如同卡拉，讓團隊在水晶中共同感知每個專案的脈動。
 
-**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.2｜**測試**：420/420 ✅｜**平台**：Cloudflare Workers
+**正式站**：<https://projects.uic-ai.com>｜**版本**：v12.2｜**測試**：1012/1012 ✅｜**平台**：Cloudflare Workers
 
 給台灣醫藥代理商（UIC）內部團隊的共享專案進度平台。取代原先分散在六份 Excel 的追蹤方式（BD／RA／QA／臨床各自為政、同一專案被多人重複記錄），把專案、進度、OKR、法規動態、證照效期、變更管制收進同一顆水晶：全員即時共感、權限分級、AI 輔助、自動提醒。
 
@@ -22,6 +22,34 @@
 - **報表**：組別週報／月報一鍵產生＋列印、CSV 匯出、時間軸組別泳道
 - **帳號**：自助註冊＋Email 驗證碼＋管理員核准；管理權移轉（共同管理員／完全移轉）＋最後管理員防呆
 - **介面**：星海爭霸神族主題（金＝結構、藍＝能量、切角面板、護盾進度條）、暗色／亮色切換、繁中／English 切換、具體欄位提示、兩套可重播導覽、情境式手冊與字級切換
+
+## 🔌 AI 連接器（MCP）
+
+接口網址：`https://projects.uic-ai.com/mcp`，採用 Streamable HTTP 與 OAuth。ChatGPT 開啟開發者模式後新增連接器，選 OAuth，Client ID／Secret 留空；Claude 新增遠端連接器。登入艾爾水晶後，在授權頁選擇只讀或勾選「新增與修改」。
+
+```sh
+# Claude Code：新增後執行 /mcp 完成授權
+claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
+
+# Codex CLI：add 可能直接啟動授權；尚未登入才執行 login
+codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client-registration dcr
+codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
+```
+
+目前提供 **18 個工具**：
+
+| 工作情境 | 工具 |
+|---|---|
+| 搜尋與引用專案內容 | `search`、`fetch` |
+| 專案與期限查詢 | `list_projects`、`get_project`、`list_my_work` |
+| 進度與專案規劃 | `add_progress_update`、`create_task`、`update_task`、`add_milestone`、`update_milestone`、`update_project_background` |
+| 個人待辦 | `list_todos`、`create_todo`、`update_todo` |
+| 會議與外訓 | `list_meetings`、`create_meeting` |
+| 聯絡人與已發布法規 | `search_contacts`、`list_regulations` |
+
+工具沿用網站權限；寫入需 `mcp:write`，並記錄使用者與連接器的稽核紀錄。保密專案內容仍受權限限制，法規查詢不含待審草稿。日期與會議時間採台北時區。OAuth 需要 `OAUTH_KV` binding，部署 token 另需 Account → Workers KV Storage → Edit。
+
+本機驗證：84 個測試檔共 **1012 項測試通過**，型別檢查、建置與官方 MCP SDK 1.30 HTTP 驗證（OAuth 探索、動態註冊、PKCE、工具呼叫）均通過。測試涵蓋 ChatGPT／Claude／Codex 回呼形式、token 更新與撤銷；部署後仍需各客戶端完成使用者自己的正式站授權。參數、查詢上限與排錯請見 [MCP.md](MCP.md)。
 
 ## 🏗 系統架構
 
@@ -46,7 +74,7 @@ flowchart LR
 | AI | OpenAI 相容層（Ollama Cloud `deepseek-v4-pro`）＋ Workers AI fallback |
 | 郵件 | AgentMail REST API |
 | 認證 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
-| 測試 | Vitest 270 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
+| 測試 | Vitest 1012 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
 
 ## 📁 專案結構
 
@@ -77,7 +105,7 @@ npm run dev
 
 ```powershell
 npm run build
-npx wrangler dev --local
+npx wrangler dev --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1:8787 --upstream-protocol http --var APP_BASE_URL:http://127.0.0.1:8787
 ```
 
 品質檢查：

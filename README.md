@@ -6,7 +6,7 @@
 
 > Like the Khala, it lets the team sense the pulse of every project together through the crystal.
 
-**Production**: <https://projects.uic-ai.com> | **Version**: v12.2 | **Tests**: 420/420 ✅ | **Platform**: Cloudflare Workers
+**Production**: <https://projects.uic-ai.com> | **Version**: v12.2 | **Tests**: 1012/1012 ✅ | **Platform**: Cloudflare Workers
 
 A shared project progress platform for the internal team of Taiwan-based pharmaceutical agency UIC. It replaces a fragmented workflow spread across six Excel files—where BD, RA, QA, and Clinical each worked in isolation and multiple people recorded the same project—with a single crystal for projects, progress, OKRs, regulatory updates, license expirations, and change control: real-time teamwide awareness, tiered permissions, AI assistance, and automated reminders.
 
@@ -22,6 +22,34 @@ A shared project progress platform for the internal team of Taiwan-based pharmac
 - **Reports**: One-click team weekly/monthly reports + printing, CSV export, and a timeline with team swimlanes
 - **Accounts**: Self-registration + Email verification code + administrator approval; administration transfer (co-administrator / full transfer) + safeguards for the last administrator
 - **Interface**: StarCraft Protoss theme (gold = structure, blue = energy, chamfered panels, shield progress bars), dark/light themes, Traditional Chinese/English switcher, concrete inline help tips, two replayable guided tours, a scenario-based manual, and font-size controls
+
+## 🔌 AI connectors (MCP)
+
+The OAuth-protected Streamable HTTP endpoint is `https://projects.uic-ai.com/mcp`. Connect ChatGPT in developer mode with OAuth (leave Client ID/Secret empty), or add a remote connector in Claude. Sign in to Aiur Crystal and choose read-only access or allow additions and changes on the consent page.
+
+```sh
+# Claude Code: run /mcp afterward to authorize
+claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
+
+# Codex CLI: add may start authorization; login if still needed
+codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client-registration dcr
+codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
+```
+
+The interface provides **18 tools**:
+
+| Workflow | Tools |
+|---|---|
+| Research with source URLs | `search`, `fetch` |
+| Projects and deadlines | `list_projects`, `get_project`, `list_my_work` |
+| Progress and project planning | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background` |
+| Personal reminders | `list_todos`, `create_todo`, `update_todo` |
+| Meetings and training | `list_meetings`, `create_meeting` |
+| Contacts and published regulations | `search_contacts`, `list_regulations` |
+
+Tools retain website permissions; write tools require `mcp:write` and record the user and connector in the audit log. Private project content remains restricted, and regulatory drafts are excluded. Dates and meeting times use Asia/Taipei. OAuth requires the `OAUTH_KV` binding; deployment tokens also need Account → Workers KV Storage → Edit.
+
+Local validation: **1012 tests passed** across 84 files, plus typecheck, build, and official MCP SDK 1.30 HTTP validation (OAuth discovery, dynamic registration, PKCE and tool calls). Tests cover ChatGPT/Claude/Codex callback forms, token refresh and revocation. Each user's production client authorization must still be completed after deployment. See [MCP.md](MCP.md) for tool parameters, limits, client setup and troubleshooting.
 
 ## 🏗 System Architecture
 
@@ -46,7 +74,7 @@ flowchart LR
 | AI | OpenAI-compatible layer (Ollama Cloud `deepseek-v4-pro`) + Workers AI fallback |
 | Email | AgentMail REST API |
 | Authentication | PBKDF2-SHA256 (WebCrypto) · httpOnly session cookie · Email OTP |
-| Testing | Vitest 270 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
+| Testing | Vitest 1012 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
 
 ## 📁 Project Structure
 
@@ -77,7 +105,7 @@ Local Worker integration test:
 
 ```powershell
 npm run build
-npx wrangler dev --local
+npx wrangler dev --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1:8787 --upstream-protocol http --var APP_BASE_URL:http://127.0.0.1:8787
 ```
 
 Quality checks:

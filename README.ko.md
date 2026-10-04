@@ -6,7 +6,7 @@
 
 > 칼라처럼, 팀 모두가 크리스털 안에서 각 프로젝트의 맥박을 함께 느낄 수 있습니다.
 
-**운영 사이트**: <https://projects.uic-ai.com>｜**버전**: v11.2｜**테스트**: 206/206 ✅｜**플랫폼**: Cloudflare Workers
+**운영 사이트**: <https://projects.uic-ai.com>｜**버전**: v11.2｜**테스트**: 1012/1012 ✅｜**플랫폼**: Cloudflare Workers
 
 대만 의약품 대리점(UIC) 내부 팀을 위한 프로젝트 진행 현황 공유 플랫폼입니다. 기존에는 추적 업무가 6개의 Excel 파일로 분산되어 BD, RA, QA, 임상 팀이 서로 따로 관리하고 같은 프로젝트를 여러 사람이 중복 기록했습니다. 이제 프로젝트, 진행 현황, OKR, 규제 동향, 라이선스 만료일, 변경 관리를 하나의 크리스털에 모아 전 구성원이 실시간으로 상황을 공유하고, 단계별 권한과 AI 지원, 자동 알림을 활용합니다.
 
@@ -22,6 +22,34 @@
 - **보고서**: 팀별 주간／월간 보고서 원클릭 생성＋인쇄, CSV 내보내기, 팀별 스윔레인 타임라인
 - **계정**: 직접 가입＋Email 인증 코드＋관리자 승인. 관리 권한 이전(공동 관리자／완전 이전)과 마지막 관리자 보호 기능을 제공합니다
 - **인터페이스**: StarCraft Protoss 테마(금색＝구조, 파란색＝에너지, 모서리를 깎은 패널, 보호막 진행률 표시줄), 다크／라이트 전환, 번체 중국어／English 전환, 최초 로그인 안내, 글자 크기 전환
+
+## 🔌 AI 커넥터（MCP）
+
+연결 주소는 `https://projects.uic-ai.com/mcp`이며 Streamable HTTP와 OAuth를 사용합니다. ChatGPT 개발자 모드에서 OAuth 커넥터를 추가하고 Client ID／Secret은 비워 둡니다. Claude에서는 원격 커넥터를 추가합니다. 艾爾水晶에 로그인한 뒤 승인 화면에서 읽기 전용 또는 추가·수정을 선택합니다.
+
+```sh
+# Claude Code: 추가 후 /mcp로 승인
+claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
+
+# Codex CLI: add가 승인을 시작할 수 있음. 미인증 상태일 때 login
+codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client-registration dcr
+codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
+```
+
+**18개 도구**를 제공합니다.
+
+| 용도 | 도구 |
+|---|---|
+| 출처 URL을 포함한 프로젝트 검색 | `search`, `fetch` |
+| 프로젝트와 기한 조회 | `list_projects`, `get_project`, `list_my_work` |
+| 진행 상황과 계획 수정 | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background` |
+| 개인 할 일 | `list_todos`, `create_todo`, `update_todo` |
+| 회의와 외부 교육 | `list_meetings`, `create_meeting` |
+| 연락처와 게시된 규제 정보 | `search_contacts`, `list_regulations` |
+
+웹사이트와 같은 권한을 적용합니다. 쓰기에는 `mcp:write`가 필요하며 사용자와 커넥터를 감사 로그에 기록합니다. 비공개 프로젝트는 권한으로 제한하고 규제 초안은 반환하지 않습니다. 날짜와 회의 시간은 Asia/Taipei를 사용합니다. OAuth에는 `OAUTH_KV` binding, 배포 token에는 Account → Workers KV Storage → Edit가 필요합니다.
+
+로컬 검증에서 84개 파일의 **1012개 테스트**, 타입 검사, 빌드 및 공식 MCP SDK 1.30 HTTP 연결（OAuth 탐색, 동적 등록, PKCE, 도구 호출）이 통과했습니다. ChatGPT／Claude／Codex 콜백 형식, token 갱신과 취소를 테스트했습니다. 배포 후 각 사용자가 운영 클라이언트에서 직접 승인해야 합니다. 매개변수, 조회 제한 및 문제 해결은 [MCP.md](MCP.md)를 참조하세요.
 
 ## 🏗 시스템 아키텍처
 
@@ -46,7 +74,7 @@ flowchart LR
 | AI | OpenAI 호환 계층(Ollama Cloud `deepseek-v4-pro`)＋ Workers AI fallback |
 | 메일 | AgentMail REST API |
 | 인증 | PBKDF2-SHA256(WebCrypto) · httpOnly session cookie · Email OTP |
-| 테스트 | Vitest 160 tests(권한 매트릭스, 상태 머신, i18n key parity, theme 대비, 알고리즘, 가져오기 멱등성) |
+| 테스트 | Vitest 1012 tests(권한 매트릭스, 상태 머신, i18n key parity, theme 대비, 알고리즘, 가져오기 멱등성) |
 
 ## 📁 프로젝트 구조
 
@@ -77,7 +105,7 @@ npm run dev
 
 ```powershell
 npm run build
-npx wrangler dev --local
+npx wrangler dev --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1:8787 --upstream-protocol http --var APP_BASE_URL:http://127.0.0.1:8787
 ```
 
 품질 검사:
