@@ -217,3 +217,44 @@ describe("連上之後", () => {
     expect((await (await fetchWorker("/api/mcp/connections", { headers: { Cookie: session } })).json() as { connections: unknown[] }).connections).toHaveLength(1);
   });
 });
+
+describe("ChatGPT／Claude／Codex 的 OAuth 與 MCP 流程", () => {
+  it.each([
+    ["ChatGPT", "https://chatgpt.com/connector/oauth/cb_test", "2025-11-25"],
+    ["Claude", "https://claude.ai/api/mcp/auth_callback", "2025-06-18"],
+    ["Codex", "http://localhost:1455/callback", "2025-03-26"],
+  ])("%s：PKCE、讀取授權、更新 token、初始化與新工具", async (name, redirect, version) => {
+    const clientId = await register(name, redirect);
+    const { location, verifier } = await consent(clientId, await login("elvis"), { redirect, write: false });
+    expect(location.searchParams.get("state")).toBe("st-1");
+    const tokenRequest = new URLSearchParams({ grant_type: "authorization_code", code: location.searchParams.get("code")!, redirect_uri: redirect, client_id: clientId, code_verifier: verifier, resource: `${BASE}/mcp` });
+    const token = await fetchWorker("/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: tokenRequest });
+    expect(token.status).toBe(200);
+    const { access_token, refresh_token } = await token.json() as { access_token: string; refresh_token: string };
+    expect(refresh_token).toBeTruthy();
+    const init = await mcp(access_token, "initialize", { protocolVersion: version, capabilities: {}, clientInfo: { name, version: "test" } });
+    expect(init.body!.result.protocolVersion).toBe(version);
+    const listed = await mcp(access_token, "tools/list");
+    expect(listed.body!.result.tools.map((t: { name: string }) => t.name)).toEqual(expect.arrayContaining(["search", "fetch", "list_todos", "list_meetings", "search_contacts", "list_regulations"]));
+    expect(listed.body!.result.tools.every((t: { annotations: { readOnlyHint: boolean } }) => t.annotations.readOnlyHint)).toBe(true);
+    const found = await mcp(access_token, "tools/call", { name: "search", arguments: { query: "QA" } });
+    expect(found.body!.result.structuredContent.results[0].id).toBe("p_qa");
+    const fetched = await mcp(access_token, "tools/call", { name: "fetch", arguments: { id: "p_qa" } });
+    expect(fetched.body!.result.structuredContent.url).toBe(`${BASE}/projects/p_qa`);
+    const denied = await mcp(access_token, "tools/call", { name: "create_todo", arguments: { title: "未授權" } });
+    expect(denied.body!.result.isError).toBe(true);
+    const refresh = await fetchWorker("/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "refresh_token", refresh_token, client_id: clientId, resource: `${BASE}/mcp` }) });
+    expect(refresh.status).toBe(200);
+    const refreshed = await refresh.json() as { access_token: string; scope: string };
+    expect(refreshed.scope).toBe("mcp:read");
+    expect((await mcp(refreshed.access_token, "tools/list")).status).toBe(200);
+  });
+
+  it("錯誤 PKCE verifier 無法換 token", async () => {
+    const clientId = await register("Codex");
+    const { location } = await consent(clientId, await login("elvis"));
+    const token = await fetchWorker("/oauth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code: location.searchParams.get("code")!, redirect_uri: REDIRECT, client_id: clientId, code_verifier: "incorrect-verifier" }) });
+    expect(token.status).toBe(400);
+    expect((await token.json() as { error: string }).error).toBe("invalid_grant");
+  });
+});

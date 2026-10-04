@@ -6,7 +6,7 @@
 
 > カーラのように、チーム全員が水晶を通じて各プロジェクトの鼓動をともに感じられます。
 
-**本番サイト**：<https://projects.uic-ai.com>｜**バージョン**：v11.2｜**テスト**：206/206 ✅｜**プラットフォーム**：Cloudflare Workers
+**本番サイト**：<https://projects.uic-ai.com>｜**バージョン**：v11.2｜**テスト**：1012/1012 ✅｜**プラットフォーム**：Cloudflare Workers
 
 台湾の医薬品代理店（UIC）社内チーム向けに開発された、プロジェクト進捗共有プラットフォームです。従来は 6 つの Excel ファイルに追跡業務が分散し、BD・RA・QA・臨床がそれぞれ個別に管理していたため、同じプロジェクトを複数人が重複して記録していました。本プラットフォームでは、プロジェクト、進捗、OKR、規制情報、ライセンス有効期限、変更管理を一つの水晶に集約し、全員でのリアルタイムな状況共有、段階的な権限管理、AI 支援、自動リマインダーを実現します。
 
@@ -22,6 +22,34 @@
 - **レポート**：チーム別の週報／月報をワンクリックで生成して印刷、CSV エクスポート、チーム別スイムレーンのタイムライン
 - **アカウント**：セルフ登録＋Email 認証コード＋管理者承認。管理権限の移管（共同管理者／完全移管）と最終管理者の保護機能
 - **インターフェース**：StarCraft の Protoss テーマ（金＝構造、青＝エネルギー、角を落としたパネル、シールド進捗バー）、ダーク／ライト切り替え、繁体字中国語／English 切り替え、初回ログイン時のガイド、文字サイズ切り替え
+
+## 🔌 AI コネクター（MCP）
+
+接続先は `https://projects.uic-ai.com/mcp`（Streamable HTTP + OAuth）です。ChatGPT は開発者モードで OAuth コネクターを追加し、Client ID／Secret は空欄にします。Claude はリモートコネクターを追加します。艾爾水晶にログインし、認可画面で読み取り専用か追加・変更を許可するか選びます。
+
+```sh
+# Claude Code: 追加後に /mcp で認可
+claude mcp add --transport http project-brain https://projects.uic-ai.com/mcp
+
+# Codex CLI: add で認可が始まる場合あり。未認証なら login
+codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client-registration dcr
+codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
+```
+
+**18 個のツール**を提供します。
+
+| 用途 | ツール |
+|---|---|
+| 出典付きプロジェクト検索 | `search`, `fetch` |
+| プロジェクトと期限 | `list_projects`, `get_project`, `list_my_work` |
+| 進捗と計画の更新 | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background` |
+| 個人 To-do | `list_todos`, `create_todo`, `update_todo` |
+| 会議と外部研修 | `list_meetings`, `create_meeting` |
+| 連絡先と公開済み規制情報 | `search_contacts`, `list_regulations` |
+
+Web サイトと同じ権限を適用します。書き込みには `mcp:write` が必要で、ユーザーとコネクターを監査ログに記録します。非公開プロジェクトは権限で制限し、規制情報の下書きは返しません。日時は Asia/Taipei です。OAuth には `OAUTH_KV` binding、デプロイ token には Account → Workers KV Storage → Edit が必要です。
+
+ローカル検証では 84 ファイルの **1012 テスト**、型チェック、ビルド、公式 MCP SDK 1.30 の HTTP 接続（OAuth discovery、動的登録、PKCE、ツール呼び出し）が成功しました。ChatGPT／Claude／Codex のコールバック形式、token 更新と失効をテストしています。本番クライアントのユーザー認可はデプロイ後に各自で行います。詳細・制限・トラブルシューティングは [MCP.md](MCP.md) を参照してください。
 
 ## 🏗 システム構成
 
@@ -46,7 +74,7 @@ flowchart LR
 | AI | OpenAI 互換レイヤー（Ollama Cloud `deepseek-v4-pro`）＋ Workers AI fallback |
 | メール | AgentMail REST API |
 | 認証 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
-| テスト | Vitest 160 tests（権限マトリクス、ステートマシン、i18n key parity、theme コントラスト、アルゴリズム、インポートの冪等性） |
+| テスト | Vitest 1012 tests（権限マトリクス、ステートマシン、i18n key parity、theme コントラスト、アルゴリズム、インポートの冪等性） |
 
 ## 📁 プロジェクト構成
 
@@ -77,7 +105,7 @@ npm run dev
 
 ```powershell
 npm run build
-npx wrangler dev --local
+npx wrangler dev --local --ip 127.0.0.1 --port 8787 --local-upstream 127.0.0.1:8787 --upstream-protocol http --var APP_BASE_URL:http://127.0.0.1:8787
 ```
 
 品質チェック：

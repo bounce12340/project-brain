@@ -18,7 +18,7 @@ const owner = person("owner", "member", "grp_general", "陳冠宇");
 const mate = person("mate", "member", "grp_general", "同組同事");
 const outsider = person("bd", "member", "grp_bd", "BD 同事");
 
-const context = (user: AuthUser): ToolContext => ({ user, db, clientName: "Claude", api: internalApi({ DB: db, APP_BASE_URL: "http://127.0.0.1:8787" } as unknown as Env, undefined, user) });
+const context = (user: AuthUser): ToolContext => ({ user, db, baseUrl: "http://127.0.0.1:8787", clientName: "Claude", api: internalApi({ DB: db, APP_BASE_URL: "http://127.0.0.1:8787" } as unknown as Env, undefined, user) });
 async function run(name: string, args: Record<string, unknown>, user = owner) {
   const tool = MCP_TOOLS.find((item) => item.name === name)!;
   return tool.run(args, context(user)) as Promise<Record<string, any>>;
@@ -164,5 +164,66 @@ describe("寫入", () => {
 
   it("日期不存在（2 月 30 日）在送出前就擋下", async () => {
     expect(await fails("add_milestone", { project: "p_qa", title: "x", date: "2026-02-30" })).toBe("日期不是有效日期：2026-02-30");
+  });
+});
+
+describe("擴充工具", () => {
+  it("search/fetch：可引用的來源、包含結案專案，但不能搜尋或取得別人的機密", async () => {
+    const searched = await run("search", { query: "QA" });
+    expect(searched.results).toEqual([{ id: "p_qa", title: "QA：GDP/GMP", url: "http://127.0.0.1:8787/projects/p_qa" }]);
+    expect((await run("search", { query: "結案" })).results).toHaveLength(1);
+    expect((await run("search", { query: "機密" })).results).toEqual([]);
+    const fetched = await run("fetch", { id: "p_qa" });
+    expect(fetched).toMatchObject({ id: "p_qa", title: "QA：GDP/GMP", url: searched.results[0].url });
+    expect(JSON.parse(fetched.text)).toMatchObject({ background: "# 硬性規格\n- 效期 24 個月" });
+    expect(await fails("fetch", { id: "p_secret" })).toContain("沒有檢視權限");
+    expect(await fails("fetch", { id: "QA" })).toContain("找不到專案");
+  });
+
+  it("個人待辦：新增、完成、清日期、稽核與擁有者限制", async () => {
+    const added = await run("create_todo", { title: "聯絡 IT", due_date: "2026-12-01", project: "p_qa" });
+    expect(await row("SELECT user_id,project_id,due_date FROM todos WHERE id=?", added.id)).toEqual({ user_id: owner.id, project_id: "p_qa", due_date: "2026-12-01" });
+    expect((await run("list_todos", { limit: 1 })).truncated).toBe(true);
+    await run("update_todo", { todo_id: added.id, done: true, due_date: "", title: "已聯絡 IT" });
+    expect(await row("SELECT done,due_date,title FROM todos WHERE id=?", added.id)).toEqual({ done: 1, due_date: null, title: "已聯絡 IT" });
+    expect((await run("list_todos", { status: "done" })).todos.map((t: { id: string }) => t.id)).toContain(added.id);
+    expect(await fails("update_todo", { todo_id: added.id, done: false }, mate)).toBe("找不到待辦事項");
+    expect(await row("SELECT COUNT(*) AS n FROM audit_log WHERE action='mcp_update_todo' AND entity_id=?", added.id)).toEqual({ n: 1 });
+    expect(await fails("create_todo", { title: "x", due_date: "2026-02-30" })).toContain("有效日期");
+    expect(await fails("create_todo", { title: "x", project: "p_secret" })).toContain("找不到專案");
+    expect(await fails("update_todo", { todo_id: added.id })).toBe("沒有要修改的欄位");
+    expect(await fails("update_todo", { todo_id: added.id, title: "   " })).toBe("請輸入待辦事項");
+  });
+
+  it("待辦關聯專案失去可見性後，list_todos 不洩漏專案資訊", async () => {
+    await db.prepare("INSERT INTO todos (id,user_id,title,project_id) VALUES ('hidden_todo','owner','秘密','p_secret')").run();
+    expect((await run("list_todos", {})).todos.map((t: { id: string }) => t.id)).not.toContain("hidden_todo");
+    expect((await run("list_my_work", { include_undated: true })).undated.map((t: { id: string }) => t.id)).not.toContain("hidden_todo");
+  });
+
+  it("會議與外訓：台北時間、分類、專案權限、查詢與建立稽核", async () => {
+    const meeting = await run("create_meeting", { title: "GDP 討論", starts_at: "2026-10-04T10:00", ends_at: "2026-10-04T11:00", project: "QA：GDP/GMP", summary: "確認查核文件" });
+    await run("create_meeting", { title: "隱密", starts_at: "2026-10-04T12:00", project: "p_secret" }, outsider);
+    await run("create_meeting", { kind: "course", title: "藥品課程", category: "drug", starts_at: "2026-10-05T09:00" });
+    const listed = await run("list_meetings", { from: "2026-10-04", to: "2026-10-04", keyword: "查核" });
+    expect(listed.meetings.map((m: { id: string }) => m.id)).toEqual([meeting.id]);
+    expect(listed.timezone).toBe("Asia/Taipei");
+    expect((await run("list_meetings", { kind: "course" })).count).toBe(1);
+    expect((await run("list_meetings", {})).count).toBe(2);
+    expect(await row("SELECT summary FROM audit_log WHERE action='mcp_create_meeting' AND entity_id=?", meeting.id)).toEqual({ summary: "經 AI 連接器（Claude）新增會議紀錄「GDP 討論」" });
+    expect(await fails("create_meeting", { title: "x", starts_at: "2026-02-30T10:00" })).toBe("請填寫開始時間");
+    expect(await fails("create_meeting", { title: "x", starts_at: "2026-10-04T11:00", ends_at: "2026-10-04T10:00" })).toContain("不能早於");
+    expect(await fails("list_meetings", { from: "2026-10-05", to: "2026-10-04" })).toContain("不能晚於");
+  });
+
+  it("聯絡人搜尋與已發布法規查詢：限制輸出，不帶審核草稿", async () => {
+    await db.prepare("INSERT INTO contacts (id,organization,name,email) VALUES ('ct1','醫院','林醫師','LIN@example.com'),('ct2','公司','王先生','wang@example.com')").run();
+    expect((await run("search_contacts", { query: "lin@" })).contacts.map((c: { id: string }) => c.id)).toEqual(["ct1"]);
+    expect((await run("search_contacts", { query: "公司", limit: 1 })).count).toBe(1);
+    await db.prepare("DELETE FROM reg_entries").run();
+    await db.prepare("INSERT INTO reg_entries (id,title,entry_date,product_line,entry_type,status) VALUES ('reg1','藥品公告','2026-10-01','藥品','announcement','published'),('reg2','藥品草稿','2026-10-02','藥品','announcement','draft')").run();
+    const regs = await run("list_regulations", { keyword: "藥品", year: 2026 });
+    expect(regs.entries.map((r: { id: string }) => r.id)).toEqual(["reg1"]);
+    expect(regs).not.toHaveProperty("pending_count");
   });
 });

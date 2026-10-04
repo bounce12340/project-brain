@@ -126,3 +126,23 @@ describe("參數檢查", () => {
     expect(validate(schema, { date: "2026-09-30", kind: "event", done: false }, "")).toBeNull();
   });
 });
+
+describe("用戶端相容性與錯誤請求", () => {
+  it.each(["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"])("協商 %s 並保留同一版本", async (version) => {
+    const init = await post({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: version, capabilities: {}, clientInfo: { name: "client", version: "1" } } });
+    expect(init.body.result.protocolVersion).toBe(version);
+    expect((await call("read_thing", { id: "p1" }, { headers: { "MCP-Protocol-Version": version } })).body.result.structuredContent.id).toBe("p1");
+  });
+
+  it("缺少 method 的請求回錯誤，不會被當成已收到的通知", async () => {
+    expect((await post({ jsonrpc: "2.0", id: 0 })).body.error.code).toBe(-32600);
+    expect((await post({ jsonrpc: "2.0", method: 42 })).body.error.code).toBe(-32600);
+    expect((await post({ jsonrpc: "2.0", id: 1, result: {} })).status).toBe(202);
+  });
+
+  it("tools/list 不接受假的翻頁游標，含工具資料的回應不可快取", async () => {
+    const result = await post({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { cursor: "invented" } });
+    expect(result.body.error.code).toBe(-32602);
+    expect(result.headers.get("Cache-Control")).toBe("no-store");
+  });
+});
