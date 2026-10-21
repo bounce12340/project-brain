@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { useLang, useT } from "../i18n/LangContext";
 import { ErrorBox } from "./UI";
@@ -38,6 +39,7 @@ export function McpConnections() {
     <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.otherTools")} <code className="break-all">claude mcp add --transport http project-brain {endpoint}</code></p>
     <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.chatgpt")}</p>
     <p className="mt-2 text-xs leading-5 text-star-dim">{t("mcp.examples")}</p>
+    <p className="mt-3 text-sm"><Link className="font-semibold text-psi hover:text-star" to="/mcp-guide">{t("mcp.guideLink")}</Link></p>
     <h3 className="mt-5 text-sm font-semibold">{t("mcp.connected")}</h3>
     {!connections ? <p className="mt-2 text-sm text-star-dim">{t("common.loading")}</p> : connections.length ? <ul className="mt-2 divide-y divide-nexus-line border-y border-nexus-line">
       {connections.map((connection) => <li key={connection.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">

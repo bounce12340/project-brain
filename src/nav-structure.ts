@@ -28,6 +28,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { to: "/regwatch", label: "nav.regwatch" },
       { to: "/courses", label: "nav.courses" },
       { to: "/contacts", label: "nav.contacts" },
+      { to: "/mcp-guide", label: "nav.mcpGuide" },
     ],
   },
 ];
