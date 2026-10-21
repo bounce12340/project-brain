@@ -8,6 +8,8 @@ https://projects.uic-ai.com/mcp
 
 ## 怎麼連接
 
+網站裡的「資源 ▸ AI 連接器」（`/mcp-guide`）有同樣的說明與可一鍵複製的指令，另外列出 Cursor、VS Code、Gemini CLI、只支援本機 MCP 時的 `mcp-remote` 轉接，以及可貼進 `AGENTS.md`／`CLAUDE.md` 的使用規則。
+
 **Claude（網頁版或 App）**：設定 → 連接器 → 新增自訂連接器，名稱填「艾爾水晶」、網址貼上連接器網址，按「連接」。瀏覽器會打開艾爾水晶的授權頁：沒登入先登入，看清楚是哪個 AI 工具之後按「允許」。要讓 AI 寫進度、建任務，勾「新增與修改」；不勾就只能查看。
 
 **Claude Code**：
