@@ -17,7 +17,7 @@ A shared project progress platform for the internal team of Taiwan-based pharmac
 - **OKRs**: Quarterly objectives + Key Results (owner / status / order), with completion incorporated into automatic progress
 - **Dedicated modules**: Clinical enrollment (target vs cumulative, daily entries) | BD registration (case state machine, history, fees) | QA license expiration (tiered expiry alerts + automatic notifications) and CCR change control (`CCR-YYYY-NNN` state machine + history)
 - **Regulatory updates**: A knowledge base of 600+ TFDA regulations dating back to 2018, sorted by announcement date with product-line/category/keyword filters; TFDA RSS is fetched daily into review drafts and published to all users only after approval; announcement text can also be pasted, or multiple files uploaded together, for AI-structured import
-- **AI intelligence** (Ollama Cloud, deepseek-v4-pro): Progress drafting, task summaries, project risk forecasts, scheduling suggestions, and automatic weekly/monthly report generation
+- **AI intelligence** (Ollama Cloud: deepseek-v4.1-flash, with glm-5.3 as advisor): Progress drafting, task summaries, project risk forecasts, scheduling suggestions, and automatic weekly/monthly report generation
 - **Automation**: “When…then…” rules engine; three cron jobs for daily TFDA RSS fetching + reminders, AI weekly reports (Monday), and AI monthly reports (the first day of each month)
 - **Reports**: One-click team weekly/monthly reports + printing, CSV export, and a timeline with team swimlanes
 - **Accounts**: Self-registration + Email verification code + administrator approval; administration transfer (co-administrator / full transfer) + safeguards for the last administrator
@@ -58,7 +58,7 @@ flowchart LR
   U[Browser SPA<br/>React + Protoss theme] -->|HTTPS<br/>projects.uic-ai.com| W[Cloudflare Worker<br/>Hono API + static assets]
   W --> D1[(D1 database<br/>27 tables)]
   W --> R2[(R2 files<br/>attachments/source announcements)]
-  W -->|OpenAI compatible| LLM[Ollama Cloud<br/>deepseek-v4-pro]
+  W -->|OpenAI compatible| LLM[Ollama Cloud<br/>deepseek-v4.1-flash + glm-5.3]
   W -.->|no-key fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>daily/weekly/monthly] --> W
   W -->|reminders · reports · invitations| MAIL[AgentMail<br/>uic_ai@agentmail.to]
@@ -71,7 +71,7 @@ flowchart LR
 | Frontend | React 18 · Vite · TypeScript · Tailwind CSS · @dnd-kit (drag and drop) · Recharts (charts) · custom calendar/Gantt SVG |
 | Backend | Cloudflare Workers · Hono · Workers Static Assets |
 | Data | D1 (SQLite, raw SQL migrations) · R2 (files) · unpdf (PDF text-layer extraction) |
-| AI | OpenAI-compatible layer (Ollama Cloud `deepseek-v4-pro`) + Workers AI fallback |
+| AI | OpenAI-compatible layer (Ollama Cloud: main `deepseek-v4.1-flash`, advisor `glm-5.3`; DeepSeek API via `LLM_*` when `OLLAMA_API_KEY` is absent) + Workers AI fallback |
 | Email | AgentMail REST API |
 | Authentication | PBKDF2-SHA256 (WebCrypto) · httpOnly session cookie · Email OTP |
 | Testing | Vitest 1012 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
@@ -116,7 +116,7 @@ npm test
 npm run build
 ```
 
-`.dev.vars` contains only `LLM_API_KEY` and `AGENTMAIL_API_KEY` and is ignored by Git. Never put their values in `wrangler.jsonc`, the README, logs, or commits.
+`.dev.vars` contains only `OLLAMA_API_KEY`, `LLM_API_KEY` and `AGENTMAIL_API_KEY` and is ignored by Git. Never put their values in `wrangler.jsonc`, the README, logs, or commits.
 
 ## ☁️ Deployment
 
@@ -138,7 +138,7 @@ npx wrangler deploy
 
 Secrets must be read from `.dev.vars` and passed to Wrangler through stdin; do not place them in command arguments or output. After deployment, use `npx wrangler secret list` to confirm that only their names are shown.
 
-**Changing the LLM model**: Change `vars.LLM_MODEL` in `wrangler.jsonc` (also change `vars.LLM_BASE_URL` when switching endpoints) → `typecheck` + `build` + `deploy`. The system calls the OpenAI-compatible endpoint first and falls back to Workers AI when `LLM_API_KEY` is absent.
+**Changing the LLM model**: With the `OLLAMA_API_KEY` secret set, the site uses Ollama Cloud: `vars.OLLAMA_MODEL` is the main model and `vars.OLLAMA_ADVISOR_MODEL` the advisor the AI assistant may consult on hard questions. Without it, `vars.LLM_MODEL` / `vars.LLM_BASE_URL` with `LLM_API_KEY` are used (no advisor); with neither key it falls back to Workers AI. Change the vars in `wrangler.jsonc` → `typecheck` + `build` + `deploy`, then check `/api/ai/diagnostics` as an admin.
 
 **Restoring the custom domain binding**: `projects.uic-ai.com` is currently bound. If the Worker is rebuilt in the future and the custom domain fails, remove `routes`, deploy to workers.dev, then manually add the domain in Dashboard → Workers → project-brain → Settings → Domains & Routes. Finally, restore `APP_BASE_URL` and redeploy.
 

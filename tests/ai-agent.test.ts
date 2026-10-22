@@ -5,7 +5,7 @@ import worker from "../worker/index";
 import { sha256 } from "../worker/services/crypto";
 import { MAX_ORGANIZE_ACTIONS, assistantContext, executeAssistantAction, runAssistantTurn } from "../worker/services/ai-agent";
 import { createMemoryKV } from "./helpers/memory-kv";
-import { ToolCallingUnavailable } from "../worker/services/llm";
+import { ToolCallingUnavailable, llmEndpoint } from "../worker/services/llm";
 import { createTestD1 } from "./helpers/d1-sqlite";
 
 /**
@@ -189,5 +189,70 @@ describe("整理專案（/api/ai/organize）", () => {
       ["create_task", { project: "p_qa", title: "準備展延文件", stage: "待辦", due_date: "2027-01-31" }],
       ["add_milestone", { project: "p_qa", title: "遞交展延", date: "2027-02-28" }],
     ]);
+  });
+});
+
+describe("主力與顧問（Ollama Cloud）", () => {
+  const ollama = () => ({ ...env(), OLLAMA_API_KEY: "ollama-test", OLLAMA_BASE_URL: "https://ollama.test/v1", OLLAMA_MODEL: "deepseek-v4.1-flash", OLLAMA_ADVISOR_MODEL: "glm-5.3" }) as unknown as Env;
+  type Body = { model: string; messages: Array<Record<string, unknown>>; tools?: Array<{ function: { name: string } }> };
+  /** 依模型分流的假端點：主力照劇本回，顧問固定回一段意見。 */
+  function fakeOllama(main: Reply[], advisorReply: string | Error = "建議先補 CEP，再送展延。") {
+    const calls: Array<{ url: string; auth: string; body: Body }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Body;
+      calls.push({ url, auth: String((init.headers as Record<string, string>).Authorization), body });
+      if (body.model === "glm-5.3") {
+        if (advisorReply instanceof Error) return new Response("overloaded", { status: 503 });
+        return Response.json({ choices: [{ message: { content: advisorReply } }] });
+      }
+      const reply = main.shift() ?? { content: "（沒有更多回覆）" };
+      const tool_calls = reply.calls?.map((call, index) => ({ id: `m_${calls.length}_${index}`, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }));
+      return Response.json({ choices: [{ message: { content: reply.content ?? null, tool_calls } }] });
+    }));
+    return calls;
+  }
+  const askWith = (environment: Env, question: string) => runAssistantTurn(environment, assistantContext(environment, undefined, owner), { question, history: [], lang: "zh", openProject: null });
+
+  it("設定了 OLLAMA_API_KEY：主力用 deepseek-v4.1-flash、顧問用 glm-5.3，同一把金鑰；沒有就照舊、沒有顧問", () => {
+    expect(llmEndpoint(ollama())).toEqual({ provider: "Ollama Cloud", baseUrl: "https://ollama.test/v1", model: "deepseek-v4.1-flash", apiKey: "ollama-test" });
+    expect(llmEndpoint(ollama(), "advisor")).toMatchObject({ model: "glm-5.3", apiKey: "ollama-test" });
+    expect(llmEndpoint(env())).toMatchObject({ provider: "OpenAI 相容端點", model: "m", apiKey: "test" });
+    expect(llmEndpoint(env(), "advisor")).toBeNull();
+    expect(llmEndpoint({ ...env(), LLM_API_KEY: undefined } as unknown as Env)).toBeNull();
+  });
+
+  it("主力遇到難題請教顧問：顧問的意見交回主力，回答標示請教過哪個顧問", async () => {
+    const calls = fakeOllama([
+      { calls: [{ name: "ask_advisor", args: { question: "展延前要先處理 CEP 嗎？", context: "CEP Rev.03→04；展延文件明年 2 月" } }] },
+      { content: "建議先補 CEP。" },
+    ]);
+    const turn = await askWith(ollama(), "Salagen 展延要注意什麼？");
+    expect(turn).toMatchObject({ reply: "建議先補 CEP。", advisor: "glm-5.3" });
+    expect(calls.map((call) => call.body.model)).toEqual(["deepseek-v4.1-flash", "glm-5.3", "deepseek-v4.1-flash"]);
+    expect(calls.every((call) => call.url === "https://ollama.test/v1/chat/completions" && call.auth === "Bearer ollama-test")).toBe(true);
+    expect(JSON.stringify(calls[1].body.messages)).toContain("CEP Rev.03→04");
+    expect(calls[1].body.tools).toBeUndefined(); // 顧問只給意見，不能動工具
+    expect(String(calls[2].body.messages.find((message) => message.role === "tool")?.content)).toBe("建議先補 CEP，再送展延。");
+  });
+
+  it("一輪最多請教兩次；顧問連不上時主力照樣回答", async () => {
+    const ask = { name: "ask_advisor", args: { question: "q", context: "c" } };
+    const calls = fakeOllama([{ calls: [ask, ask, ask] }, { content: "我直接回答。" }], new Error("down"));
+    const turn = await askWith(ollama(), "難題");
+    expect(turn.reply).toBe("我直接回答。");
+    expect(turn.advisor).toBeUndefined();
+    expect(calls.filter((call) => call.body.model === "glm-5.3")).toHaveLength(2);
+    const answers = calls[calls.length - 1].body.messages.filter((message) => message.role === "tool").map((message) => String(message.content));
+    expect(answers[0]).toMatch(/^顧問暫時無法回應/);
+    expect(answers[2]).toMatch(/已經請教顧問 2 次/);
+  });
+
+  it("沒有顧問時，工具清單裡不會出現請教顧問；硬要叫也只會收到沒有這個工具", async () => {
+    const seen = fakeLlm([{ calls: [{ name: "ask_advisor", args: { question: "q", context: "c" } }] }, { content: "好。" }]);
+    const turn = await ask("難題");
+    expect(turn.advisor).toBeUndefined();
+    const tools = (JSON.parse(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)).tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
+    expect(tools).not.toContain("ask_advisor");
+    expect(String(seen[1].find((message) => message.role === "tool")?.content)).toContain("沒有這個工具");
   });
 });

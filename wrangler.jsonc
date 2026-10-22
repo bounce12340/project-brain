@@ -30,6 +30,10 @@
     "APP_BASE_URL": "https://projects.uic-ai.com",
     "LLM_BASE_URL": "https://api.deepseek.com/v1",
     "LLM_MODEL": "deepseek-v4-pro",
+    // 設定了 OLLAMA_API_KEY（secret）就改走 Ollama Cloud：主力 deepseek-v4.1-flash，需要時請教顧問 glm-5.3。
+    "OLLAMA_BASE_URL": "https://ollama.com/v1",
+    "OLLAMA_MODEL": "deepseek-v4.1-flash",
+    "OLLAMA_ADVISOR_MODEL": "glm-5.3",
     "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
     "MAIL_FROM_NAME": "艾爾水晶-專案進度"
   },
