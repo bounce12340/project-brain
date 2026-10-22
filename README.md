@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-The interface provides **25 tools**:
+The interface provides **26 tools**:
 
 | Workflow | Tools |
 |---|---|
@@ -45,7 +45,7 @@ The interface provides **25 tools**:
 | Progress and project planning | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
 | Personal reminders | `list_todos`, `create_todo`, `update_todo` |
 | Kanban columns | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
-| Meetings and training | `list_meetings`, `create_meeting` |
+| Meetings and training | `list_meetings`, `create_meeting`, `update_meeting` |
 | Contacts and published regulations | `search_contacts`, `list_regulations` |
 
 Tools retain website permissions; write tools require `mcp:write` and record the user and connector in the audit log. Private project content remains restricted, and regulatory drafts are excluded. Dates and meeting times use Asia/Taipei. OAuth requires the `OAUTH_KV` binding; deployment tokens also need Account → Workers KV Storage → Edit.

@@ -7,7 +7,7 @@ import { llmChat, llmChatWithTools, llmEndpoint, type AgentMessage, type AgentTo
 import { taipeiDate } from "./time";
 
 /**
- * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 25 個工具。
+ * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 26 個工具。
  * - 查資料的工具（list_projects、get_project…）當場執行，結果交回 AI 繼續回答。
  * - 會改資料的工具不執行，整理成「確認卡」交給畫面；使用者按「確認」才由 executeAssistantAction 執行。
  * 工具一律以這位使用者的身分走網站自己的 /api，看得到、改得了的範圍和他在畫面上操作時一樣。

@@ -118,6 +118,33 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       },
     },
     {
+      name: "update_meeting", title: "修改會議或外訓紀錄", write: true, idempotent: true,
+      description: "Change an existing meeting or training record: title, time, location, attendees, organizer, summary (Markdown is rendered on the website), category (course only) or linked project. Only the fields you pass change; pass an empty string to clear ends_at, location, attendees, organizer, summary or project. Only the record's creator or an admin may edit it, as on the website. Get ids from list_meetings. The summary replaces the old text, so read it with list_meetings first and keep what should stay.",
+      inputSchema: schema({
+        meeting_id: { ...identifier },
+        starts_at: { ...string(16), pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$" },
+        ends_at: { ...string(16), pattern: "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2})?$" },
+        category: { type: "string", enum: COURSE_CATEGORIES },
+        project: { type: "string", maxLength: 200, description: "專案 id 或名稱；空字串代表取消關聯" },
+        ...Object.fromEntries(Object.entries(MEETING_TEXT_FIELDS).map(([key, max]) => [key, { ...string(max), ...(key === "title" ? { minLength: 1 } : {}) }])),
+      }, ["meeting_id"]),
+      async run(args, ctx) {
+        const { meeting_id: rawId, project: reference, ...fields } = args;
+        const id = text(rawId);
+        if (!Object.keys(fields).length && reference === undefined) throw new ToolError("沒有要修改的欄位");
+        const body: Record<string, unknown> = { ...fields };
+        if (reference !== undefined) body.project_id = text(reference) ? (await helpers.resolveProject(ctx, reference)).id : null;
+        const { meetings } = await ctx.api.get<{ meetings: Row[] }>("/api/meetings");
+        const current = meetings.find((row) => row.id === id);
+        if (!current) throw new ToolError(`找不到會議或外訓紀錄 ${id}（或你沒有權限看）`);
+        await ctx.api.send("PATCH", `/api/meetings/${encodeURIComponent(id)}`, body);
+        const changed = [...Object.keys(fields), ...(reference !== undefined ? ["project"] : [])];
+        const kind = current.kind === "course" ? "外訓" : "會議";
+        await helpers.audit(ctx, "update_meeting", current.kind === "course" ? "course" : "meeting", id, `修改${kind}紀錄「${text(fields.title ?? current.title)}」（${changed.join("、")}）`);
+        return { ok: true, id, kind, changed };
+      },
+    },
+    {
       name: "search_contacts", title: "搜尋聯絡人",
       description: "Find contacts by organization, name, department, email or notes. Returns contact details for the user's work; does not send email or modify contacts.",
       inputSchema: schema({ query: { ...string(100), minLength: 1 }, limit }, ["query"]),
