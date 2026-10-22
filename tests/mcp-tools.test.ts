@@ -183,12 +183,12 @@ describe("寫入", () => {
   });
 
   it("刪除工具標示為 destructive，需要寫入權限", () => {
-    for (const name of ["delete_task", "delete_milestone"]) {
+    for (const name of ["delete_task", "delete_milestone", "delete_stage"]) {
       const tool = MCP_TOOLS.find((item) => item.name === name)!;
       expect(tool.write && tool.destructive, name).toBe(true);
       expect(tool.description, name).toMatch(/explicit confirmation/);
     }
-    expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_task"]);
+    expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_stage", "delete_task"]);
   });
 
   it("update_project_settings：擁有者改目標日期、開始日與狀態，記稽核；空字串清除日期", async () => {
@@ -281,5 +281,72 @@ describe("擴充工具", () => {
     const regs = await run("list_regulations", { keyword: "藥品", year: 2026 });
     expect(regs.entries.map((r: { id: string }) => r.id)).toEqual(["reg1"]);
     expect(regs).not.toHaveProperty("pending_count");
+  });
+});
+
+describe("看板欄位管理", () => {
+  const board = async () => (await run("get_project", { project: "p_qa" })).board.map((column: { stage: string; tasks: Array<{ id: string }> }) => [column.stage, column.tasks.map((task) => task.id).sort()]);
+  const auditOf = (action: string) => db.prepare("SELECT summary FROM audit_log WHERE action=? ORDER BY rowid DESC").bind(action).first<{ summary: string }>();
+
+  it("get_project 的 board 依實際的欄位順序，不是建立順序", async () => {
+    await db.prepare("UPDATE stages SET position=CASE id WHEN 's_done' THEN 0 WHEN 's_todo' THEN 1 ELSE 2 END WHERE project_id='p_qa'").run();
+    expect((await board()).map(([name]: [string]) => name)).toEqual(["完成", "待辦", "進行中"]);
+  });
+
+  it("add_stage：預設放最後；position 插在指定的欄，後面的往右移；名稱不能重複", async () => {
+    expect(await run("add_stage", { project: "QA：GDP/GMP", name: "8 上市後監控" })).toMatchObject({ ok: true, position: 4, board: ["待辦", "進行中", "完成", "8 上市後監控"] });
+    expect((await run("add_stage", { project: "p_qa", name: "審查中", position: 2 })).board).toEqual(["待辦", "審查中", "進行中", "完成", "8 上市後監控"]);
+    expect((await board()).map(([name]: [string]) => name)).toEqual(["待辦", "審查中", "進行中", "完成", "8 上市後監控"]);
+    expect(await fails("add_stage", { project: "p_qa", name: " 待辦 " })).toContain("已經有「待辦」");
+    expect((await auditOf("mcp_add_stage"))?.summary).toBe("經 AI 連接器（Claude）在「QA：GDP/GMP」新增看板欄位「審查中」（第 2 欄）");
+  });
+
+  it("rename_stage：欄位 id 不變，欄內任務全部保留", async () => {
+    const before = await board();
+    expect(await run("rename_stage", { project: "p_qa", stage: "待辦", new_name: "1 待辦" })).toMatchObject({ ok: true, from: "待辦", to: "1 待辦", tasks_kept: 2 });
+    const after = await board();
+    expect(after[0]).toEqual(["1 待辦", before[0][1]]);
+    expect(after.slice(1)).toEqual(before.slice(1));
+    expect(await fails("rename_stage", { project: "p_qa", stage: "1 待辦", new_name: "完成" })).toContain("已經有「完成」");
+    expect(await fails("rename_stage", { project: "p_qa", stage: "不存在", new_name: "x" })).toContain("現有欄位");
+    expect((await auditOf("mcp_rename_stage"))?.summary).toBe("經 AI 連接器（Claude）把「QA：GDP/GMP」的看板欄位「待辦」改名為「1 待辦」（2 項任務不變）");
+  });
+
+  it("reorder_stages：傳完整順序重排，任務跟著欄位走；名單對不上就報錯、什麼都不改", async () => {
+    const before = Object.fromEntries(await board());
+    expect((await run("reorder_stages", { project: "p_qa", order: ["完成", "s_todo", "進行中"] })).board).toEqual(["完成", "待辦", "進行中"]);
+    const after = await board();
+    expect(after.map(([name]: [string]) => name)).toEqual(["完成", "待辦", "進行中"]);
+    expect(Object.fromEntries(after)).toEqual(before);
+    expect(await fails("reorder_stages", { project: "p_qa", order: ["完成", "待辦"] })).toContain("順序裡少了：「進行中」");
+    expect(await fails("reorder_stages", { project: "p_qa", order: ["完成", "待辦", "進行中", "上市"] })).toContain("看板上沒有：「上市」");
+    expect(await fails("reorder_stages", { project: "p_qa", order: ["完成", "完成", "待辦", "進行中"] })).toContain("出現了兩次");
+    expect((await board()).map(([name]: [string]) => name)).toEqual(["完成", "待辦", "進行中"]);
+    expect((await auditOf("mcp_reorder_stages"))?.summary).toBe("經 AI 連接器（Claude）重排「QA：GDP/GMP」的看板欄位：完成 → 待辦 → 進行中");
+  });
+
+  it("delete_stage：有任務時一定要指定搬到哪一欄，搬完才刪；空欄可以直接刪", async () => {
+    expect(await fails("delete_stage", { project: "p_qa", stage: "待辦" })).toContain("還有 2 項任務，請用 move_tasks_to");
+    expect(await fails("delete_stage", { project: "p_qa", stage: "待辦", move_tasks_to: "待辦" })).toContain("不能是要刪除的同一欄");
+    expect(await run("delete_stage", { project: "p_qa", stage: "待辦", move_tasks_to: "進行中" })).toMatchObject({ ok: true, deleted: "待辦", tasks_moved: 2, moved_to: "進行中", board: ["進行中", "完成"] });
+    expect(await board()).toEqual([["進行中", ["t_far", "t_late", "t_soon"]], ["完成", []]]);
+    expect(await run("delete_stage", { project: "p_qa", stage: "完成" })).toMatchObject({ ok: true, tasks_moved: 0 });
+    expect((await auditOf("mcp_delete_stage"))?.summary).toBe("經 AI 連接器（Claude）刪除「QA：GDP/GMP」的看板欄位「完成」");
+  });
+
+  it("只有能編輯專案的人可以調整欄位；看不到的專案找不到", async () => {
+    await db.prepare("UPDATE projects SET visibility='all' WHERE id='p_qa'").run();
+    for (const [name, args] of [["add_stage", { name: "x" }], ["rename_stage", { stage: "待辦", new_name: "x" }], ["reorder_stages", { order: ["完成", "待辦", "進行中"] }], ["delete_stage", { stage: "完成" }]] as const) {
+      expect(await fails(name, { project: "p_qa", ...args }, outsider), name).toContain("沒有編輯");
+    }
+    expect(await fails("add_stage", { project: "BD 的機密案", name: "x" })).toContain("找不到專案");
+    expect((await board()).map(([name]: [string]) => name)).toEqual(["待辦", "進行中", "完成"]);
+  });
+
+  it("create_task／update_task 指定不存在的欄位會報錯，不會自動建立", async () => {
+    expect(await fails("create_task", { project: "p_qa", title: "x", stage: "8 上市後監控" })).toContain("看板上沒有「8 上市後監控」");
+    expect(await fails("update_task", { task_id: "t_late", stage: "8 上市後監控" })).toContain("看板上沒有");
+    expect(await row<{ n: number }>("SELECT COUNT(*) AS n FROM stages WHERE project_id='p_qa'")).toEqual({ n: 3 });
+    expect(MCP_TOOLS.find((tool) => tool.name === "create_task")!.description).toMatch(/never created automatically/);
   });
 });
