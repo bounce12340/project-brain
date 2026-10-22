@@ -23,3 +23,14 @@ export function markdownBlocks(content: string): MarkdownBlock[] {
     return line.trim() ? { kind: "paragraph", text: line.trim() } : { kind: "blank" };
   });
 }
+
+/**
+ * 縮成一兩行的預覽（儀表板動態、快覽清單）放不下排版：拿掉 Markdown 記號，只留文字。
+ * 標題的 #、粗體的 ** 去掉；項目符號換成「・」，編號保留。
+ */
+export function plainMarkdown(content: string): string {
+  return content.replace(/\r\n?/g, "\n").split("\n").map((line) => line
+    .replace(/^#{1,3} /, "")
+    .replace(/^(\s*)[-*•] /, "$1・")
+    .replace(/\*\*/g, "")).join("\n");
+}

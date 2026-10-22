@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
+import { Empty, ErrorBox, Loading, Markdown, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { aiInstructions, previewPayload, templateSheets, workbookToPayload, type ConversionResult, type ImportContext, type Issue } from "../import-sheet";
@@ -335,7 +335,7 @@ function CheckFailures({ lang }: { lang: "zh" | "en" }) {
     <p className="mt-1 text-sm text-star-dim">{t("import.failuresHint")}</p>
     {failures.length ? <div className="mt-3 space-y-3">{failures.map((item) => <article key={item.id} className="border border-nexus-line p-3">
       <p className="text-xs text-star-dim">{t("import.failureBy", { name: item.user_name ?? "—", date: formatDate(item.created_at, true, lang) })}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.summary}</p>
+      <div className="mt-1"><Markdown content={item.summary} /></div>
     </article>)}</div> : <p className="mt-3 text-sm text-star-dim">{t("import.noFailures")}</p>}
   </section>;
 }

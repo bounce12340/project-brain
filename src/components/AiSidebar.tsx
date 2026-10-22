@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../i18n/LangContext";
 import { useLang } from "../i18n/LangContext";
+import { Markdown } from "./UI";
 
 /** 專案內頁的網址。側邊欄掛在 Layout 上，不經過頁面，因此從路徑判斷「現在開著哪個專案」。 */
 const projectIdFromPath = (pathname: string): string => /^\/projects\/([^/]+)$/.exec(pathname)?.[1] ?? "";
@@ -117,7 +118,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
       {!messages.length && <p className="text-sm text-star-dim">{t(projectId ? "ai.emptyProject" : "ai.empty")}</p>}
       {messages.map((message, index) => <div key={index} className={message.role === "user" ? "text-right" : ""}>
-        {message.content && <p className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-card border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>}
+        {message.content && <div className={`inline-block max-w-[92%] rounded-card border p-2.5 text-left ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}><Markdown content={message.content} /></div>}
         {message.advisor && <AdvisorNote model={message.advisor} />}
         {message.actions && <ActionList actions={message.actions} disabled={running} onConfirm={(cards) => void confirm(cards)} onCancel={(id) => setAction(id, { state: "cancelled" })} />}
       </div>)}
@@ -156,7 +157,7 @@ function ActionCardView({ action, children }: { action: ActionCard; children: Re
   return <section aria-label={action.title}
     className={`rounded-card border p-2.5 text-left text-sm ${action.destructive ? "border-danger" : "border-psi-deep"} bg-nexus-raised ${action.state === "cancelled" ? "opacity-60" : ""}`}>
     <h3 className={`font-semibold ${action.destructive ? "text-danger" : "text-psi"}`}>{action.title}</h3>
-    <ul className="mt-1 space-y-0.5 whitespace-pre-wrap break-words text-star">{action.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+    <div className="mt-1 space-y-1 text-star">{action.lines.map((line, index) => <Markdown key={index} content={line} className="space-y-1 text-sm leading-6" />)}</div>
     {children}
   </section>;
 }
@@ -245,7 +246,7 @@ function OrganizePane({ projectId: openProjectId, lang }: { projectId: string; l
           <button className="btn mt-2 w-full" disabled={busy || running || !brief.trim()} onClick={() => void draft()}>{t(busy && !actions ? "ai.organizeThinking" : "ai.organizeDraft")}</button>
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
         </>}
-      {reply && <p className="mt-4 whitespace-pre-wrap rounded-card border border-gold-dim bg-nexus p-2.5 text-sm">{reply}</p>}
+      {reply && <div className="mt-4 rounded-card border border-gold-dim bg-nexus p-2.5"><Markdown content={reply} /></div>}
       {advisor && <AdvisorNote model={advisor} />}
       {actions && actions.length > 0 && <div className="mt-3 space-y-2">
         <p className="text-xs text-star-dim">{t("ai.organizeReview")}</p>
