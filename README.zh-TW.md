@@ -17,7 +17,7 @@
 - **OKR**：季度目標＋Key Results（負責人／狀態／排序），完成度計入自動進度
 - **專屬模組**：臨床收案（目標 vs 累計、逐日登錄）｜BD 查驗登記（案件狀態機、歷程、費用）｜QA 證照效期（到期分級警示＋自動通知）與 CCR 變更管制（`CCR-YYYY-NNN` 狀態機＋歷程）
 - **法規動態**：2018 年起 600+ 筆 TFDA 法規知識庫，依公告日期排序並支援產品線／類別／關鍵字篩選；每日自動抓取 TFDA RSS 成為待審草稿，核准後才對全員發布；亦可貼公告文字或合併上傳多檔做 AI 結構化匯入
-- **AI 智慧**（Ollama Cloud，deepseek-v4-pro）：進度快寫、任務摘要、專案風險預測、排程建議、週報／月報自動生成
+- **AI 智慧**（Ollama Cloud：主力 deepseek-v4.1-flash，顧問 glm-5.3）：進度快寫、任務摘要、專案風險預測、排程建議、週報／月報自動生成
 - **自動化**：規則引擎「當…就…」；每日 TFDA RSS 抓取＋提醒、AI 週報（週一）、AI 月報（每月 1 日）三條 cron
 - **報表**：組別週報／月報一鍵產生＋列印、CSV 匯出、時間軸組別泳道
 - **帳號**：自助註冊＋Email 驗證碼＋管理員核准；管理權移轉（共同管理員／完全移轉）＋最後管理員防呆
@@ -58,7 +58,7 @@ flowchart LR
   U[瀏覽器 SPA<br/>React + Protoss 主題] -->|HTTPS<br/>projects.uic-ai.com| W[Cloudflare Worker<br/>Hono API + 靜態資產]
   W --> D1[(D1 資料庫<br/>27 張表)]
   W --> R2[(R2 檔案<br/>附件/公告原始檔)]
-  W -->|OpenAI 相容| LLM[Ollama Cloud<br/>deepseek-v4-pro]
+  W -->|OpenAI 相容| LLM[Ollama Cloud<br/>deepseek-v4.1-flash + glm-5.3]
   W -.->|無 key fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>每日/每週/每月] --> W
   W -->|提醒·報告·邀請| MAIL[AgentMail<br/>uic_ai@agentmail.to]
@@ -71,7 +71,7 @@ flowchart LR
 | 前端 | React 18 · Vite · TypeScript · Tailwind CSS · @dnd-kit（拖拉）· Recharts（圖表）· 自製日曆／甘特 SVG |
 | 後端 | Cloudflare Workers · Hono · Workers Static Assets |
 | 資料 | D1（SQLite，raw SQL migrations）· R2（檔案）· unpdf（PDF 文字層抽取） |
-| AI | OpenAI 相容層（Ollama Cloud `deepseek-v4-pro`）＋ Workers AI fallback |
+| AI | OpenAI 相容層（Ollama Cloud：主力 `deepseek-v4.1-flash`、顧問 `glm-5.3`；沒有 `OLLAMA_API_KEY` 時用 `LLM_*` 的 DeepSeek API）＋ Workers AI fallback |
 | 郵件 | AgentMail REST API |
 | 認證 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
 | 測試 | Vitest 1012 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
@@ -116,7 +116,7 @@ npm test
 npm run build
 ```
 
-`.dev.vars` 僅放 `LLM_API_KEY` 與 `AGENTMAIL_API_KEY`，已被 Git 忽略。不可把值放進 `wrangler.jsonc`、README、log 或 commit。
+`.dev.vars` 僅放 `OLLAMA_API_KEY`、`LLM_API_KEY` 與 `AGENTMAIL_API_KEY`，已被 Git 忽略。不可把值放進 `wrangler.jsonc`、README、log 或 commit。
 
 ## ☁️ 部署
 
@@ -138,7 +138,7 @@ npx wrangler deploy
 
 Secrets 必須從 `.dev.vars` 讀取並透過 stdin 傳給 Wrangler，不要放在命令參數或輸出中。部署後可用 `npx wrangler secret list` 確認只有名稱。
 
-**更換 LLM 模型**：改 `wrangler.jsonc` 的 `vars.LLM_MODEL`（換端點另改 `vars.LLM_BASE_URL`）→ `typecheck`＋`build`＋`deploy`。系統優先呼叫 OpenAI 相容端點；`LLM_API_KEY` 不存在時 fallback 到 Workers AI。
+**更換 LLM 模型**：設定了 `OLLAMA_API_KEY` secret 時走 Ollama Cloud：`vars.OLLAMA_MODEL` 是主力，`vars.OLLAMA_ADVISOR_MODEL` 是 AI 小幫手遇到難題時可以請教的顧問。沒有的話用 `vars.LLM_MODEL`／`vars.LLM_BASE_URL` 配 `LLM_API_KEY`（沒有顧問）；兩把金鑰都沒有時 fallback 到 Workers AI。改 `wrangler.jsonc` 的 vars → `typecheck`＋`build`＋`deploy`，再以管理員開 `/api/ai/diagnostics` 確認。
 
 **補綁自訂網域**：目前 `projects.uic-ai.com` 已綁定。若未來重建 Worker 且 custom domain 失敗，先移除 `routes` 部署到 workers.dev，再到 Dashboard → Workers → project-brain → Settings → Domains & Routes 手動新增，最後把 `APP_BASE_URL` 改回並重新部署。
 

@@ -14,7 +14,7 @@ import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks,
 import { MAX_CONTEXT_PROJECTS, MAX_HISTORY_TURNS, buildAssistantPrompt, buildPlanPrompt, type AssistantProjectSummary } from "../services/assistant";
 import { sanitizePlan } from "../../src/ai-plan";
 import { MAX_BRIEF, assistantContext, executeAssistantAction, loadProjectForAgent, proposeAction, runAssistantTurn, runOrganizeTurn } from "../services/ai-agent";
-import { ToolCallingUnavailable } from "../services/llm";
+import { ToolCallingUnavailable, llmEndpoint, type LlmRole } from "../services/llm";
 import { ToolError } from "../mcp/protocol";
 import { resolveProject, type ToolContext } from "../mcp/tools";
 
@@ -424,22 +424,28 @@ function adminDetail(user: { role: string }, message: string, reason: string): s
 aiRoutes.get("/diagnostics", async (c) => {
   const user = c.get("user");
   if (user.role !== "admin") return c.json({ error: "僅管理員可使用" }, 403);
-  const started = Date.now();
+  const main = llmEndpoint(c.env);
+  const advisor = llmEndpoint(c.env, "advisor");
   const result: Record<string, unknown> = {
     key_present: !!c.env.LLM_API_KEY,
-    base_url: c.env.LLM_BASE_URL,
-    model: c.env.LLM_MODEL,
-    // 沒有金鑰時 llmChat 會靜靜地改用 Workers AI，答案品質不同但不會報錯。
-    provider: c.env.LLM_API_KEY ? "OpenAI 相容端點" : "Cloudflare Workers AI（沒有設定 LLM_API_KEY）",
+    ollama_key_present: !!c.env.OLLAMA_API_KEY,
+    // 沒有任何金鑰時 llmChat 會靜靜地改用 Workers AI，答案品質不同但不會報錯。
+    provider: main?.provider ?? "Cloudflare Workers AI（沒有設定 OLLAMA_API_KEY 或 LLM_API_KEY）",
+    base_url: main?.baseUrl ?? null,
+    model: main?.model ?? null,
+    advisor_model: advisor?.model ?? null,
   };
-  try {
-    const reply = await llmChat(c.env, [{ role: "user", content: "Reply with the single word: ok" }], { attempts: 1, timeoutMs: 20_000 });
-    result.ok = true;
-    result.reply = reply.slice(0, 120);
-  } catch (error) {
-    result.ok = false;
-    result.error = error instanceof Error ? error.message : String(error);
-  }
-  result.elapsed_ms = Date.now() - started;
+  const probe = async (role: LlmRole) => {
+    const started = Date.now();
+    try {
+      const reply = await llmChat(c.env, [{ role: "user", content: "Reply with the single word: ok" }], { attempts: 1, timeoutMs: 20_000, role });
+      return { ok: true, reply: reply.slice(0, 120), elapsed_ms: Date.now() - started };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error), elapsed_ms: Date.now() - started };
+    }
+  };
+  const [mainResult, advisorResult] = await Promise.all([probe("main"), advisor ? probe("advisor") : Promise.resolve(null)]);
+  Object.assign(result, mainResult);
+  if (advisorResult) result.advisor = advisorResult;
   return c.json(result);
 });

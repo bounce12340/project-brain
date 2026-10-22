@@ -63,7 +63,7 @@ export const zh = {
   "ai.empty": "可以問我任何你看得到的專案。例如：這季哪些案子沒有動靜？Salagen 相關的案子進度如何？",
   "ai.emptyProject": "現在開著一個專案，我會連它的任務、里程碑與最近的進度紀錄一起看。也可以問跨專案的問題。",
   "ai.thinking": "思考中…", "ai.send": "送出", "ai.clear": "清除", "ai.questionLabel": "要問 AI 小幫手的問題", "ai.placeholder": "輸入問題（Ctrl+Enter 送出）",
-  "ai.actionNote": "可以查資料，也能幫你新增、修改或刪除；每個改動都會先列成卡片，按「確認」才會執行。範圍和你自己的權限相同。", "ai.actionConfirm": "確認", "ai.actionConfirmDelete": "確認刪除", "ai.actionConfirmAll": "全部確認（{count} 項）", "ai.actionRetry": "重試", "ai.actionRunning": "執行中…", "ai.actionDone": "已完成", "ai.actionFailed": "執行失敗", "ai.actionCancelled": "已取消",
+  "ai.advisorConsulted": "已請教顧問（{model}）", "ai.actionNote": "可以查資料，也能幫你新增、修改或刪除；每個改動都會先列成卡片，按「確認」才會執行。範圍和你自己的權限相同。", "ai.actionConfirm": "確認", "ai.actionConfirmDelete": "確認刪除", "ai.actionConfirmAll": "全部確認（{count} 項）", "ai.actionRetry": "重試", "ai.actionRunning": "執行中…", "ai.actionDone": "已完成", "ai.actionFailed": "執行失敗", "ai.actionCancelled": "已取消",
   "ai.planPick": "要整理哪一個專案？", "ai.planPickPlaceholder": "選擇專案…", "ai.planNoProjects": "找不到你有權限編輯的專案。", "ai.planNeedsProject": "先從上面選一個專案，或直接開啟該專案的頁面。",
   "ai.organizeLabel": "把這個專案目前的情況全部寫進來",
   "ai.organizePlaceholder": "例：10/5 已在 Express 平台遞交初級包材變更；原廠預計 10–11 月提供新版 CEP 與 DMF，展延文件明年 1–2 月到；成品規格不受影響，相關四項可以刪除；目標日期改到 2027-02-28。",

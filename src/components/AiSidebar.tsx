@@ -47,7 +47,7 @@ export function AiSidebar() {
 interface ProposedAction { id: string; tool: string; title: string; lines: string[]; args: Record<string, unknown>; destructive: boolean }
 type ActionState = "pending" | "running" | "done" | "failed" | "cancelled";
 interface ActionCard extends ProposedAction { state: ActionState; error?: string }
-interface AskMessage extends ChatMessage { actions?: ActionCard[] }
+interface AskMessage extends ChatMessage { actions?: ActionCard[]; advisor?: string }
 
 /** 送回給 AI 的對話：確認卡處理的結果也要讓 AI 知道，否則下一句它不曉得改了沒有。 */
 const historyText = (message: AskMessage, lang: string): string => {
@@ -96,11 +96,11 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
     setQuestion(""); setBusy(true); setError("");
     const body = JSON.stringify({ question: asked, history, project_id: projectId || undefined, lang });
     try {
-      const data = await api<{ reply?: string; actions?: ProposedAction[]; fallback?: boolean }>("/ai/agent", { method: "POST", body });
+      const data = await api<{ reply?: string; actions?: ProposedAction[]; fallback?: boolean; advisor?: string }>("/ai/agent", { method: "POST", body });
       // 語言模型不支援工具（例如沒有設定金鑰、只剩 Workers AI）時退回原本的純問答。
       const reply = data.fallback ? (await api<{ reply: string }>("/ai/assistant", { method: "POST", body })).reply : data.reply ?? "";
       const actions = (data.fallback ? [] : data.actions ?? []).map((action): ActionCard => ({ ...action, state: "pending" }));
-      setMessages((current) => [...current, { role: "assistant", content: reply, actions: actions.length ? actions : undefined }]);
+      setMessages((current) => [...current, { role: "assistant", content: reply, actions: actions.length ? actions : undefined, advisor: data.fallback ? undefined : data.advisor }]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("error.operation"));
     } finally { setBusy(false); }
@@ -118,6 +118,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
       {!messages.length && <p className="text-sm text-star-dim">{t(projectId ? "ai.emptyProject" : "ai.empty")}</p>}
       {messages.map((message, index) => <div key={index} className={message.role === "user" ? "text-right" : ""}>
         {message.content && <p className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-card border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>}
+        {message.advisor && <AdvisorNote model={message.advisor} />}
         {message.actions && <ActionList actions={message.actions} disabled={running} onConfirm={(cards) => void confirm(cards)} onCancel={(id) => setAction(id, { state: "cancelled" })} />}
       </div>)}
       {busy && <p className="text-sm text-star-dim">{t("ai.thinking")}</p>}
@@ -135,6 +136,12 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
       <p className="mt-2 text-xs text-star-dim">{t("ai.actionNote")}</p>
     </div>
   </div>;
+}
+
+/** 這個回答有請教過顧問模型：讓使用者知道它多想了一層，也知道慢的原因。 */
+function AdvisorNote({ model }: { model: string }) {
+  const t = useT();
+  return <p className="mt-1 text-xs text-star-dim">{t("ai.advisorConsulted", { model })}</p>;
 }
 
 const STATUS: Record<Exclude<ActionState, "pending">, { key: "ai.actionRunning" | "ai.actionDone" | "ai.actionFailed" | "ai.actionCancelled"; className: string }> = {
@@ -185,6 +192,7 @@ function OrganizePane({ projectId: openProjectId, lang }: { projectId: string; l
   const t = useT();
   const [brief, setBrief] = useState("");
   const [reply, setReply] = useState("");
+  const [advisor, setAdvisor] = useState("");
   const [actions, setActions] = useState<ActionCard[] | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -199,14 +207,14 @@ function OrganizePane({ projectId: openProjectId, lang }: { projectId: string; l
       .then((data) => setOptions(data.projects)).catch(() => setOptions([]));
   }, [openProjectId]);
   const projectId = openProjectId || chosen;
-  const reset = () => { setActions(null); setReply(""); setError(""); setSkipped(new Set()); };
+  const reset = () => { setActions(null); setReply(""); setAdvisor(""); setError(""); setSkipped(new Set()); };
 
   const draft = async () => {
     if (!brief.trim() || busy || !projectId) return;
     reset(); setBusy(true);
     try {
-      const data = await api<{ reply: string; actions: ProposedAction[] }>("/ai/organize", { method: "POST", body: JSON.stringify({ project_id: projectId, brief, lang }) });
-      setReply(data.reply); setActions(data.actions.map((action) => ({ ...action, state: "pending" })));
+      const data = await api<{ reply: string; actions: ProposedAction[]; advisor?: string }>("/ai/organize", { method: "POST", body: JSON.stringify({ project_id: projectId, brief, lang }) });
+      setReply(data.reply); setAdvisor(data.advisor ?? ""); setActions(data.actions.map((action) => ({ ...action, state: "pending" })));
       if (!data.actions.length) setError(t("ai.organizeEmpty"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("error.operation"));
@@ -238,6 +246,7 @@ function OrganizePane({ projectId: openProjectId, lang }: { projectId: string; l
           {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
         </>}
       {reply && <p className="mt-4 whitespace-pre-wrap rounded-card border border-gold-dim bg-nexus p-2.5 text-sm">{reply}</p>}
+      {advisor && <AdvisorNote model={advisor} />}
       {actions && actions.length > 0 && <div className="mt-3 space-y-2">
         <p className="text-xs text-star-dim">{t("ai.organizeReview")}</p>
         {actions.map((action) => <ActionCardView key={action.id} action={action}>
