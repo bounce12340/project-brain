@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { defaultVisibility } from "../../src/project-groups";
 import type { AppContext, GroupType, ProjectAccess, Visibility } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { r2FileStore } from "../services/filestore";
@@ -166,9 +167,12 @@ projectsRoutes.post("/", async (c) => {
   const name = requiredString(body, "name");
   const inheritsGroup = Boolean(optionalString(body, "parent_id"));
   const groupId = requiredString(body, "group_id") ?? (inheritsGroup ? "" : null);
-  const visibility = requiredString(body, "visibility") ?? "group";
-  if (!name || groupId === null || !visibilityValues.has(visibility)) return c.json({ error: "專案名稱、組別或可見性不正確" }, 422);
-  if (!inheritsGroup && !(await c.env.DB.prepare("SELECT id FROM groups WHERE id = ?").bind(groupId).first())) return c.json({ error: "找不到組別" }, 422);
+  if (!name || groupId === null) return c.json({ error: "專案名稱、組別或可見性不正確" }, 422);
+  const groupRow = inheritsGroup ? null : await c.env.DB.prepare("SELECT id,name FROM groups WHERE id = ?").bind(groupId).first<{ id: string; name: string }>();
+  if (!inheritsGroup && !groupRow) return c.json({ error: "找不到組別" }, 422);
+  // 沒指定可見性時依組別決定：「其他」組沒有組員，預設全公司，否則等於只有自己看得到。
+  const visibility = requiredString(body, "visibility") ?? defaultVisibility(groupRow);
+  if (!visibilityValues.has(visibility)) return c.json({ error: "專案名稱、組別或可見性不正確" }, 422);
   const description = longText(body, "description");
   const goal = longText(body, "goal_summary");
   if (typeof description === "object") return c.json(description, 422);
