@@ -66,7 +66,7 @@ export const en: Record<TransKey, string> = {
   "ai.empty": "Ask about any project you can see. For example: which cases have gone quiet this quarter? How is the Salagen work progressing?",
   "ai.emptyProject": "A project is open, so I can also see its tasks, milestones and recent updates. Cross-project questions still work.",
   "ai.thinking": "Thinking…", "ai.send": "Send", "ai.clear": "Clear", "ai.questionLabel": "Question for the AI assistant", "ai.placeholder": "Type a question (Ctrl+Enter to send)",
-  "ai.readOnlyNote": "Asking only reads data and changes nothing. Limited to the projects you are allowed to see.",
+  "ai.actionNote": "It can look things up and also add, change or delete items for you. Every change is shown as a card first and only runs when you press Confirm. It can do exactly what you can.", "ai.actionConfirm": "Confirm", "ai.actionConfirmDelete": "Confirm delete", "ai.actionConfirmAll": "Confirm all ({count})", "ai.actionRetry": "Retry", "ai.actionRunning": "Running…", "ai.actionDone": "Done", "ai.actionFailed": "Failed", "ai.actionCancelled": "Cancelled",
   "ai.planPick": "Which project?", "ai.planPickPlaceholder": "Choose a project\u2026", "ai.planNoProjects": "No projects you can edit were found.", "ai.planNeedsProject": "Pick a project above, or open its page.",
   "ai.briefLabel": "Describe what this project has to do and roughly when",
   "ai.briefPlaceholder": "e.g. Salagen renewal, filing planned for mid-October. Needs CTD Module 3, stability data and a GMP certificate; review takes about three months after filing.",

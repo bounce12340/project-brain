@@ -45,9 +45,24 @@ export function AiSidebar() {
   </>;
 }
 
+/** AI 提出、等使用者確認的一個寫入動作。伺服器只描述，不執行。 */
+interface ProposedAction { id: string; tool: string; title: string; lines: string[]; args: Record<string, unknown>; destructive: boolean }
+type ActionState = "pending" | "running" | "done" | "failed" | "cancelled";
+interface ActionCard extends ProposedAction { state: ActionState; error?: string }
+interface AskMessage extends ChatMessage { actions?: ActionCard[] }
+
+/** 送回給 AI 的對話：確認卡處理的結果也要讓 AI 知道，否則下一句它不曉得改了沒有。 */
+const historyText = (message: AskMessage, lang: string): string => {
+  if (!message.actions?.length) return message.content;
+  const word: Record<ActionState, string> = lang === "en"
+    ? { pending: "not confirmed yet", running: "running", done: "done", failed: "failed", cancelled: "cancelled by user" }
+    : { pending: "使用者尚未確認", running: "執行中", done: "已執行", failed: "執行失敗", cancelled: "使用者取消" };
+  return [message.content, ...message.actions.map((action) => `[${word[action.state]}] ${action.title}：${action.lines.join("；")}${action.error ? `（${action.error}）` : ""}`)].join("\n");
+};
+
 function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
   const t = useT();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<AskMessage[]>([]);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,22 +73,49 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
     const asked = question.trim();
     if (!asked || busy) return;
     // 先把提問放進畫面再送出。等回應才顯示的話，按下送出後幾秒鐘畫面毫無變化。
-    const history = messages.slice(-6);
+    const history = messages.slice(-6).map((message) => ({ role: message.role, content: historyText(message, lang) }));
     setMessages([...messages, { role: "user", content: asked }]);
     setQuestion(""); setBusy(true); setError("");
+    const body = JSON.stringify({ question: asked, history, project_id: projectId || undefined, lang });
     try {
-      const data = await api<{ reply: string }>("/ai/assistant", { method: "POST", body: JSON.stringify({ question: asked, history, project_id: projectId || undefined, lang }) });
-      setMessages((current) => [...current, { role: "assistant", content: data.reply }]);
+      const data = await api<{ reply?: string; actions?: ProposedAction[]; fallback?: boolean }>("/ai/agent", { method: "POST", body });
+      // 語言模型不支援工具（例如沒有設定金鑰、只剩 Workers AI）時退回原本的純問答。
+      const reply = data.fallback ? (await api<{ reply: string }>("/ai/assistant", { method: "POST", body })).reply : data.reply ?? "";
+      const actions = (data.fallback ? [] : data.actions ?? []).map((action): ActionCard => ({ ...action, state: "pending" }));
+      setMessages((current) => [...current, { role: "assistant", content: reply, actions: actions.length ? actions : undefined }]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("error.operation"));
     } finally { setBusy(false); }
   };
 
+  const setAction = (id: string, patch: Partial<ActionCard>) => setMessages((current) => current.map((message) =>
+    message.actions?.some((action) => action.id === id) ? { ...message, actions: message.actions.map((action) => action.id === id ? { ...action, ...patch } : action) } : message));
+
+  // 一張一張執行：同一則回覆裡的動作可能有先後（先建任務再改它），也避免同時改同一筆。
+  const confirm = async (cards: ActionCard[]) => {
+    let changed = false;
+    for (const card of cards) {
+      if (card.state !== "pending" && card.state !== "failed") continue;
+      setAction(card.id, { state: "running", error: undefined });
+      try {
+        await api("/ai/agent/execute", { method: "POST", body: JSON.stringify({ tool: card.tool, args: card.args }) });
+        setAction(card.id, { state: "done" }); changed = true;
+      } catch (cause) {
+        setAction(card.id, { state: "failed", error: cause instanceof Error ? cause.message : t("error.operation") });
+      }
+    }
+    // 專案內頁聽這個事件重抓資料；其他頁面重新整理後就會看到。
+    if (changed) window.dispatchEvent(new CustomEvent(PROJECT_CHANGED, { detail: { projectId } }));
+  };
+
+  const running = messages.some((message) => message.actions?.some((action) => action.state === "running"));
+
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
       {!messages.length && <p className="text-sm text-star-dim">{t(projectId ? "ai.emptyProject" : "ai.empty")}</p>}
       {messages.map((message, index) => <div key={index} className={message.role === "user" ? "text-right" : ""}>
-        <p className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-card border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>
+        {message.content && <p className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-card border p-2.5 text-left text-sm ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}>{message.content}</p>}
+        {message.actions && <ActionList actions={message.actions} disabled={running} onConfirm={(cards) => void confirm(cards)} onCancel={(id) => setAction(id, { state: "cancelled" })} />}
       </div>)}
       {busy && <p className="text-sm text-star-dim">{t("ai.thinking")}</p>}
       {error && <p className="text-sm text-danger" role="alert">{error}</p>}
@@ -85,10 +127,36 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }} />
       <div className="mt-2 flex items-center gap-2">
         <button className="btn flex-1" disabled={busy || !question.trim()} onClick={() => void send()}>{t(busy ? "ai.thinking" : "ai.send")}</button>
-        {messages.length > 0 && <button className="btn-secondary !px-3" onClick={() => { setMessages([]); setError(""); }}>{t("ai.clear")}</button>}
+        {messages.length > 0 && <button className="btn-secondary !px-3" disabled={running} onClick={() => { setMessages([]); setError(""); }}>{t("ai.clear")}</button>}
       </div>
-      <p className="mt-2 text-xs text-star-dim">{t("ai.readOnlyNote")}</p>
+      <p className="mt-2 text-xs text-star-dim">{t("ai.actionNote")}</p>
     </div>
+  </div>;
+}
+
+function ActionList({ actions, disabled, onConfirm, onCancel }: { actions: ActionCard[]; disabled: boolean; onConfirm(cards: ActionCard[]): void; onCancel(id: string): void }) {
+  const t = useT();
+  const open = actions.filter((action) => action.state === "pending");
+  const status: Record<Exclude<ActionState, "pending">, { key: "ai.actionRunning" | "ai.actionDone" | "ai.actionFailed" | "ai.actionCancelled"; className: string }> = {
+    running: { key: "ai.actionRunning", className: "text-star-dim" },
+    done: { key: "ai.actionDone", className: "text-ok" },
+    failed: { key: "ai.actionFailed", className: "text-danger" },
+    cancelled: { key: "ai.actionCancelled", className: "text-star-dim" },
+  };
+  return <div className="mt-2 space-y-2 text-left">
+    {actions.map((action) => <section key={action.id} aria-label={action.title}
+      className={`rounded-card border p-2.5 text-sm ${action.destructive ? "border-danger" : "border-psi-deep"} bg-nexus-raised ${action.state === "cancelled" ? "opacity-60" : ""}`}>
+      <h3 className={`font-semibold ${action.destructive ? "text-danger" : "text-psi"}`}>{action.title}</h3>
+      <ul className="mt-1 space-y-0.5 break-words text-star">{action.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+      {action.state === "pending" || action.state === "failed"
+        ? <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button className={action.destructive ? "btn-danger" : "btn"} disabled={disabled} onClick={() => onConfirm([action])}>{t(action.state === "failed" ? "ai.actionRetry" : action.destructive ? "ai.actionConfirmDelete" : "ai.actionConfirm")}</button>
+            <button className="btn-secondary" disabled={disabled} onClick={() => onCancel(action.id)}>{t("common.cancel")}</button>
+            {action.error && <span className="w-full text-xs text-danger" role="alert">{action.error}</span>}
+          </div>
+        : <p className={`mt-2 text-xs font-semibold ${status[action.state].className}`} role="status">{t(status[action.state].key)}</p>}
+    </section>)}
+    {open.length > 1 && <button className="btn w-full" disabled={disabled} onClick={() => onConfirm(open)}>{t("ai.actionConfirmAll", { count: open.length })}</button>}
   </div>;
 }
 

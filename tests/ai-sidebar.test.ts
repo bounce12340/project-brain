@@ -30,9 +30,18 @@ describe("AI 小幫手不能自己改資料", () => {
   it("側邊欄的寫入只走既有的建立端點，沒有另開 AI 專用的寫入路徑", () => {
     expect(sidebar).toMatch(/api\(`\/projects\/\$\{projectId\}\/tasks`/);
     expect(sidebar).toMatch(/api\(`\/projects\/\$\{projectId\}\/milestones`/);
-    // 任何 /ai/ 開頭的 POST 都只能是讀取或產草稿，不能是寫入。
-    const aiCalls = [...sidebar.matchAll(/api<[^>]*>\("(\/ai\/[a-z-]+)"/g)].map((match) => match[1]);
-    expect(aiCalls.sort()).toEqual(["/ai/assistant", "/ai/plan-project"]);
+    // /ai/ 開頭的端點只能是讀取、產草稿，或執行使用者按過確認的 MCP 工具。
+    const aiCalls = [...sidebar.matchAll(/api(?:<[^>]*>)?\("(\/ai\/[a-z/-]+)"/g)].map((match) => match[1]);
+    expect([...new Set(aiCalls)].sort()).toEqual(["/ai/agent", "/ai/agent/execute", "/ai/assistant", "/ai/plan-project"]);
+  });
+
+  it("操作模式：提問端點只回確認卡；執行端點只走 MCP 工具，不自己寫 SQL", () => {
+    expect(handler(routes, "/agent")).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+    const execute = handler(routes, "/agent/execute");
+    expect(execute).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+    expect(execute).toContain("executeAssistantAction(");
+    // 執行只在使用者按下確認卡的按鈕時發生。
+    expect(sidebar).toMatch(/onConfirm=\{\(cards\) => void confirm\(cards\)\}/);
   });
 });
 
