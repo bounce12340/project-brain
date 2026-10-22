@@ -20,19 +20,18 @@ describe("AI 小幫手不能自己改資料", () => {
     expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
   });
 
-  it("建立草稿的端點也沒有任何寫入語句——它只回草稿", () => {
-    // 寫入一律由使用者按下確認後，前端拿草稿去打既有的建立端點，
+  it("整理專案的端點也沒有任何寫入語句——它只回變更清單", () => {
+    // 寫入一律由使用者勾選、按下確認後，經 /agent/execute 以本人身分跑 MCP 工具，
     // 權限、稽核與自動進度才會照原本的路徑跑。
-    const body = handler(routes, "/plan-project");
+    const body = handler(routes, "/organize");
     expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
   });
 
-  it("側邊欄的寫入只走既有的建立端點，沒有另開 AI 專用的寫入路徑", () => {
-    expect(sidebar).toMatch(/api\(`\/projects\/\$\{projectId\}\/tasks`/);
-    expect(sidebar).toMatch(/api\(`\/projects\/\$\{projectId\}\/milestones`/);
-    // /ai/ 開頭的端點只能是讀取、產草稿，或執行使用者按過確認的 MCP 工具。
+  it("側邊欄的寫入只走確認後的執行端點，沒有其他寫入路徑", () => {
+    // /ai/ 開頭的端點只能是讀取、產清單，或執行使用者按過確認的 MCP 工具。
     const aiCalls = [...sidebar.matchAll(/api(?:<[^>]*>)?\("(\/ai\/[a-z/-]+)"/g)].map((match) => match[1]);
-    expect([...new Set(aiCalls)].sort()).toEqual(["/ai/agent", "/ai/agent/execute", "/ai/assistant", "/ai/plan-project"]);
+    expect([...new Set(aiCalls)].sort()).toEqual(["/ai/agent", "/ai/agent/execute", "/ai/assistant", "/ai/organize"]);
+    expect(sidebar).not.toMatch(/method: "(PATCH|PUT|DELETE)"/);
   });
 
   it("操作模式：提問端點只回確認卡；執行端點只走 MCP 工具，不自己寫 SQL", () => {
@@ -45,9 +44,9 @@ describe("AI 小幫手不能自己改資料", () => {
   });
 });
 
-describe("建立內容與時程在任何頁面都要能用", () => {
+describe("整理專案在任何頁面都要能用", () => {
   it("不在專案內頁時，面板裡要有專案選單，而不是只留一句提示", () => {
-    // 回報：「建立內容與時程那頁不能輸入任何的東西」。第一版只在網址是 /projects/:id
+    // 回報：「建立內容與時程（現在的整理專案）那頁不能輸入任何的東西」。第一版只在網址是 /projects/:id
     // 時才渲染輸入框，其他頁面連一個輸入框都沒有——分頁點得到卻是死路。
     // 泛型裡有 Array<…>，用 [^>]* 切會在第一個 > 就停，所以直接比對字串。
     expect(sidebar).toContain('"/projects?summary=1"');
@@ -86,11 +85,11 @@ describe("AI 小幫手的可見範圍不能比使用者大", () => {
     expect(body).toMatch(/visible\.find\(\(row\) => row\.id === projectId\)/);
   });
 
-  it("產草稿要同時有檢視與編輯權", () => {
-    // 草稿的用途就是要寫進去，只讀得到的人不必產。
-    const body = handler(routes, "/plan-project");
-    expect(body).toMatch(/canViewProject\(c\.get\("user"\), access\)/);
-    expect(body).toMatch(/canEditProgress\(c\.get\("user"\), access\)/);
+  it("整理專案要同時有檢視與編輯權", () => {
+    // 清單的用途就是要寫進去，只讀得到的人不必產。專案經 get_project 讀出，看不到就是找不到。
+    const body = handler(routes, "/organize");
+    expect(body).toMatch(/loadProjectForAgent\(ctx, projectId\)/);
+    expect(body).toMatch(/if \(!current\.permissions\.can_edit\) return c\.json\(\{ error: "沒有編輯權限" \}, 403\)/);
   });
 });
 

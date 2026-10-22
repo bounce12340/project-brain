@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "../worker/types";
 import { ToolError } from "../worker/mcp/protocol";
-import { assistantContext, executeAssistantAction, runAssistantTurn } from "../worker/services/ai-agent";
+import worker from "../worker/index";
+import { sha256 } from "../worker/services/crypto";
+import { MAX_ORGANIZE_ACTIONS, assistantContext, executeAssistantAction, runAssistantTurn } from "../worker/services/ai-agent";
+import { createMemoryKV } from "./helpers/memory-kv";
 import { ToolCallingUnavailable } from "../worker/services/llm";
 import { createTestD1 } from "./helpers/d1-sqlite";
 
@@ -108,5 +111,83 @@ describe("按下確認", () => {
     await expect(executeAssistantAction(ctx(), "no_such_tool", {})).rejects.toBeInstanceOf(ToolError);
     await expect(executeAssistantAction(ctx(), "update_task", { task_id: "t1", due_date: "明天" })).rejects.toThrow(/參數錯誤/);
     await expect(executeAssistantAction(ctx(), "update_task", "t1")).rejects.toThrow("參數格式不正確");
+  });
+});
+
+describe("整理專案（/api/ai/organize）", () => {
+  const BASE = "http://127.0.0.1:8787";
+  const sessions: Record<string, string> = {};
+  let routeEnv: Env;
+  const post = (userId: string, body: unknown) => worker.fetch(new Request(`${BASE}/api/ai/organize`, { method: "POST", body: JSON.stringify(body), headers: { Cookie: sessions[userId], Origin: BASE, "Content-Type": "application/json" } }), routeEnv,
+    { waitUntil: () => undefined, passThroughOnException: () => undefined, props: {} } as unknown as ExecutionContext);
+  const brief = "10/5 已遞交；回收演練報告完成了；目標日期改到 2027-02-28；新增「準備展延文件」，明年 1 月底前完成。";
+
+  beforeEach(async () => {
+    routeEnv = { ...env(), OAUTH_KV: createMemoryKV() } as unknown as Env;
+    await db.prepare("UPDATE users SET must_change_password=0").run();
+    for (const user of [owner, outsider]) {
+      const token = `session-${user.id}-${Math.random()}`;
+      await db.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(await sha256(token), user.id, new Date(Date.now() + 86_400_000).toISOString()).run();
+      sessions[user.id] = `sid=${token}`;
+    }
+  });
+
+  it("AI 看得到專案現況，可以分好幾輪提出整份變更清單；全部只是清單，資料庫不動", async () => {
+    const seen = fakeLlm([
+      { calls: [{ name: "update_project_settings", args: { project: "p_qa", target_date: "2027-02-28" } }, { name: "update_task", args: { task_id: "t1", done: true } }] },
+      { calls: [{ name: "create_task", args: { project: "p_qa", title: "準備展延文件", due_date: "2027-01-31" } }, { name: "add_milestone", args: { project: "p_qa", title: "遞交", date: "2026-10-05", kind: "event" } }] },
+      { calls: [{ name: "add_progress_update", args: { project: "p_qa", content: "10/5 已遞交。" } }] },
+      { content: "共 5 項變更。" },
+    ]);
+    const response = await post("owner", { project_id: "p_qa", brief, lang: "zh" });
+    expect(response.status).toBe(200);
+    const data = await response.json() as { reply: string; actions: Array<{ tool: string; lines: string[] }> };
+    expect(data.reply).toBe("共 5 項變更。");
+    expect(data.actions.map((action) => action.tool)).toEqual(["update_project_settings", "update_task", "create_task", "add_milestone", "add_progress_update"]);
+    expect(data.actions[0].lines).toEqual(["專案：QA：GDP/GMP", "目標日期：2027-02-28"]);
+    expect(data.actions[3].lines).toContain("種類：歷程事件");
+    // 第一則訊息就帶著專案現況（任務 id 與名稱），AI 才能改既有任務而不是重建一個。
+    const first = JSON.parse(String(seen[0][1].content));
+    expect(first.description).toBe(brief);
+    expect(JSON.stringify(first.current_project)).toContain("回收演練報告");
+    expect(JSON.stringify(first.current_project)).toContain("t1");
+    expect(await row("SELECT target_date FROM projects WHERE id='p_qa'")).toEqual({ target_date: null });
+    expect(await row<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE project_id='p_qa'")).toEqual({ n: 1 });
+  });
+
+  it("只能用這個專案相關的工具；其他工具（個人待辦、會議）不給", async () => {
+    const seen = fakeLlm([{ calls: [{ name: "create_todo", args: { title: "x" } }] }, { content: "好。" }]);
+    const data = await (await post("owner", { project_id: "p_qa", brief })).json() as { actions: unknown[] };
+    expect(data.actions).toEqual([]);
+    expect(String(seen[1].find((message) => message.role === "tool")?.content)).toContain("沒有這個工具");
+    const tools = (JSON.parse(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)).tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
+    expect(tools).not.toContain("create_todo");
+    expect(tools).toContain("update_project_settings");
+  });
+
+  it(`清單最多 ${MAX_ORGANIZE_ACTIONS} 項`, async () => {
+    const many = Array.from({ length: MAX_ORGANIZE_ACTIONS + 3 }, (_, index) => ({ name: "create_task", args: { project: "p_qa", title: `任務 ${index}` } }));
+    fakeLlm([{ calls: many }, { content: "完成。" }]);
+    expect(((await (await post("owner", { project_id: "p_qa", brief })).json()) as { actions: unknown[] }).actions).toHaveLength(MAX_ORGANIZE_ACTIONS);
+  });
+
+  it("看不到的專案找不到；看得到但不能編輯的不產清單", async () => {
+    fakeLlm([]);
+    expect((await post("owner", { project_id: "p_secret", brief })).status).toBe(404);
+    await db.prepare("UPDATE projects SET visibility='all' WHERE id='p_qa'").run();
+    expect((await post("bd", { project_id: "p_qa", brief })).status).toBe(403);
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it("語言模型不支援工具呼叫時，退回任務與里程碑草稿，一樣包成確認卡", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const plan = { tasks: [{ title: "準備展延文件", stage: "待辦", due_date: "2027-01-31" }], milestones: [{ title: "遞交展延", due_date: "2027-02-28", end_date: "" }, { title: "沒有日期的里程碑", due_date: "", end_date: "" }] };
+    routeEnv = { ...routeEnv, LLM_API_KEY: undefined, AI: { run: async () => ({ response: JSON.stringify(plan) }) } } as unknown as Env;
+    const data = await (await post("owner", { project_id: "p_qa", brief })).json() as { reply: string; actions: Array<{ tool: string; args: Record<string, unknown> }> };
+    expect(data.reply).toContain("只能整理出任務與里程碑");
+    expect(data.actions.map((action) => [action.tool, action.args])).toEqual([
+      ["create_task", { project: "p_qa", title: "準備展延文件", stage: "待辦", due_date: "2027-01-31" }],
+      ["add_milestone", { project: "p_qa", title: "遞交展延", date: "2027-02-28" }],
+    ]);
   });
 });

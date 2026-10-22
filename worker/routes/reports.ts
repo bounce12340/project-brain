@@ -8,15 +8,15 @@ import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyRepor
 import { reportPeriod, taipeiDate, type ReportPeriodPreset } from "../services/time";
 import { accessFrom, projectRows } from "./projects";
 import { createId } from "../services/db";
-import { aiLanguageInstruction, draftFallback, normalizeAiLang, scheduleReason, taskFallback } from "../services/ai-language";
+import { aiLanguageInstruction, draftFallback, normalizeAiLang, scheduleReason, taskFallback, type AiLang } from "../services/ai-language";
 import { analyzeProjectRisk } from "../services/project-risk";
 import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkEvent, type ProgressLinkTask } from "../services/progress-links";
 import { MAX_CONTEXT_PROJECTS, MAX_HISTORY_TURNS, buildAssistantPrompt, buildPlanPrompt, type AssistantProjectSummary } from "../services/assistant";
 import { sanitizePlan } from "../../src/ai-plan";
-import { assistantContext, executeAssistantAction, runAssistantTurn } from "../services/ai-agent";
+import { MAX_BRIEF, assistantContext, executeAssistantAction, loadProjectForAgent, proposeAction, runAssistantTurn, runOrganizeTurn } from "../services/ai-agent";
 import { ToolCallingUnavailable } from "../services/llm";
 import { ToolError } from "../mcp/protocol";
-import { resolveProject } from "../mcp/tools";
+import { resolveProject, type ToolContext } from "../mcp/tools";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -352,43 +352,67 @@ aiRoutes.post("/agent/execute", async (c) => {
   }
 });
 
-// 建立內容與時程：只回草稿，一個字都不寫進資料庫。寫入由前端拿著草稿去打既有的建立端點，
-// 因此權限、稽核、自動進度全部照原本的路徑跑。
-aiRoutes.post("/plan-project", async (c) => {
+/**
+ * 整理專案：使用者把專案目前的情況整段寫進來，AI 對照現有資料提出一整份變更清單（設定、背景、任務、里程碑、進度紀錄）。
+ * 一個字都不寫：清單回到畫面，使用者勾選後逐項經 /agent/execute 以本人身分執行。
+ * 語言模型不支援工具呼叫時，退回原本的「任務與里程碑草稿」，同樣包成確認卡。
+ */
+aiRoutes.post("/organize", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const projectId = requiredString(body, "project_id");
   const brief = requiredString(body, "brief");
   if (!projectId || !brief) return c.json({ error: "請提供專案與說明" }, 422);
   const lang = normalizeAiLang(body.lang);
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access) return c.json({ error: "找不到專案" }, 404);
-  // 讀得到還不夠——草稿的用途就是要寫進去，沒有編輯權就不必產。
-  if (!canViewProject(c.get("user"), access) || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
-
-  const [project, stageRows, taskRows, milestoneRows] = await Promise.all([
-    c.env.DB.prepare("SELECT name,description,goal_summary FROM projects WHERE id=?").bind(projectId).first<{ name: string; description: string; goal_summary: string }>(),
-    c.env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(projectId).all<{ name: string }>(),
-    c.env.DB.prepare("SELECT title FROM tasks WHERE project_id=? ORDER BY created_at LIMIT 120").bind(projectId).all<{ title: string }>(),
-    c.env.DB.prepare("SELECT title,due_date FROM milestones WHERE project_id=? ORDER BY due_date LIMIT 60").bind(projectId).all<Record<string, unknown>>(),
-  ]);
-  const stages = stageRows.results.map((row) => row.name);
-  if (!stages.length) return c.json({ error: "這個專案還沒有任何階段，請先建立階段" }, 422);
-  // 一併回階段 id：前端拿草稿去打既有的建立端點時需要 stage_id，不該再多跑一趟。
-
+  const user = c.get("user");
+  const ctx = assistantContext(c.env, executionOf(c), user);
+  let current: Awaited<ReturnType<typeof loadProjectForAgent>>;
+  try { current = await loadProjectForAgent(ctx, projectId); } catch (error) {
+    if (error instanceof ToolError) return c.json({ error: "找不到專案" }, 404);
+    throw error;
+  }
+  // 讀得到還不夠——清單的用途就是要寫進去，沒有編輯權就不必產。
+  if (!current.permissions.can_edit) return c.json({ error: "沒有編輯權限" }, 403);
+  const project = { id: current.id, name: current.name };
   try {
-    const text = await llmChat(c.env, [
-      { role: "system", content: buildPlanPrompt(lang, stages, taipeiDate()) },
-      { role: "user", content: JSON.stringify({ project: { name: project?.name ?? "", description: project?.description ?? "", goal: project?.goal_summary ?? "" }, brief: brief.slice(0, 8_000), existing_tasks: taskRows.results.map((row) => row.title), existing_milestones: milestoneRows.results }) },
-    ], { json: true, timeoutMs: 90_000 });
-    const plan = sanitizePlan(parseLooseJson<Record<string, unknown>>(text), stages);
-    return c.json({ plan, stages: stageRows.results });
+    return c.json(await runOrganizeTurn(c.env, ctx, { project, current, brief, lang }));
+  } catch (error) {
+    if (!(error instanceof ToolCallingUnavailable)) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(JSON.stringify({ message: "AI 整理專案失敗", project_id: projectId, error: reason }));
+      return c.json({ error: adminDetail(user, "AI 暫時無法整理，請稍後再試", reason) }, 503);
+    }
+  }
+  try {
+    return c.json(await planAsActions(c.env, ctx, project, brief, lang));
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({ message: "AI 專案草稿失敗", project_id: projectId, error: reason }));
-    return c.json({ error: adminDetail(c.get("user"), "AI 暫時無法產生草稿，請稍後再試", reason) }, 503);
+    return c.json({ error: adminDetail(user, "AI 暫時無法產生草稿，請稍後再試", reason) }, 503);
   }
 });
 
+/** 不用工具呼叫的退路：請 AI 只拆出任務與里程碑，再包成和工具相同的確認卡。 */
+async function planAsActions(env: Env, ctx: ToolContext, project: { id: string; name: string }, brief: string, lang: AiLang) {
+  const [row, stageRows, taskRows, milestoneRows] = await Promise.all([
+    env.DB.prepare("SELECT description,goal_summary FROM projects WHERE id=?").bind(project.id).first<{ description: string; goal_summary: string }>(),
+    env.DB.prepare("SELECT name FROM stages WHERE project_id=? ORDER BY position").bind(project.id).all<{ name: string }>(),
+    env.DB.prepare("SELECT title FROM tasks WHERE project_id=? ORDER BY created_at LIMIT 120").bind(project.id).all<{ title: string }>(),
+    env.DB.prepare("SELECT title,due_date FROM milestones WHERE project_id=? ORDER BY due_date LIMIT 60").bind(project.id).all<Record<string, unknown>>(),
+  ]);
+  const stages = stageRows.results.map((stage) => stage.name);
+  const text = await llmChat(env, [
+    { role: "system", content: buildPlanPrompt(lang, stages, taipeiDate()) },
+    { role: "user", content: JSON.stringify({ project: { name: project.name, description: row?.description ?? "", goal: row?.goal_summary ?? "" }, brief: brief.slice(0, MAX_BRIEF), existing_tasks: taskRows.results.map((task) => task.title), existing_milestones: milestoneRows.results }) },
+  ], { json: true, timeoutMs: 90_000 });
+  const plan = sanitizePlan(parseLooseJson<Record<string, unknown>>(text), stages);
+  const proposals = [
+    ...plan.tasks.map((task, index) => proposeAction(ctx, `plan_task_${index}`, "create_task", { project: project.id, title: task.title, ...(task.stage ? { stage: task.stage } : {}), ...(task.due_date ? { due_date: task.due_date } : {}) }, lang)),
+    // 里程碑一定要有日期；草稿裡沒有日期的寧可不列，也不替使用者猜。
+    ...plan.milestones.filter((milestone) => milestone.due_date).map((milestone, index) => proposeAction(ctx, `plan_ms_${index}`, "add_milestone", { project: project.id, title: milestone.title, date: milestone.due_date, ...(milestone.end_date ? { end_date: milestone.end_date } : {}) }, lang)),
+  ];
+  const actions = (await Promise.all(proposals)).filter((action): action is NonNullable<typeof action> => !!action);
+  return { reply: lang === "zh" ? "目前的 AI 服務只能整理出任務與里程碑，專案設定、背景與進度紀錄請在專案頁修改。" : "The current AI service can only draft tasks and milestones; change settings, background and progress updates on the project page.", actions, lookups: [] };
+}
 
 /** 一般使用者只看得到「暫時無法回應」；管理員多看到供應商回的原因，否則沒人查得出來。 */
 function adminDetail(user: { role: string }, message: string, reason: string): string {
