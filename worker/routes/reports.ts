@@ -13,6 +13,10 @@ import { analyzeProjectRisk } from "../services/project-risk";
 import { buildProgressLinksPrompt, progressLinksFallback, sanitizeProgressLinks, type ProgressLinkEvent, type ProgressLinkTask } from "../services/progress-links";
 import { MAX_CONTEXT_PROJECTS, MAX_HISTORY_TURNS, buildAssistantPrompt, buildPlanPrompt, type AssistantProjectSummary } from "../services/assistant";
 import { sanitizePlan } from "../../src/ai-plan";
+import { assistantContext, executeAssistantAction, runAssistantTurn } from "../services/ai-agent";
+import { ToolCallingUnavailable } from "../services/llm";
+import { ToolError } from "../mcp/protocol";
+import { resolveProject } from "../mcp/tools";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -301,6 +305,50 @@ aiRoutes.post("/assistant", async (c) => {
     console.error(JSON.stringify({ message: "AI 小幫手失敗", error: reason }));
     // 管理員看得到真正的原因。只回「暫時無法回應」的話，回報者與修的人都在猜。
     return c.json({ error: adminDetail(user, "AI 小幫手暫時無法回應，請稍後再試", reason) }, 503);
+  }
+});
+
+/**
+ * AI 小幫手的操作模式：AI 可以用和 AI 連接器相同的工具查資料；會改資料的動作回成確認卡，
+ * 由 /agent/execute 在使用者按「確認」後才執行。LLM 不支援工具時回 fallback，前端改用 /assistant 純問答。
+ */
+/** Hono 的 executionCtx 在沒有執行環境時（測試）會丟錯；工具只用它延後背景工作，沒有就算了。 */
+const executionOf = (c: { executionCtx: unknown }): ExecutionContext | undefined => { try { return c.executionCtx as ExecutionContext; } catch { return undefined; } };
+
+aiRoutes.post("/agent", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const question = requiredString(body, "question");
+  if (!question) return c.json({ error: "請輸入問題" }, 422);
+  const lang = normalizeAiLang(body.lang);
+  const user = c.get("user");
+  const ctx = assistantContext(c.env, executionOf(c), user);
+  const projectId = optionalString(body, "project_id");
+  // 前端帶來的專案 id 一樣要重新確認看得到，看不到就當作沒開專案。
+  const openProject = projectId ? await resolveProject(ctx, projectId).then((project) => ({ id: project.id, name: project.name })).catch(() => null) : null;
+  const history = (Array.isArray(body.history) ? body.history : []).slice(-MAX_HISTORY_TURNS)
+    .filter((item): item is { role: string; content: string } => !!item && typeof item === "object" && typeof (item as { content?: unknown }).content === "string")
+    .map((item) => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content.slice(0, 4_000) }));
+  try {
+    return c.json(await runAssistantTurn(c.env, ctx, { question, history, lang, openProject }));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (error instanceof ToolCallingUnavailable) {
+      console.warn(JSON.stringify({ message: "AI 小幫手無法使用工具，改用純問答", error: reason }));
+      return c.json({ fallback: true });
+    }
+    console.error(JSON.stringify({ message: "AI 小幫手操作失敗", error: reason }));
+    return c.json({ error: adminDetail(user, "AI 小幫手暫時無法回應，請稍後再試", reason) }, 503);
+  }
+});
+
+aiRoutes.post("/agent/execute", async (c) => {
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const ctx = assistantContext(c.env, executionOf(c), c.get("user"));
+  try {
+    return c.json({ ok: true, result: await executeAssistantAction(ctx, body.tool, body.args) });
+  } catch (error) {
+    if (error instanceof ToolError) return c.json({ error: error.message }, 422);
+    throw error;
   }
 });
 

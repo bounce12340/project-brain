@@ -56,7 +56,7 @@ function checkDate(value: unknown, label: string): void {
 }
 
 /** 專案可以用 id 或名稱指定。名稱比對與批次匯入相同：全形半形、空白、大小寫不影響。 */
-async function resolveProject(ctx: ToolContext, reference: unknown): Promise<ProjectSummary> {
+export async function resolveProject(ctx: ToolContext, reference: unknown): Promise<ProjectSummary> {
   const wanted = text(reference);
   const { projects } = await ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1");
   const byId = projects.find((project) => project.id === wanted);
@@ -95,9 +95,12 @@ async function resolveAssignee(ctx: ToolContext, wanted: unknown): Promise<strin
   throw new ToolError(`找不到使用者「${value}」。請用系統上的姓名或 Email。`);
 }
 
+/** 網站裡的 AI 小幫手也用這些工具；稽核紀錄寫成「經 AI 小幫手」，和外部 AI 工具分開。 */
+export const ASSISTANT_CLIENT_NAME = "AI 小幫手";
+
 /** 寫入成功後記一筆稽核：誰、透過哪個 AI 工具、做了什麼。 */
 const audit = (ctx: ToolContext, tool: string, entityType: string, entityId: string, summary: string) =>
-  writeAudit(ctx.db, ctx.user, `mcp_${tool}`, entityType, entityId, `經 AI 連接器（${ctx.clientName}）${summary}`);
+  writeAudit(ctx.db, ctx.user, `mcp_${tool}`, entityType, entityId, `${ctx.clientName === ASSISTANT_CLIENT_NAME ? "經 AI 小幫手" : `經 AI 連接器（${ctx.clientName}）`}${summary}`);
 
 const tool = <T extends McpTool<ToolContext>>(definition: T) => definition;
 

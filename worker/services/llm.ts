@@ -79,3 +79,36 @@ export async function llmChat(env: Env, messages: ChatMessage[], options: LlmCha
   }
   throw lastError instanceof Error ? lastError : new Error("LLM 呼叫失敗");
 }
+
+/**
+ * 讓 AI 呼叫工具（OpenAI 相容的 function calling，DeepSeek 支援）。
+ * 只在設定了 LLM_API_KEY 時可用；沒有時丟 ToolCallingUnavailable，呼叫端退回純問答。
+ */
+export interface AgentToolCall { id: string; name: string; arguments: string }
+export type AgentMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> }
+  | { role: "tool"; tool_call_id: string; content: string };
+export interface AgentTool { type: "function"; function: { name: string; description: string; parameters: unknown } }
+export class ToolCallingUnavailable extends Error {}
+
+export async function llmChatWithTools(env: Env, messages: AgentMessage[], tools: AgentTool[], options: { timeoutMs?: number } = {}): Promise<{ content: string; toolCalls: AgentToolCall[] }> {
+  if (!env.LLM_API_KEY) throw new ToolCallingUnavailable("沒有設定 LLM_API_KEY");
+  const timeoutMs = Math.max(1_000, Math.floor(options.timeoutMs ?? 90_000));
+  const response = await withTimeout((signal) => fetch(`${env.LLM_BASE_URL}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: { Authorization: `Bearer ${env.LLM_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: env.LLM_MODEL, messages, tools, tool_choice: "auto" }),
+  }), timeoutMs);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new ToolCallingUnavailable(`LLM HTTP ${response.status}${detail ? `: ${upstreamMessage(detail)}` : ""}`);
+  }
+  const body = await response.json<{ choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }> }>();
+  const message = body.choices?.[0]?.message;
+  if (!message) throw new Error("LLM 回應缺少內容");
+  const toolCalls = (message.tool_calls ?? []).flatMap((call, index) => call.function?.name
+    ? [{ id: call.id || `call_${index}`, name: call.function.name, arguments: call.function.arguments || "{}" }] : []);
+  return { content: message.content ?? "", toolCalls };
+}
