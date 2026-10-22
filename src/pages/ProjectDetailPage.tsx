@@ -66,8 +66,11 @@ export function ProjectDetailPage() {
   // AI 小幫手側邊欄掛在 Layout 上，寫入後拿不到這裡的 load()，改用事件通知重抓。
   useEffect(() => {
     const refresh = (event: Event) => { if ((event as CustomEvent<{ projectId?: string }>).detail?.projectId === id) void load(); };
+    // AI 連接器（Claude 等）在別的視窗改了資料，切回這個分頁時重抓，看板欄位與任務才是最新的。
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
     window.addEventListener(PROJECT_CHANGED, refresh);
-    return () => window.removeEventListener(PROJECT_CHANGED, refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { window.removeEventListener(PROJECT_CHANGED, refresh); document.removeEventListener("visibilitychange", onVisible); };
   }, [id, sections]);
   const groupType = data?.project.group_type;
   useEffect(() => { if (groupType && !projectTabs(groupType).some(([key]) => key === tab)) setTab("overview"); }, [groupType]);

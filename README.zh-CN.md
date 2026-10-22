@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-目前提供 **21 个工具**：
+目前提供 **25 个工具**：
 
 | 工作场景 | 工具 |
 |---|---|
@@ -44,6 +44,7 @@ codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registr
 | 项目与期限查询 | `list_projects`、`get_project`、`list_my_work` |
 | 进度与项目规划 | `add_progress_update`、`create_task`、`update_task`、`add_milestone`、`update_milestone`、`update_project_background`、`update_project_settings`、`delete_task`、`delete_milestone` |
 | 个人待办 | `list_todos`、`create_todo`、`update_todo` |
+| 看板栏位 | `add_stage`、`rename_stage`、`reorder_stages`、`delete_stage` |
 | 会议与培训 | `list_meetings`、`create_meeting` |
 | 联系人与已发布法规 | `search_contacts`、`list_regulations` |
 

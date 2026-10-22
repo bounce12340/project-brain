@@ -7,7 +7,7 @@ import { llmChat, llmChatWithTools, llmEndpoint, type AgentMessage, type AgentTo
 import { taipeiDate } from "./time";
 
 /**
- * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 21 個工具。
+ * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 25 個工具。
  * - 查資料的工具（list_projects、get_project…）當場執行，結果交回 AI 繼續回答。
  * - 會改資料的工具不執行，整理成「確認卡」交給畫面；使用者按「確認」才由 executeAssistantAction 執行。
  * 工具一律以這位使用者的身分走網站自己的 /api，看得到、改得了的範圍和他在畫面上操作時一樣。
@@ -88,12 +88,14 @@ const LABELS: Record<AiLang, Record<string, string>> = {
     start_date: "開始日", due_date: "到期日", target_date: "目標日期", date: "日期", end_date: "結束日", status: "狀態", done: "完成", description: "說明",
     background: "專案背景", objective: "專案目標", kind: "種類", starts_at: "開始時間", ends_at: "結束時間", location: "地點", attendees: "與會者",
     organizer: "主辦單位", summary: "摘要", category: "分類",
+    name: "名稱", new_name: "新名稱", position: "放在第幾欄", order: "新順序", move_tasks_to: "任務搬到",
   },
   en: {
     project: "Project", task_id: "Task", milestone_id: "Milestone", todo_id: "To-do", title: "Title", content: "Content", stage: "Column", assignee: "Assignee",
     start_date: "Start", due_date: "Due", target_date: "Target date", date: "Date", end_date: "End", status: "Status", done: "Done", description: "Description",
     background: "Background", objective: "Objective", kind: "Kind", starts_at: "Starts", ends_at: "Ends", location: "Location", attendees: "Attendees",
     organizer: "Organizer", summary: "Summary", category: "Category",
+    name: "Name", new_name: "New name", position: "Column position", order: "New order", move_tasks_to: "Move tasks to",
   },
 };
 const STATUS: Record<AiLang, Record<string, string>> = {
@@ -136,6 +138,7 @@ export async function describeAction(ctx: ToolContext, toolName: string, args: R
     else if (raw === "") value = lang === "zh" ? "（清除）" : "(clear)";
     else if (key === "status") value = STATUS[lang][String(raw)] ?? String(raw);
     else if (key === "kind") value = KIND[lang][String(raw)] ?? String(raw);
+    else if (Array.isArray(raw)) value = shorten(raw.map(String).join(" → "));
     else value = shorten(typeof raw === "string" ? raw : JSON.stringify(raw), LONG_FIELDS.has(key) ? 4_000 : 300);
     lines.push(`${labels[key] ?? key}：${value}`);
   }
@@ -243,7 +246,7 @@ export async function runAssistantTurn(env: Env, ctx: ToolContext, input: {
 }
 
 /** 整理專案能用的工具：只碰這一個專案的內容與設定。 */
-export const ORGANIZE_TOOLS = ["get_project", "update_project_settings", "update_project_background", "update_task", "create_task", "delete_task", "update_milestone", "add_milestone", "delete_milestone", "add_progress_update"] as const;
+export const ORGANIZE_TOOLS = ["get_project", "update_project_settings", "update_project_background", "add_stage", "rename_stage", "reorder_stages", "delete_stage", "update_task", "create_task", "delete_task", "update_milestone", "add_milestone", "delete_milestone", "add_progress_update"] as const;
 export const MAX_ORGANIZE_ACTIONS = 40;
 export const MAX_BRIEF = 8_000;
 
@@ -253,11 +256,12 @@ export function buildOrganizePrompt(lang: AiLang, today: string, project: { id: 
     "You keep one project in 艾爾水晶 (Project Brain), a Taiwanese pharmaceutical company's regulatory/clinical/QA/BD tracker, in line with what the user tells you.",
     `The project is「${project.name}」(id ${project.id}). The user message has its current data (from get_project) and the user's own description of the project's full current situation.`,
     "Compare the two and propose every change needed so the project matches the description, by calling the write tools:",
+    "add_stage, rename_stage, reorder_stages and delete_stage when the description asks to change the kanban columns themselves (create_task never creates a missing column; add it first);",
     "update_project_settings for start date, target date (目標日期) or status; update_project_background only to add facts, settled decisions or requirements the description states (it replaces the text, so keep all existing content and add to it);",
     "update_task for existing tasks that are now done, rescheduled, moved, reassigned or need a better description; create_task for work the description mentions that no task covers; update_milestone and add_milestone likewise (use kind=event for things that already happened, such as a submission or an authority's reply);",
     "and finish with one add_progress_update that summarises what is new, dated facts first.",
     "Prefer updating an existing item over creating a near-duplicate. Delete only what the description says is cancelled or no longer needed. Never invent dates, people or requirements the description does not give; leave a field out when unsure.",
-    `Write tools are NOT executed when you call them: they go into a checklist the user reviews and confirms. Propose at most ${MAX_ORGANIZE_ACTIONS} changes, in this order: settings, background, existing tasks, new tasks, milestones, progress update.`,
+    `Write tools are NOT executed when you call them: they go into a checklist the user reviews and confirms. Propose at most ${MAX_ORGANIZE_ACTIONS} changes, in this order: settings, background, kanban columns, existing tasks, new tasks, milestones, progress update.`,
     "When everything is proposed, reply with a short summary of the changes and list anything in the description you could not place or that conflicts with the background.",
     `Today is ${today}. Dates are YYYY-MM-DD in Asia/Taipei. Kanban stage names must be copied from the board.`,
     advisor ? ADVISOR_HINT : "",
