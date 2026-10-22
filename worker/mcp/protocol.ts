@@ -35,6 +35,8 @@ export interface McpTool<Ctx> {
   write?: boolean;
   /** 同一組參數重複呼叫結果相同（例如勾選完成、改日期）。 */
   idempotent?: boolean;
+  /** 會永久刪除資料：客戶端據此在呼叫前向使用者確認。 */
+  destructive?: boolean;
   run(args: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
 }
 
@@ -147,7 +149,7 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
 function describeTool<Ctx>(tool: McpTool<Ctx>) {
   return {
     name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema,
-    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: false, idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: false },
+    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: tool.destructive === true, idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: false },
   };
 }
 

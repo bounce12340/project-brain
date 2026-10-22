@@ -156,6 +156,41 @@ describe("寫入", () => {
     expect(await row("SELECT done, due_date FROM milestones WHERE id='m1'")).toEqual({ done: 1, due_date: "2026-12-01" });
   });
 
+  it("delete_task：刪除任務、重算自動進度、記稽核；看不到的專案刪不到", async () => {
+    await run("update_task", { task_id: "t_late", done: true });
+    const before = (await row<{ progress: number }>("SELECT progress FROM projects WHERE id='p_qa'"))!.progress;
+    const result = await run("delete_task", { task_id: "t_late" });
+    expect(result).toMatchObject({ ok: true, deleted: { task_id: "t_late", title: "自我查核（HR）" }, project: "QA：GDP/GMP" });
+    expect(await row("SELECT id FROM tasks WHERE id='t_late'")).toBeNull();
+    expect((await row<{ progress: number }>("SELECT progress FROM projects WHERE id='p_qa'"))!.progress).not.toBe(before);
+    expect(await row("SELECT action, entity_type, entity_id, summary FROM audit_log WHERE action='mcp_delete_task'")).toEqual({
+      action: "mcp_delete_task", entity_type: "task", entity_id: "t_late", summary: "經 AI 連接器（Claude）刪除「QA：GDP/GMP」的任務「自我查核（HR）」",
+    });
+    expect(await fails("delete_task", { task_id: "t_late" })).toBe("找不到任務 t_late");
+    expect(await fails("delete_task", { task_id: "t_bd" })).toBe("沒有檢視權限");
+    expect(await row("SELECT id FROM tasks WHERE id='t_bd'")).toEqual({ id: "t_bd" });
+  });
+
+  it("delete_milestone：里程碑與歷程事件都能刪，稽核寫明是哪一種", async () => {
+    expect(await run("delete_milestone", { milestone_id: "m1" })).toMatchObject({ ok: true, deleted: { title: "GMP 展延送件", kind: "里程碑" } });
+    expect(await run("delete_milestone", { milestone_id: "e1" })).toMatchObject({ ok: true, deleted: { title: "健亞訪廠", kind: "歷程事件" } });
+    expect(await row("SELECT COUNT(*) AS n FROM milestones WHERE project_id='p_qa'")).toEqual({ n: 0 });
+    expect((await db.prepare("SELECT summary FROM audit_log WHERE action='mcp_delete_milestone' ORDER BY rowid").all()).results).toEqual([
+      { summary: "經 AI 連接器（Claude）刪除「QA：GDP/GMP」的里程碑「GMP 展延送件」" },
+      { summary: "經 AI 連接器（Claude）刪除「QA：GDP/GMP」的歷程事件「健亞訪廠」" },
+    ]);
+    expect(await fails("delete_milestone", { milestone_id: "m1" })).toBe("找不到里程碑 m1");
+  });
+
+  it("刪除工具標示為 destructive，需要寫入權限", () => {
+    for (const name of ["delete_task", "delete_milestone"]) {
+      const tool = MCP_TOOLS.find((item) => item.name === name)!;
+      expect(tool.write && tool.destructive, name).toBe(true);
+      expect(tool.description, name).toMatch(/explicit confirmation/);
+    }
+    expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_task"]);
+  });
+
   it("update_project_background：擁有者可以改背景與目標；同組成員不行", async () => {
     await run("update_project_background", { project: "p_food", background: "# 背景\n取代味噌湯米粉", objective: "三款上市" });
     expect(await row("SELECT description, goal_summary FROM projects WHERE id='p_food'")).toEqual({ description: "# 背景\n取代味噌湯米粉", goal_summary: "三款上市" });
