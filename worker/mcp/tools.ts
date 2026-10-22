@@ -401,6 +401,38 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       return { ok: true, project: project.name };
     },
   }),
+  tool({
+    name: "update_project_settings",
+    title: "修改專案設定",
+    description: "Change a project's start date, target date (目標日期) or status: active (進行中), paused (暫停) or done (已完成). Pass an empty string for a date to clear it. Only the project owner or an admin may do this, as on the website. Archiving is not offered here; do that on the website. Confirm with the user before pausing or completing a project.",
+    write: true,
+    idempotent: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["project"], properties: {
+      project: projectRef,
+      start_date: optionalDate,
+      target_date: optionalDate,
+      status: { type: "string", enum: ["active", "paused", "done"], description: "active＝進行中；paused＝暫停；done＝已完成" },
+    } },
+    async run(args, ctx) {
+      const fields = ["start_date", "target_date", "status"].filter((key) => args[key] !== undefined);
+      if (!fields.length) throw new ToolError("沒有要修改的欄位");
+      checkDate(args.start_date, "開始日"); checkDate(args.target_date, "目標日期");
+      const project = await resolveProject(ctx, args.project);
+      const { project: current } = await loadProject(ctx, project.id);
+      const start = args.start_date !== undefined ? (args.start_date as string) || null : current.start_date;
+      const target = args.target_date !== undefined ? (args.target_date as string) || null : current.target_date;
+      if (start && target && target < start) throw new ToolError(`目標日期 ${target} 早於開始日 ${start}`);
+      const body: Record<string, unknown> = {};
+      if (args.start_date !== undefined) body.start_date = start;
+      if (args.target_date !== undefined) body.target_date = target;
+      if (args.status !== undefined) body.status = args.status;
+      await ctx.api.send("PATCH", `/api/projects/${project.id}`, body);
+      const label = { start_date: "開始日", target_date: "目標日期", status: "狀態" } as Record<string, string>;
+      const shown = (key: string) => key === "status" ? STATUS_LABEL[String(args.status)] : (body[key] as string | null) ?? "（清除）";
+      await audit(ctx, "update_project_settings", "project", project.id, `修改「${project.name}」的${fields.map((key) => `${label[key]}為 ${shown(key)}`).join("、")}`);
+      return { ok: true, project: project.name, changed: Object.fromEntries(fields.map((key) => [key, key === "status" ? STATUS_LABEL[String(args.status)] : body[key]])) };
+    },
+  }),
 ];
 
 MCP_TOOLS.push(...extendedTools({ resolveProject, audit, getProject: (args, ctx) => MCP_TOOLS.find((item) => item.name === "get_project")!.run(args, ctx) }));

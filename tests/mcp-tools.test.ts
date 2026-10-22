@@ -191,6 +191,27 @@ describe("寫入", () => {
     expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_task"]);
   });
 
+  it("update_project_settings：擁有者改目標日期、開始日與狀態，記稽核；空字串清除日期", async () => {
+    const result = await run("update_project_settings", { project: "QA：GDP/GMP", target_date: "2027-02-28", start_date: "2026-10-01", status: "paused" });
+    expect(result).toEqual({ ok: true, project: "QA：GDP/GMP", changed: { start_date: "2026-10-01", target_date: "2027-02-28", status: "暫停" } });
+    expect(await row("SELECT start_date, target_date, status FROM projects WHERE id='p_qa'")).toEqual({ start_date: "2026-10-01", target_date: "2027-02-28", status: "paused" });
+    expect(await row("SELECT summary FROM audit_log WHERE action='mcp_update_project_settings'")).toEqual({
+      summary: "經 AI 連接器（Claude）修改「QA：GDP/GMP」的開始日為 2026-10-01、目標日期為 2027-02-28、狀態為 暫停",
+    });
+    await run("update_project_settings", { project: "p_qa", start_date: "", status: "active" });
+    expect(await row("SELECT start_date, target_date, status FROM projects WHERE id='p_qa'")).toEqual({ start_date: null, target_date: "2027-02-28", status: "active" });
+  });
+
+  it("update_project_settings：同組成員不能改；日期顛倒、不存在的日期、沒給欄位都擋下", async () => {
+    expect(await fails("update_project_settings", { project: "p_qa", target_date: "2027-02-28" }, mate)).toBe("只有 owner 或管理員可修改專案設定");
+    await run("update_project_settings", { project: "p_qa", start_date: "2026-10-01" });
+    expect(await fails("update_project_settings", { project: "p_qa", target_date: "2026-09-30" })).toBe("目標日期 2026-09-30 早於開始日 2026-10-01");
+    expect(await fails("update_project_settings", { project: "p_qa", target_date: "2027-02-30" })).toBe("目標日期不是有效日期：2027-02-30");
+    expect(await fails("update_project_settings", { project: "p_qa" })).toBe("沒有要修改的欄位");
+    expect(await fails("update_project_settings", { project: "p_secret", status: "done" })).toMatch(/找不到專案/);
+    expect(await row("SELECT target_date, status FROM projects WHERE id='p_qa'")).toEqual({ target_date: null, status: "active" });
+  });
+
   it("update_project_background：擁有者可以改背景與目標；同組成員不行", async () => {
     await run("update_project_background", { project: "p_food", background: "# 背景\n取代味噌湯米粉", objective: "三款上市" });
     expect(await row("SELECT description, goal_summary FROM projects WHERE id='p_food'")).toEqual({ description: "# 背景\n取代味噌湯米粉", goal_summary: "三款上市" });
