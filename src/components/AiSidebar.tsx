@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../i18n/LangContext";
 import { useLang } from "../i18n/LangContext";
-import { planCount, type PlanMilestone, type PlanTask, type ProjectPlan } from "../ai-plan";
 
 /** 專案內頁的網址。側邊欄掛在 Layout 上，不經過頁面，因此從路徑判斷「現在開著哪個專案」。 */
 const projectIdFromPath = (pathname: string): string => /^\/projects\/([^/]+)$/.exec(pathname)?.[1] ?? "";
@@ -16,7 +15,6 @@ const writeOpen = (value: boolean) => { try { localStorage.setItem(OPEN_KEY, val
 export const PROJECT_CHANGED = "project-data-changed";
 
 interface ChatMessage { role: "user" | "assistant"; content: string }
-interface Stage { id: string; name: string }
 
 export function AiSidebar() {
   const t = useT(); const { lang } = useLang();
@@ -40,7 +38,7 @@ export function AiSidebar() {
           {t(key === "ask" ? "ai.tabAsk" : "ai.tabPlan")}
         </button>)}
       </div>
-      {tab === "ask" ? <AskPane projectId={projectId} lang={lang} /> : <PlanPane projectId={projectId} lang={lang} />}
+      {tab === "ask" ? <AskPane projectId={projectId} lang={lang} /> : <OrganizePane projectId={projectId} lang={lang} />}
     </aside>}
   </>;
 }
@@ -59,6 +57,26 @@ const historyText = (message: AskMessage, lang: string): string => {
     : { pending: "使用者尚未確認", running: "執行中", done: "已執行", failed: "執行失敗", cancelled: "使用者取消" };
   return [message.content, ...message.actions.map((action) => `[${word[action.state]}] ${action.title}：${action.lines.join("；")}${action.error ? `（${action.error}）` : ""}`)].join("\n");
 };
+
+/** 依序執行勾選／確認的動作：同一份清單可能有先後（先建任務再改專案設定），也避免同時改同一筆。 */
+function useActionRunner(projectId: string, update: (id: string, patch: Partial<ActionCard>) => void) {
+  const t = useT();
+  return async (cards: ActionCard[]) => {
+    let changed = false;
+    for (const card of cards) {
+      if (card.state !== "pending" && card.state !== "failed") continue;
+      update(card.id, { state: "running", error: undefined });
+      try {
+        await api("/ai/agent/execute", { method: "POST", body: JSON.stringify({ tool: card.tool, args: card.args }) });
+        update(card.id, { state: "done" }); changed = true;
+      } catch (cause) {
+        update(card.id, { state: "failed", error: cause instanceof Error ? cause.message : t("error.operation") });
+      }
+    }
+    // 專案內頁聽這個事件重抓資料；其他頁面重新整理後就會看到。
+    if (changed) window.dispatchEvent(new CustomEvent(PROJECT_CHANGED, { detail: { projectId } }));
+  };
+}
 
 function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
   const t = useT();
@@ -91,22 +109,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
   const setAction = (id: string, patch: Partial<ActionCard>) => setMessages((current) => current.map((message) =>
     message.actions?.some((action) => action.id === id) ? { ...message, actions: message.actions.map((action) => action.id === id ? { ...action, ...patch } : action) } : message));
 
-  // 一張一張執行：同一則回覆裡的動作可能有先後（先建任務再改它），也避免同時改同一筆。
-  const confirm = async (cards: ActionCard[]) => {
-    let changed = false;
-    for (const card of cards) {
-      if (card.state !== "pending" && card.state !== "failed") continue;
-      setAction(card.id, { state: "running", error: undefined });
-      try {
-        await api("/ai/agent/execute", { method: "POST", body: JSON.stringify({ tool: card.tool, args: card.args }) });
-        setAction(card.id, { state: "done" }); changed = true;
-      } catch (cause) {
-        setAction(card.id, { state: "failed", error: cause instanceof Error ? cause.message : t("error.operation") });
-      }
-    }
-    // 專案內頁聽這個事件重抓資料；其他頁面重新整理後就會看到。
-    if (changed) window.dispatchEvent(new CustomEvent(PROJECT_CHANGED, { detail: { projectId } }));
-  };
+  const confirm = useActionRunner(projectId, setAction);
 
   const running = messages.some((message) => message.actions?.some((action) => action.state === "running"));
 
@@ -134,41 +137,58 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
   </div>;
 }
 
+const STATUS: Record<Exclude<ActionState, "pending">, { key: "ai.actionRunning" | "ai.actionDone" | "ai.actionFailed" | "ai.actionCancelled"; className: string }> = {
+  running: { key: "ai.actionRunning", className: "text-star-dim" },
+  done: { key: "ai.actionDone", className: "text-ok" },
+  failed: { key: "ai.actionFailed", className: "text-danger" },
+  cancelled: { key: "ai.actionCancelled", className: "text-star-dim" },
+};
+
+/** 一張確認卡：做什麼、改哪些欄位；底下的按鈕或勾選框由呼叫端決定。 */
+function ActionCardView({ action, children }: { action: ActionCard; children: React.ReactNode }) {
+  return <section aria-label={action.title}
+    className={`rounded-card border p-2.5 text-left text-sm ${action.destructive ? "border-danger" : "border-psi-deep"} bg-nexus-raised ${action.state === "cancelled" ? "opacity-60" : ""}`}>
+    <h3 className={`font-semibold ${action.destructive ? "text-danger" : "text-psi"}`}>{action.title}</h3>
+    <ul className="mt-1 space-y-0.5 whitespace-pre-wrap break-words text-star">{action.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+    {children}
+  </section>;
+}
+
+function ActionStatus({ action }: { action: ActionCard }) {
+  const t = useT();
+  if (action.state === "pending") return null;
+  return <p className={`mt-2 text-xs font-semibold ${STATUS[action.state].className}`} role="status">{t(STATUS[action.state].key)}{action.error && `：${action.error}`}</p>;
+}
+
 function ActionList({ actions, disabled, onConfirm, onCancel }: { actions: ActionCard[]; disabled: boolean; onConfirm(cards: ActionCard[]): void; onCancel(id: string): void }) {
   const t = useT();
   const open = actions.filter((action) => action.state === "pending");
-  const status: Record<Exclude<ActionState, "pending">, { key: "ai.actionRunning" | "ai.actionDone" | "ai.actionFailed" | "ai.actionCancelled"; className: string }> = {
-    running: { key: "ai.actionRunning", className: "text-star-dim" },
-    done: { key: "ai.actionDone", className: "text-ok" },
-    failed: { key: "ai.actionFailed", className: "text-danger" },
-    cancelled: { key: "ai.actionCancelled", className: "text-star-dim" },
-  };
-  return <div className="mt-2 space-y-2 text-left">
-    {actions.map((action) => <section key={action.id} aria-label={action.title}
-      className={`rounded-card border p-2.5 text-sm ${action.destructive ? "border-danger" : "border-psi-deep"} bg-nexus-raised ${action.state === "cancelled" ? "opacity-60" : ""}`}>
-      <h3 className={`font-semibold ${action.destructive ? "text-danger" : "text-psi"}`}>{action.title}</h3>
-      <ul className="mt-1 space-y-0.5 break-words text-star">{action.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+  return <div className="mt-2 space-y-2">
+    {actions.map((action) => <ActionCardView key={action.id} action={action}>
       {action.state === "pending" || action.state === "failed"
         ? <div className="mt-2 flex flex-wrap items-center gap-2">
             <button className={action.destructive ? "btn-danger" : "btn"} disabled={disabled} onClick={() => onConfirm([action])}>{t(action.state === "failed" ? "ai.actionRetry" : action.destructive ? "ai.actionConfirmDelete" : "ai.actionConfirm")}</button>
             <button className="btn-secondary" disabled={disabled} onClick={() => onCancel(action.id)}>{t("common.cancel")}</button>
             {action.error && <span className="w-full text-xs text-danger" role="alert">{action.error}</span>}
           </div>
-        : <p className={`mt-2 text-xs font-semibold ${status[action.state].className}`} role="status">{t(status[action.state].key)}</p>}
-    </section>)}
+        : <ActionStatus action={action} />}
+    </ActionCardView>)}
     {open.length > 1 && <button className="btn w-full" disabled={disabled} onClick={() => onConfirm(open)}>{t("ai.actionConfirmAll", { count: open.length })}</button>}
   </div>;
 }
 
-function PlanPane({ projectId: openProjectId, lang }: { projectId: string; lang: string }) {
+/**
+ * 整理專案：把專案目前的情況整段寫進來，AI 對照現有資料列出一份變更清單（設定、背景、任務、里程碑、進度紀錄）。
+ * 清單預設全勾，取消勾選不要的，按下方按鈕才逐項以本人身分寫入。
+ */
+function OrganizePane({ projectId: openProjectId, lang }: { projectId: string; lang: string }) {
   const t = useT();
   const [brief, setBrief] = useState("");
-  const [plan, setPlan] = useState<ProjectPlan | null>(null);
-  const [stages, setStages] = useState<Stage[]>([]);
+  const [reply, setReply] = useState("");
+  const [actions, setActions] = useState<ActionCard[] | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState("");
   // 不在專案內頁時讓使用者在面板裡選一個。第一版只顯示「請先開啟一個專案」，
   // 於是這個分頁在其他頁面連一個輸入框都沒有——被回報成「不能輸入任何東西」。
   const [options, setOptions] = useState<Array<{ id: string; name: string; group_name: string }>>([]);
@@ -179,49 +199,32 @@ function PlanPane({ projectId: openProjectId, lang }: { projectId: string; lang:
       .then((data) => setOptions(data.projects)).catch(() => setOptions([]));
   }, [openProjectId]);
   const projectId = openProjectId || chosen;
-
-  const key = (kind: string, index: number) => `${kind}:${index}`;
-  const toggle = (id: string) => setSkipped((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
+  const reset = () => { setActions(null); setReply(""); setError(""); setSkipped(new Set()); };
 
   const draft = async () => {
-    if (!brief.trim() || busy) return;
-    setBusy(true); setError(""); setDone(""); setPlan(null); setSkipped(new Set());
+    if (!brief.trim() || busy || !projectId) return;
+    reset(); setBusy(true);
     try {
-      const data = await api<{ plan: ProjectPlan; stages: Stage[] }>("/ai/plan-project", { method: "POST", body: JSON.stringify({ project_id: projectId, brief, lang }) });
-      setPlan(data.plan); setStages(data.stages);
-      if (!planCount(data.plan)) setError(t("ai.planEmpty"));
+      const data = await api<{ reply: string; actions: ProposedAction[] }>("/ai/organize", { method: "POST", body: JSON.stringify({ project_id: projectId, brief, lang }) });
+      setReply(data.reply); setActions(data.actions.map((action) => ({ ...action, state: "pending" })));
+      if (!data.actions.length) setError(t("ai.organizeEmpty"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("error.operation"));
     } finally { setBusy(false); }
   };
 
-  const apply = async () => {
-    if (!plan || busy) return;
-    const stageId = (name: string) => stages.find((stage) => stage.name === name)?.id ?? "";
-    const tasks = plan.tasks.filter((_, index) => !skipped.has(key("task", index)));
-    const milestones = plan.milestones.filter((_, index) => !skipped.has(key("ms", index)));
-    if (!tasks.length && !milestones.length) return;
-    setBusy(true); setError(""); setDone("");
-    // 一筆一筆打既有的建立端點，權限、稽核與自動進度才會照原本的路徑跑。
-    // 用 allSettled：其中一筆撞到重複或權限，不該讓其餘的也不寫。
-    const results = await Promise.allSettled([
-      ...tasks.map((task) => api(`/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify({ title: task.title, stage_id: stageId(task.stage), due_date: task.due_date || undefined }) })),
-      ...milestones.map((milestone) => api(`/projects/${projectId}/milestones`, { method: "POST", body: JSON.stringify({ title: milestone.title, due_date: milestone.due_date || undefined, end_date: milestone.end_date || undefined, kind: "milestone" }) })),
-    ]);
-    setBusy(false);
-    const failed = results.filter((result) => result.status === "rejected").length;
-    const written = results.length - failed;
-    if (written) { window.dispatchEvent(new CustomEvent(PROJECT_CHANGED, { detail: { projectId } })); setPlan(null); }
-    setDone(t("ai.planWritten", { count: written }));
-    if (failed) setError(t("ai.planPartial", { count: failed }));
-  };
-
-  const remaining = plan ? plan.tasks.filter((_, index) => !skipped.has(key("task", index))).length + plan.milestones.filter((_, index) => !skipped.has(key("ms", index))).length : 0;
+  const setAction = (id: string, patch: Partial<ActionCard>) => setActions((current) => current && current.map((action) => action.id === id ? { ...action, ...patch } : action));
+  const run = useActionRunner(projectId, setAction);
+  const toggle = (id: string) => setSkipped((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
+  const chosenCards = (actions ?? []).filter((action) => !skipped.has(action.id) && (action.state === "pending" || action.state === "failed"));
+  const running = (actions ?? []).some((action) => action.state === "running");
+  const apply = async () => { setBusy(true); await run(chosenCards); setBusy(false); };
+  const finished = actions?.length && actions.every((action) => action.state !== "pending" && action.state !== "running" || skipped.has(action.id));
 
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
       {!openProjectId && <label className="mb-3 block"><span className="label">{t("ai.planPick")}</span>
-        <select className="w-full" value={chosen} onChange={(event) => { setChosen(event.target.value); setPlan(null); setError(""); setDone(""); }}>
+        <select className="w-full" value={chosen} onChange={(event) => { setChosen(event.target.value); reset(); }}>
           <option value="">{t("ai.planPickPlaceholder")}</option>
           {options.map((option) => <option key={option.id} value={option.id}>{option.name}（{option.group_name}）</option>)}
         </select>
@@ -229,40 +232,26 @@ function PlanPane({ projectId: openProjectId, lang }: { projectId: string; lang:
       {!projectId
         ? <p className="text-sm text-star-dim">{t(options.length ? "ai.planNeedsProject" : "ai.planNoProjects")}</p>
         : <>
-      <label className="label" htmlFor="ai-brief">{t("ai.briefLabel")}</label>
-      <textarea id="ai-brief" className="w-full" rows={5} placeholder={t("ai.briefPlaceholder")} value={brief} onChange={(e) => setBrief(e.target.value)} />
-      <button className="btn mt-2 w-full" disabled={busy || !brief.trim()} onClick={() => void draft()}>{t(busy ? "ai.thinking" : "ai.draft")}</button>
-      {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
-      {done && <p className="mt-3 text-sm text-psi" role="status">{done}</p>}
-
-      </>}
-      {plan && planCount(plan) > 0 && <div className="mt-4 space-y-3">
-        <p className="text-xs text-star-dim">{t("ai.planReview")}</p>
-        {plan.tasks.length > 0 && <Section title={t("views.task")}>
-          {plan.tasks.map((task, index) => <Row key={key("task", index)} id={key("task", index)} skipped={skipped} onToggle={toggle} label={taskLabel(task)} />)}
-        </Section>}
-        {plan.milestones.length > 0 && <Section title={t("timeline.kindMilestone")}>
-          {plan.milestones.map((milestone, index) => <Row key={key("ms", index)} id={key("ms", index)} skipped={skipped} onToggle={toggle} label={milestoneLabel(milestone)} />)}
-        </Section>}
+          <label className="label" htmlFor="ai-brief">{t("ai.organizeLabel")}</label>
+          <textarea id="ai-brief" className="w-full" rows={8} maxLength={8000} placeholder={t("ai.organizePlaceholder")} value={brief} onChange={(e) => setBrief(e.target.value)} />
+          <button className="btn mt-2 w-full" disabled={busy || running || !brief.trim()} onClick={() => void draft()}>{t(busy && !actions ? "ai.organizeThinking" : "ai.organizeDraft")}</button>
+          {error && <p className="mt-3 text-sm text-danger" role="alert">{error}</p>}
+        </>}
+      {reply && <p className="mt-4 whitespace-pre-wrap rounded-card border border-gold-dim bg-nexus p-2.5 text-sm">{reply}</p>}
+      {actions && actions.length > 0 && <div className="mt-3 space-y-2">
+        <p className="text-xs text-star-dim">{t("ai.organizeReview")}</p>
+        {actions.map((action) => <ActionCardView key={action.id} action={action}>
+          {action.state === "pending"
+            ? <label className="mt-2 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={!skipped.has(action.id)} disabled={running} onChange={() => toggle(action.id)} />{t("ai.organizeInclude")}</label>
+            : <ActionStatus action={action} />}
+        </ActionCardView>)}
       </div>}
     </div>
-    {plan && planCount(plan) > 0 && <div className="border-t border-gold-dim p-3">
-      <button className="btn w-full" disabled={busy || !remaining} onClick={() => void apply()}>{t("ai.planApply", { count: remaining })}</button>
+    {actions && actions.length > 0 && <div className="border-t border-gold-dim p-3">
+      {finished
+        ? <p className="text-sm text-psi" role="status">{t("ai.organizeFinished", { done: actions.filter((action) => action.state === "done").length })}</p>
+        : <button className="btn w-full" disabled={busy || running || !chosenCards.length} onClick={() => void apply()}>{t(running ? "ai.actionRunning" : "ai.organizeApply", { count: chosenCards.length })}</button>}
       <p className="mt-2 text-xs text-star-dim">{t("ai.planConfirmNote")}</p>
     </div>}
   </div>;
-}
-
-const taskLabel = (task: PlanTask): string => `${task.title}　·　${task.stage}${task.due_date ? `　·　${task.due_date}` : ""}`;
-const milestoneLabel = (milestone: PlanMilestone): string => `${milestone.title}${milestone.due_date ? `　·　${milestone.due_date}${milestone.end_date ? ` ~ ${milestone.end_date}` : ""}` : ""}`;
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section><h3 className="mb-1 text-sm font-semibold text-gold-bright">{title}</h3><div className="space-y-1">{children}</div></section>;
-}
-
-function Row({ id, label, skipped, onToggle }: { id: string; label: string; skipped: Set<string>; onToggle(id: string): void }) {
-  return <label className="flex items-start gap-2 rounded-card border border-nexus-line bg-nexus-raised p-2 text-sm">
-    <input type="checkbox" className="mt-0.5" checked={!skipped.has(id)} onChange={() => onToggle(id)} />
-    <span className={skipped.has(id) ? "text-star-dim line-through" : ""}>{label}</span>
-  </label>;
 }

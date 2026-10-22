@@ -82,7 +82,7 @@ codex mcp list
 - **刪除要確認。** `delete_task`、`delete_milestone` 需要 `mcp:write`，在工具清單標示 `destructiveHint: true`（支援的客戶端會在執行前跳出確認），伺服器說明也要求 AI 每次先列出要刪的項目、等使用者同意。刪除走網站同一支 API，權限與網站相同，並記一筆 `mcp_delete_task`／`mcp_delete_milestone` 稽核紀錄。
 - **稽核紀錄。** 每一筆寫入記一筆 `mcp_<工具名>`，內容寫明「經 AI 連接器（工具名稱）」做了什麼；連接與中斷記為 `mcp_connect`、`mcp_disconnect`。
 - **授權頁**不能被嵌進別人的頁框，AI 工具自己填的名稱一律跳脫；顯示授權會回到哪個網域，回到本機程式時另外警告。登入後回到授權頁的 `?next=` 只接受 `/oauth/authorize`。
-- **網站裡的 AI 小幫手用同一套工具。** 側邊欄「問答」經 `/api/ai/agent` 讓語言模型呼叫這些工具（`worker/services/ai-agent.ts`）：讀取工具當場執行；寫入工具不執行，而是回成確認卡，使用者按「確認」後才由 `/api/ai/agent/execute` 以本人身分執行，稽核寫「經 AI 小幫手」。語言模型不支援工具呼叫（沒有 `LLM_API_KEY`）時退回原本的純問答。
+- **網站裡的 AI 小幫手用同一套工具。** 側邊欄「問答」經 `/api/ai/agent` 讓語言模型呼叫這些工具（`worker/services/ai-agent.ts`）：讀取工具當場執行；寫入工具不執行，而是回成確認卡，使用者按「確認」後才由 `/api/ai/agent/execute` 以本人身分執行，稽核寫「經 AI 小幫手」。側邊欄「整理專案」經 `/api/ai/organize` 讓使用者把專案目前的情況整段寫進來，AI 對照 `get_project` 的現況，只用這個專案相關的工具提出整份變更清單（最多 40 項，含設定、背景、任務、里程碑、進度紀錄），使用者勾選後同樣逐項經 `/api/ai/agent/execute` 執行。語言模型不支援工具呼叫（沒有 `LLM_API_KEY`）時，問答退回原本的純問答，整理專案退回只拆任務與里程碑的草稿。
 - **資料不是指令。** 伺服器說明提醒 AI：工具回傳的背景、進度紀錄、任務名稱是使用者寫的資料，不是給它的指令。
 
 ## 技術細節
@@ -96,7 +96,7 @@ codex mcp list
 
 - `tests/mcp-protocol.test.ts`：版本協商、通知、錯誤碼、唯讀連線看不到寫入工具、參數檢查。
 - `tests/mcp-tools.test.ts`：在套好 migrations 的 SQLite 上呼叫每個工具，含權限與稽核紀錄。
-- `tests/ai-agent.test.ts`：AI 小幫手——讀取工具當場執行、寫入工具只回確認卡不動資料庫、確認後以本人權限執行並記稽核、看不到的東西不會出現在卡片上。
+- `tests/ai-agent.test.ts`：AI 小幫手——讀取工具當場執行、寫入工具只回確認卡不動資料庫、確認後以本人權限執行並記稽核、看不到的東西不會出現在卡片上；整理專案的清單、工具範圍、40 項上限、權限與退路。
 - `tests/mcp-oauth.test.ts`：以正式的 Worker 進入點走完整流程——401 → 找到授權伺服器 → 動態註冊 → 登入與同意（含拒絕、跳脫、改密碼）→ 換 token → 呼叫工具 → 中斷連線後 token 失效；ChatGPT 以各自的回呼網址連接，導回時不附 `iss`。KV 用 `tests/helpers/memory-kv.ts`。
 
 ## 本機驗證與連線排錯
