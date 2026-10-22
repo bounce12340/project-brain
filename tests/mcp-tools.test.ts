@@ -272,6 +272,19 @@ describe("擴充工具", () => {
     expect(await fails("list_meetings", { from: "2026-10-05", to: "2026-10-04" })).toContain("不能晚於");
   });
 
+  it("update_meeting：只改傳入的欄位、可清空、僅建立者可改並留稽核", async () => {
+    const course = await run("create_meeting", { kind: "course", title: "再生醫療研討會", category: "regenerative", starts_at: "2026-09-26T09:00", location: "801 會議室", project: "p_qa" });
+    expect(await run("update_meeting", { meeting_id: course.id, summary: "## 重點\n- **條件式核准**", starts_at: "2026-09-30T09:00", project: "" })).toMatchObject({ ok: true, kind: "外訓", changed: ["summary", "starts_at", "project"] });
+    expect(await row("SELECT title,summary,starts_at,location,project_id FROM meetings WHERE id=?", course.id)).toEqual({ title: "再生醫療研討會", summary: "## 重點\n- **條件式核准**", starts_at: "2026-09-30T09:00", location: "801 會議室", project_id: null });
+    await run("update_meeting", { meeting_id: course.id, location: "" });
+    expect(await row("SELECT location FROM meetings WHERE id=?", course.id)).toEqual({ location: "" });
+    expect(await row("SELECT summary FROM audit_log WHERE action='mcp_update_meeting' AND entity_id=? ORDER BY rowid LIMIT 1", course.id)).toEqual({ summary: "經 AI 連接器（Claude）修改外訓紀錄「再生醫療研討會」（summary、starts_at、project）" });
+    expect(await fails("update_meeting", { meeting_id: course.id, title: "改名" }, mate)).not.toBe("");
+    expect(await row("SELECT title FROM meetings WHERE id=?", course.id)).toEqual({ title: "再生醫療研討會" });
+    expect(await fails("update_meeting", { meeting_id: course.id })).toBe("沒有要修改的欄位");
+    expect(await fails("update_meeting", { meeting_id: "nope", title: "x" })).toContain("找不到會議或外訓紀錄");
+  });
+
   it("聯絡人搜尋與已發布法規查詢：限制輸出，不帶審核草稿", async () => {
     await db.prepare("INSERT INTO contacts (id,organization,name,email) VALUES ('ct1','醫院','林醫師','LIN@example.com'),('ct2','公司','王先生','wang@example.com')").run();
     expect((await run("search_contacts", { query: "lin@" })).contacts.map((c: { id: string }) => c.id)).toEqual(["ct1"]);

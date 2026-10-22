@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-目前提供 **25 個工具**：
+目前提供 **26 個工具**：
 
 | 工作情境 | 工具 |
 |---|---|
@@ -45,7 +45,7 @@ codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registr
 | 進度與專案規劃 | `add_progress_update`、`create_task`、`update_task`、`add_milestone`、`update_milestone`、`update_project_background`、`update_project_settings`、`delete_task`、`delete_milestone` |
 | 個人待辦 | `list_todos`、`create_todo`、`update_todo` |
 | 看板欄位 | `add_stage`、`rename_stage`、`reorder_stages`、`delete_stage` |
-| 會議與外訓 | `list_meetings`、`create_meeting` |
+| 會議與外訓 | `list_meetings`、`create_meeting`、`update_meeting` |
 | 聯絡人與已發布法規 | `search_contacts`、`list_regulations` |
 
 工具沿用網站權限；寫入需 `mcp:write`，並記錄使用者與連接器的稽核紀錄。保密專案內容仍受權限限制，法規查詢不含待審草稿。日期與會議時間採台北時區。OAuth 需要 `OAUTH_KV` binding，部署 token 另需 Account → Workers KV Storage → Edit。
