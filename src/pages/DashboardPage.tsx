@@ -5,11 +5,12 @@ import { useAuth } from "../auth";
 import { CHART } from "../chartTheme";
 import { Empty, ErrorBox, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
-import { dashboardGroups, filterMine, filterProjectsByGroup, filterUpdatesByGroup, mineToggleUseful, readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine } from "../dashboard-filter";
+import { dashboardGroups, filterMine, isMine, filterProjectsByGroup, filterUpdatesByGroup, mineToggleUseful, readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine } from "../dashboard-filter";
 import { archivableSelection, canArchive, ongoingOnly, deleteConfirmed } from "../project-archive";
 import { ProjectGlance } from "../components/ProjectGlance";
 import { DashboardMeetings } from "../components/DashboardMeetings";
 import { WhenVisible } from "../components/WhenVisible";
+import { RiskReview } from "../components/RiskReview";
 import type { Project } from "../types";
 
 // 圖表在頁面最下面，捲到附近才下載圖表套件（約 100 KB）。
@@ -41,6 +42,8 @@ export function DashboardPage() {
   const [savedMine, setSavedMine] = useState(readDashboardMine);
   const mineUseful = mineToggleUseful(ongoing, user?.id);
   const mine = savedMine && mineUseful;
+  // 一鍵 AI 風險審視的範圍：我負責或參與的進行中／暫停專案，不受組別篩選影響。
+  const myProjects = useMemo(() => ongoing.filter((project) => isMine(project, user?.id)), [ongoing, user?.id]);
   const visible = useMemo(() => filterMine(filterProjectsByGroup(ongoing, group), user?.id, mine), [ongoing, group, mine, user?.id]);
   // 點專案名稱在下方展開快覽，不必切到專案內頁再切分頁。
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -94,6 +97,7 @@ export function DashboardPage() {
     {/* 收文登記簿的一列：五個數字共用一張紙，用細線分欄，不再是五個一樣的方塊。 */}
     <dl data-tour="kpi" className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-sheet border border-nexus-line bg-nexus-line shadow-[0_1px_0_rgb(var(--color-nexus-line))] lg:grid-cols-5">{cards.map(([label, value, color], index) => <div className={`bg-nexus px-4 py-3 sm:px-5 sm:py-4 ${index === cards.length - 1 ? "col-span-2 lg:col-span-1" : ""}`} key={label}><dt className="text-sm text-star-dim">{label}</dt><dd className={`mt-1 font-serif text-3xl font-bold leading-tight ${color}`}>{value}</dd></div>)}</dl>
     {data.v6.license_alerts.length > 0 && <section className="panel mb-6 border-danger"><h2 className="font-bold text-danger">{t("dashboard.licenseAlerts")}</h2><div className="mt-3 grid gap-3 md:grid-cols-2">{data.v6.license_alerts.map((item) => <Link className="border border-nexus-line p-3 hover:border-danger" to={`/projects/${item.project_id}`} key={item.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.name}</p><p className="text-xs text-star-dim">{item.project_name} · {item.subject}</p></div><span className="badge text-danger">{item.expires_at}</span></div></Link>)}</div></section>}
+    {myProjects.length > 0 && <RiskReview projects={myProjects} onDone={() => void load().catch(() => undefined)} />}
     {/* items-start：左欄專案少的時候不要被右欄撐高，留下一大片空白。 */}
     <div className="grid items-start gap-6 lg:grid-cols-3"><section className="panel lg:col-span-2">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
