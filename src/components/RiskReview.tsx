@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useLang, useT } from "../i18n/LangContext";
-import { RiskBadge } from "./UI";
+import { MarkdownInline, RiskBadge } from "./UI";
 
 /** 一次同時分析幾個專案：太多會讓語言模型排隊逾時，一個一個又太慢。 */
 export const RISK_REVIEW_CONCURRENCY = 2;
@@ -75,8 +75,8 @@ export function RiskReview({ projects, onDone }: { projects: Target[]; onDone():
           {result.error ? <span className="text-xs text-danger">{t("riskReview.error")}</span> : <span className="flex items-center gap-2">{result.fallback && <span className="text-xs text-star-dim">{t("riskReview.ruleBased")}</span>}<RiskBadge level={result.level} /></span>}
         </div>
         {result.error ? <p className="mt-1 text-sm text-danger">{result.error}</p> : <>
-          {result.summary && <p className="mt-1 text-sm">{result.summary}</p>}
-          {result.suggestions && result.suggestions.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-star-dim">{result.suggestions.slice(0, 3).map((item, index) => <li key={index}>{item}</li>)}</ul>}
+          {result.summary && <p className="mt-1 text-sm"><MarkdownInline text={result.summary} /></p>}
+          {result.suggestions && result.suggestions.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-star-dim">{result.suggestions.slice(0, 3).map((item, index) => <li key={index}><MarkdownInline text={item} /></li>)}</ul>}
         </>}
       </li>)}</ul>
     </>}

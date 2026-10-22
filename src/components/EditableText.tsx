@@ -24,7 +24,7 @@ interface Props {
 const FADE = "linear-gradient(to bottom, black 75%, transparent)";
 
 /** 可以就地編輯的一段長文字：平常是閱讀模式，長的先摺起來；按「編輯」才換成輸入框。 */
-export function EditableText({ heading, actions, value, empty, hint, placeholder, limit, rows, canEdit, markdown = false, editLabel, onSave }: Props) {
+export function EditableText({ heading, actions, value, empty, hint, placeholder, limit, rows, canEdit, markdown = true, editLabel, onSave }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);

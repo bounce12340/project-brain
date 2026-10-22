@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, formatDate, jsonBody, patchBody } from "../api";
 import { useAuth } from "../auth";
-import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
+import { Empty, ErrorBox, Loading, Markdown, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 
@@ -94,7 +94,7 @@ export function ContactsPage() {
           {contact.email && <><dt className="text-star-dim">{t("contacts.email")}</dt><dd className="break-all"><a className="text-psi" href={`mailto:${contact.email}`}>{contact.email}</a></dd></>}
           {contact.address && <><dt className="text-star-dim">{t("contacts.address")}</dt><dd className="break-words">{contact.address}</dd></>}
         </dl>
-        {contact.notes && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-star-dim">{contact.notes}</p>}
+        {contact.notes && <div className="mt-3 text-star-dim"><Markdown content={contact.notes} className="space-y-1 text-sm leading-6" /></div>}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4 text-xs text-star-dim">
           <span>{t("contacts.updatedBy", { name: contact.updated_by_name ?? contact.created_by_name ?? "—", date: formatDate(contact.updated_at, false, lang) })}</span>
           <span className="flex gap-3"><button className="font-semibold text-psi" aria-label={t("contacts.editNamed", { name: contact.name })} onClick={() => startEdit(contact)}>{t("common.edit")}</button>{(user?.role === "admin" || contact.created_by === user?.id) && <button className="font-semibold text-danger" aria-label={t("contacts.deleteNamed", { name: contact.name })} onClick={() => void remove(contact)}>{t("common.delete")}</button>}</span>

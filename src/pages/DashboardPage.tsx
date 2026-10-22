@@ -12,6 +12,7 @@ import { DashboardMeetings } from "../components/DashboardMeetings";
 import { WhenVisible } from "../components/WhenVisible";
 import { RiskReview } from "../components/RiskReview";
 import type { Project } from "../types";
+import { plainMarkdown } from "../markdown";
 
 // 圖表在頁面最下面，捲到附近才下載圖表套件（約 100 KB）。
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
@@ -126,7 +127,7 @@ export function DashboardPage() {
       {selectable.length > 0 && <p className="mt-4 text-sm text-star-dim">{t("dashboard.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>}
     </section>
       <div className="space-y-6">
-        <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}{group && <span className="ml-2 text-sm font-normal text-star-dim">{groups.find((item) => item.id === group)?.name}</span>}</h2><div className="space-y-4">{visibleUpdates.length ? visibleUpdates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 text-sm text-star-dim">{item.content}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>) : <Empty>{t(group ? "dashboard.noActivityInGroup" : "dashboard.noActivity")}</Empty>}</div></section>
+        <section className="panel"><h2 className="mb-4 font-bold">{t("dashboard.recentActivity")}{group && <span className="ml-2 text-sm font-normal text-star-dim">{groups.find((item) => item.id === group)?.name}</span>}</h2><div className="space-y-4">{visibleUpdates.length ? visibleUpdates.map((item) => <Link to={`/projects/${item.project_id}`} className="block border-l-2 border-gold-dim pl-3 hover:text-psi" key={item.id}><p className="text-sm font-medium">{item.project_name}</p><p className="mt-1 line-clamp-2 whitespace-pre-line text-sm text-star-dim">{plainMarkdown(item.content)}</p><p className="mt-1 text-xs text-star-dim">{item.author_name} · {formatDate(item.created_at, true, lang)}</p></Link>) : <Empty>{t(group ? "dashboard.noActivityInGroup" : "dashboard.noActivity")}</Empty>}</div></section>
         <DashboardMeetings />
       </div>
     </div>

@@ -6,7 +6,8 @@ import type { TransKey } from "../i18n/translations";
 import { buildGlance, limitHistory, type GlanceItem, type GlanceKind, type UpcomingItem } from "../project-glance";
 import { targetLabel } from "../project-quarter";
 import type { ProjectDetail } from "../types";
-import { ErrorBox } from "./UI";
+import { ErrorBox, MarkdownPreview } from "./UI";
+import { plainMarkdown } from "../markdown";
 
 /** 歷程先顯示幾筆。夠看出最近在忙什麼，又不會把清單撐得太長。 */
 const RECENT_HISTORY = 6;
@@ -95,7 +96,7 @@ function GlanceBody({ data, projectId, openLink, goal }: { data: ProjectDetail; 
         <div>
           <h3 className="mb-2 text-sm font-bold text-gold-bright">{t("glance.latest")}</h3>
           {glance.latest ? <div className="border-l-2 border-psi pl-3">
-            <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${longNote && !fullNote ? "line-clamp-6" : ""}`}>{note}</p>
+            <MarkdownPreview content={note} collapsed={longNote && !fullNote} />
             <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-star-dim">
               <span>{glance.latest.author_name} · {formatDate(glance.latest.created_at, false, lang)}</span>
               {longNote && <button type="button" className="font-semibold text-psi hover:text-star" aria-expanded={fullNote} onClick={() => setFullNote(!fullNote)}>{t(fullNote ? "glance.shortText" : "glance.fullText")}</button>}
@@ -153,7 +154,7 @@ function HistoryRow({ item }: { item: GlanceItem }) {
       {/* 符號要跟標題放在同一個區塊裡，否則會自己佔一行。截斷的那種不能再加 block：
           line-clamp 靠 display:-webkit-box 才有作用，block 會把它蓋掉，長文就整段攤開。 */}
       <span className={`break-words ${item.kind === "note" ? "line-clamp-3 whitespace-pre-wrap" : "block"}`}>
-        <span className={`mr-1.5 ${kindColor[item.kind]}`} aria-hidden="true">{kindMark[item.kind]}</span>{item.title}
+        <span className={`mr-1.5 ${kindColor[item.kind]}`} aria-hidden="true">{kindMark[item.kind]}</span>{item.kind === "note" ? plainMarkdown(item.title) : item.title}
       </span>
       <span className="block text-xs text-star-dim">{t(kindLabel[item.kind])}{range}{item.detail ? ` · ${item.detail}` : ""}</span>
     </span>

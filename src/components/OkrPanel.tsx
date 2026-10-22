@@ -4,7 +4,7 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { api, patchBody } from "../api";
 import type { KeyResult, Metadata } from "../types";
-import { Empty, ErrorBox, Loading } from "./UI";
+import { Empty, ErrorBox, Loading, MarkdownInline } from "./UI";
 import { useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 
@@ -67,7 +67,7 @@ export function OkrPanel({ projectId, metadata, onChanged }: { projectId: string
     {data.objective?.objective
       ? <div className="mb-3 rounded-card border border-gold-dim bg-void p-3">
         <p className="text-xs text-star-dim">{t("okr.objectiveCurrent", { quarter })}</p>
-        <p className="mt-1 font-medium">{data.objective.objective}</p>
+        <p className="mt-1 font-medium"><MarkdownInline text={data.objective.objective} /></p>
       </div>
       : <p className="mb-3 text-sm text-star-dim">{t("okr.noObjective")}</p>}
     {data.can_edit && <>

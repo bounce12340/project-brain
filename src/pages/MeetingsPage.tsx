@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, jsonBody, patchBody } from "../api";
-import { Empty, ErrorBox, Loading, PageHeader } from "../components/UI";
+import { Empty, ErrorBox, Loading, MarkdownPreview, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import type { TransKey } from "../i18n/translations";
 import { categoryMatches, cleanCategoryFilter, cleanMonth, COURSE_CATEGORIES, formatRecordTime, inMonthRange, monthPresets, normalizeRange, rangeLabel, recordMatches, recordsReport, recordYears, splitRecords, taipeiNowLocal, type CategoryFilter, type MeetingRecord, type MonthRange, type RecordKind } from "../meeting-records";
@@ -205,7 +205,7 @@ function RecordCard({ record, lang, onEdit, onDelete }: { record: MeetingRecord;
       {record.attendees && <><dt className="text-star-dim">{t(copy.attendees)}</dt><dd className="break-words">{record.attendees}</dd></>}
     </dl>
     {record.summary && <div className="mt-3 border-t border-nexus-line pt-3">
-      <p className={`whitespace-pre-wrap break-words text-sm ${long && !open ? "line-clamp-6" : ""}`}>{record.summary}</p>
+      <MarkdownPreview content={record.summary} collapsed={long && !open} />
       {long && <button type="button" className="mt-1 text-xs font-semibold text-psi" aria-expanded={open} onClick={() => setOpen(!open)}>{t(open ? "records.showLess" : "records.showMore")}</button>}
     </div>}
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-star-dim">

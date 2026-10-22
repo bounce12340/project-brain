@@ -239,7 +239,7 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
           <button className="btn-secondary !px-3 !py-1.5" disabled={busy} onClick={() => void summarize()}>{t(busy ? "task.summarizing" : "task.generateSummary")}</button>
         </div>
         {summary && <div className="rounded-card bg-psi-deep/30 p-4 text-sm">
-          <p>{summary.summary}</p>
+          <Markdown content={summary.summary} />
           {summary.unresolved.length > 0 && <>
             <p className="mt-3 font-semibold">{t("task.openItems")}</p>
             <ul className="list-disc pl-5">{summary.unresolved.map((item) => <li key={item}>{item}</li>)}</ul>

@@ -31,9 +31,13 @@ export function RiskBadge({ level }: { level?: string | null }) {
   return <span className={style}>{label}</span>;
 }
 
-export function Markdown({ content }: { content: string }) {
+/**
+ * 全站的長文字都用 Markdown 轉譯顯示：輸入時可以用 # 標題、- 項目、1. 編號、**粗體**，
+ * 畫面上看到的是排好的格式，不會出現記號本身。
+ */
+export function Markdown({ content, className = "space-y-2 text-sm leading-6" }: { content: string; className?: string }) {
   const indent = (depth: number) => ({ paddingLeft: `${0.5 + depth * 1.25}rem` });
-  return <div className="space-y-2 text-sm leading-6">{markdownBlocks(content).map((block, index) => {
+  return <div className={`break-words ${className}`}>{markdownBlocks(content).map((block, index) => {
     if (block.kind === "heading") {
       if (block.level === 3) return <h4 className="pt-2 font-semibold" key={index}>{inlineMarkdown(block.text)}</h4>;
       if (block.level === 2) return <h3 className="pt-3 text-base font-bold" key={index}>{inlineMarkdown(block.text)}</h3>;
@@ -43,6 +47,17 @@ export function Markdown({ content }: { content: string }) {
     if (block.kind === "numbered") return <div className="flex gap-2" style={indent(block.depth)} key={index}><span className="tabular-nums">{block.number}.</span><span>{inlineMarkdown(block.text)}</span></div>;
     return block.kind === "paragraph" ? <p key={index}>{inlineMarkdown(block.text)}</p> : <div className="h-1" key={index} />;
   })}</div>;
+}
+
+/** 只有一行的地方（摘要、建議、目標）：轉譯粗體，不分段。 */
+export function MarkdownInline({ text }: { text: string }) {
+  return <>{inlineMarkdown(text.replace(/^#{1,3} /, ""))}</>;
+}
+
+const FADE = "linear-gradient(to bottom, black 70%, transparent)";
+/** 太長時先收起來的 Markdown：line-clamp 只對單一段落有效，這裡用固定高度加漸層淡出。 */
+export function MarkdownPreview({ content, collapsed, className, maxHeight = "max-h-40" }: { content: string; collapsed: boolean; className?: string; maxHeight?: string }) {
+  return <div className={collapsed ? `${maxHeight} overflow-hidden` : ""} style={collapsed ? { maskImage: FADE, WebkitMaskImage: FADE } : undefined}><Markdown content={content} className={className} /></div>;
 }
 
 function inlineMarkdown(value: string): ReactNode[] {
