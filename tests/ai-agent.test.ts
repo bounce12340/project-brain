@@ -256,3 +256,59 @@ describe("主力與顧問（Ollama Cloud）", () => {
     expect(String(seen[1].find((message) => message.role === "tool")?.content)).toContain("沒有這個工具");
   });
 });
+
+describe("網路搜尋（DeepSeek）", () => {
+  const deepseek = () => ({ ...env(), LLM_API_KEY: "ds-test", LLM_BASE_URL: "https://api.deepseek.com/v1", LLM_MODEL: "deepseek-v4-pro" }) as unknown as Env;
+  type Body = { model?: string; messages?: Array<Record<string, unknown>>; tools?: Array<{ function: { name: string } }>; query?: string; count?: number; url?: string };
+  const RESULT = { title: "TFDA 公告", url: "https://www.fda.gov.tw/a", site_name: "TFDA", date: "2026-10-01T00:00:00Z", authority: 4, summary: "摘要", snippet: "s", rerank_score: 2, content: "", site_icon: null };
+  /** 依網址分流：聊天走劇本，搜尋與抓取回固定內容。 */
+  function fakeDeepSeek(main: Reply[], options: { search?: Response } = {}) {
+    const calls: Array<{ url: string; auth: string; body: Body }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Body;
+      calls.push({ url, auth: String((init.headers as Record<string, string>).Authorization), body });
+      if (url.endsWith("/v1/tools/search")) return options.search ?? Response.json({ results: [RESULT, { ...RESULT, title: "其他", url: "https://example.com/b" }] });
+      if (url.endsWith("/v1/tools/fetch")) return Response.json({ title: "全文頁", content: "x".repeat(12_000) });
+      const reply = main.shift() ?? { content: "（沒有更多回覆）" };
+      const tool_calls = reply.calls?.map((call, index) => ({ id: `w_${calls.length}_${index}`, type: "function", function: { name: call.name, arguments: JSON.stringify(call.args) } }));
+      return Response.json({ choices: [{ message: { content: reply.content ?? null, tool_calls } }] });
+    }));
+    return calls;
+  }
+  const askWith = (environment: Env, question: string) => runAssistantTurn(environment, assistantContext(environment, undefined, owner), { question, history: [], lang: "zh", openProject: null });
+
+  it("有 DeepSeek 金鑰：搜尋與讀網頁走 api.deepseek.com，回答附上讀過與引用的來源", async () => {
+    const calls = fakeDeepSeek([
+      { calls: [{ name: "web_search", args: { query: "site:fda.gov.tw 細胞治療 after:2026-01-01", count: 3 } }] },
+      { calls: [{ name: "web_fetch", args: { url: "https://example.com/c" } }] },
+      { content: "依 [TFDA 公告](https://www.fda.gov.tw/a) …" },
+    ]);
+    const turn = await askWith(deepseek(), "最近細胞治療法規？");
+    const search = calls.find((call) => call.url.endsWith("/v1/tools/search"))!;
+    expect(search).toMatchObject({ url: "https://api.deepseek.com/v1/tools/search", auth: "Bearer ds-test", body: { query: "site:fda.gov.tw 細胞治療 after:2026-01-01", count: 3 } });
+    expect(turn.lookups).toEqual(["網路搜尋", "讀取網頁"]);
+    expect(turn.sources).toEqual([{ title: "全文頁", url: "https://example.com/c" }, { title: "TFDA 公告", url: "https://www.fda.gov.tw/a" }]);
+    const fetched = JSON.parse(String(calls[calls.length - 1].body.messages!.filter((message) => message.role === "tool")[1].content));
+    expect(fetched).toMatchObject({ truncated: true });
+    expect(fetched.content.length).toBeLessThan(12_000);
+  });
+
+  it("一輪最多上網 5 次；服務出錯時 AI 收到說明照樣回答", async () => {
+    const search = { name: "web_search", args: { query: "q" } };
+    const calls = fakeDeepSeek([{ calls: [search, search, search, search, search, search] }, { content: "好。" }], { search: new Response("{}", { status: 402 }) });
+    const turn = await askWith(deepseek(), "查");
+    expect(turn.reply).toBe("好。");
+    expect(calls.filter((call) => call.url.endsWith("/v1/tools/search"))).toHaveLength(5);
+    const answers = calls[calls.length - 1].body.messages!.filter((message) => message.role === "tool").map((message) => String(message.content));
+    expect(answers[0]).toContain("DeepSeek 帳戶餘額不足");
+    expect(answers[5]).toMatch(/已經上網 5 次/);
+  });
+
+  it("LLM_BASE_URL 不是 DeepSeek 時不提供網路工具", async () => {
+    fakeLlm([{ content: "好。" }]);
+    await ask("查");
+    const tools = (JSON.parse(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body)).tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
+    expect(tools).not.toContain("web_search");
+    expect(tools).toContain("list_projects");
+  });
+});
