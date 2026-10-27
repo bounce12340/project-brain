@@ -3,6 +3,7 @@ import type { AppContext } from "../types";
 import { getProjectAccess } from "../services/db";
 import { optionalString, requiredString } from "../services/http";
 import { llmChat, parseLooseJson } from "../services/llm";
+import { webSearch, webSearchEndpoint } from "../services/web-search";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
 import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
 import { reportPeriod, taipeiDate, type ReportPeriodPreset } from "../services/time";
@@ -444,8 +445,20 @@ aiRoutes.get("/diagnostics", async (c) => {
       return { ok: false, error: error instanceof Error ? error.message : String(error), elapsed_ms: Date.now() - started };
     }
   };
-  const [mainResult, advisorResult] = await Promise.all([probe("main"), advisor ? probe("advisor") : Promise.resolve(null)]);
+  // 網路搜尋用 LLM_API_KEY（DeepSeek），和 Ollama 無關；搜一筆確認金鑰與餘額。
+  const probeWeb = async () => {
+    if (!webSearchEndpoint(c.env)) return { ok: false, error: "沒有設定 DeepSeek 的 LLM_API_KEY（或 LLM_BASE_URL 不是 api.deepseek.com）" };
+    const started = Date.now();
+    try {
+      const results = await webSearch(c.env, { query: "TFDA 公告", count: 1 });
+      return { ok: true, results: results.length, elapsed_ms: Date.now() - started };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error), elapsed_ms: Date.now() - started };
+    }
+  };
+  const [mainResult, advisorResult, webResult] = await Promise.all([probe("main"), advisor ? probe("advisor") : Promise.resolve(null), probeWeb()]);
   Object.assign(result, mainResult);
   if (advisorResult) result.advisor = advisorResult;
+  result.web_search = webResult;
   return c.json(result);
 });

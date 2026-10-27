@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "../worker/types";
 import { internalApi } from "../worker/mcp/internal-api";
 import { ToolError } from "../worker/mcp/protocol";
@@ -361,5 +361,37 @@ describe("看板欄位管理", () => {
     expect(await fails("update_task", { task_id: "t_late", stage: "8 上市後監控" })).toContain("看板上沒有");
     expect(await row<{ n: number }>("SELECT COUNT(*) AS n FROM stages WHERE project_id='p_qa'")).toEqual({ n: 3 });
     expect(MCP_TOOLS.find((tool) => tool.name === "create_task")!.description).toMatch(/never created automatically/);
+  });
+});
+
+describe("網路搜尋工具（web_search／web_fetch）", () => {
+  const withEnv = (env?: Record<string, string>): ToolContext => ({ ...context(owner), env: env as unknown as Env | undefined });
+  const deepseek = { LLM_API_KEY: "ds-test", LLM_BASE_URL: "https://api.deepseek.com/v1" };
+  const tool = (name: string) => MCP_TOOLS.find((item) => item.name === name)!;
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("沒有 DeepSeek 金鑰（或不是 DeepSeek 端點）時回清楚的錯誤，不會連外", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    for (const env of [undefined, { LLM_API_KEY: "", LLM_BASE_URL: "https://api.deepseek.com/v1" }, { LLM_API_KEY: "k", LLM_BASE_URL: "https://other.test/v1" }]) {
+      await expect(tool("web_search").run({ query: "TFDA" }, withEnv(env))).rejects.toThrow("沒有設定 DeepSeek 金鑰");
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("搜尋結果整理成固定欄位、略過不是 http(s) 的網址；抓取回 Markdown；連外工具標成 openWorld", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/search")
+      ? Response.json({ results: [{ title: "公告", url: "https://www.fda.gov.tw/x", site_name: "TFDA", date: null, authority: 4, summary: "長摘要", snippet: "短" }, { title: "壞", url: "javascript:alert(1)" }] })
+      : Response.json({ title: "頁", content: "# 內容" })));
+    expect(await tool("web_search").run({ query: "TFDA", count: 2 }, withEnv(deepseek))).toEqual({ results: [{ title: "公告", url: "https://www.fda.gov.tw/x", site: "TFDA", date: null, authority: 4, summary: "長摘要" }] });
+    expect(await tool("web_fetch").run({ url: "https://www.fda.gov.tw/x" }, withEnv(deepseek))).toEqual({ title: "頁", url: "https://www.fda.gov.tw/x", content: "# 內容", truncated: false });
+    expect(tool("web_search")).toMatchObject({ openWorld: true });
+    expect(tool("web_search").write).toBeFalsy();
+  });
+
+  it("DeepSeek 回錯誤時轉成看得懂的 ToolError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 403 })));
+    await expect(tool("web_fetch").run({ url: "https://intranet.example" }, withEnv(deepseek))).rejects.toBeInstanceOf(ToolError);
+    await expect(tool("web_fetch").run({ url: "https://intranet.example" }, withEnv(deepseek))).rejects.toThrow("安全策略");
   });
 });

@@ -21,6 +21,8 @@ export interface ToolContext {
   db: D1Database;
   /** 授權時記下的 AI 工具名稱，寫進稽核紀錄。 */
   clientName: string;
+  /** 網路搜尋要用 Worker 的設定；測試裡可以不給。 */
+  env?: Env;
 }
 
 interface ProjectSummary { id: string; name: string; group_name: string; status: string; product: string }

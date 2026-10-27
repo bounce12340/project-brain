@@ -48,7 +48,8 @@ export function AiSidebar() {
 interface ProposedAction { id: string; tool: string; title: string; lines: string[]; args: Record<string, unknown>; destructive: boolean }
 type ActionState = "pending" | "running" | "done" | "failed" | "cancelled";
 interface ActionCard extends ProposedAction { state: ActionState; error?: string }
-interface AskMessage extends ChatMessage { actions?: ActionCard[]; advisor?: string }
+interface WebSource { title: string; url: string }
+interface AskMessage extends ChatMessage { actions?: ActionCard[]; advisor?: string; sources?: WebSource[] }
 
 /** 送回給 AI 的對話：確認卡處理的結果也要讓 AI 知道，否則下一句它不曉得改了沒有。 */
 const historyText = (message: AskMessage, lang: string): string => {
@@ -97,11 +98,11 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
     setQuestion(""); setBusy(true); setError("");
     const body = JSON.stringify({ question: asked, history, project_id: projectId || undefined, lang });
     try {
-      const data = await api<{ reply?: string; actions?: ProposedAction[]; fallback?: boolean; advisor?: string }>("/ai/agent", { method: "POST", body });
+      const data = await api<{ reply?: string; actions?: ProposedAction[]; fallback?: boolean; advisor?: string; sources?: WebSource[] }>("/ai/agent", { method: "POST", body });
       // 語言模型不支援工具（例如沒有設定金鑰、只剩 Workers AI）時退回原本的純問答。
       const reply = data.fallback ? (await api<{ reply: string }>("/ai/assistant", { method: "POST", body })).reply : data.reply ?? "";
       const actions = (data.fallback ? [] : data.actions ?? []).map((action): ActionCard => ({ ...action, state: "pending" }));
-      setMessages((current) => [...current, { role: "assistant", content: reply, actions: actions.length ? actions : undefined, advisor: data.fallback ? undefined : data.advisor }]);
+      setMessages((current) => [...current, { role: "assistant", content: reply, actions: actions.length ? actions : undefined, advisor: data.fallback ? undefined : data.advisor, sources: data.fallback ? undefined : data.sources }]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("error.operation"));
     } finally { setBusy(false); }
@@ -119,6 +120,7 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
       {!messages.length && <p className="text-sm text-star-dim">{t(projectId ? "ai.emptyProject" : "ai.empty")}</p>}
       {messages.map((message, index) => <div key={index} className={message.role === "user" ? "text-right" : ""}>
         {message.content && <div className={`inline-block max-w-[92%] rounded-card border p-2.5 text-left ${message.role === "user" ? "border-psi-deep bg-nexus-raised" : "border-gold-dim bg-nexus"}`}><Markdown content={message.content} /></div>}
+        {message.sources && <SourceList sources={message.sources} />}
         {message.advisor && <AdvisorNote model={message.advisor} />}
         {message.actions && <ActionList actions={message.actions} disabled={running} onConfirm={(cards) => void confirm(cards)} onCancel={(id) => setAction(id, { state: "cancelled" })} />}
       </div>)}
@@ -136,6 +138,17 @@ function AskPane({ projectId, lang }: { projectId: string; lang: string }) {
       </div>
       <p className="mt-2 text-xs text-star-dim">{t("ai.actionNote")}</p>
     </div>
+  </div>;
+}
+
+/** 回答用到的網路來源：讓使用者自己點進去核對。 */
+function SourceList({ sources }: { sources: WebSource[] }) {
+  const t = useT();
+  return <div className="mt-1 text-xs text-star-dim">
+    <p>{t("ai.webSources")}</p>
+    <ol className="list-decimal space-y-0.5 pl-5">{sources.slice(0, 8).map((source) => <li key={source.url}>
+      <a className="underline hover:text-psi" href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+    </li>)}</ol>
   </div>;
 }
 

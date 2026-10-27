@@ -37,6 +37,8 @@ export interface McpTool<Ctx> {
   idempotent?: boolean;
   /** 會永久刪除資料：客戶端據此在呼叫前向使用者確認。 */
   destructive?: boolean;
+  /** 會連到艾爾水晶以外的服務（網路搜尋）。 */
+  openWorld?: boolean;
   run(args: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
 }
 
@@ -149,7 +151,7 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
 function describeTool<Ctx>(tool: McpTool<Ctx>) {
   return {
     name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema,
-    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: tool.destructive === true, idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: false },
+    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: tool.destructive === true, idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: tool.openWorld === true },
   };
 }
 
