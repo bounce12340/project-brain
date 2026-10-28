@@ -29,8 +29,9 @@ import { PROJECT_TEXT_LIMITS } from "../project-text";
 import { taipeiDateTimeInput, taipeiInputToIso } from "../utils/server-date";
 
 const EnrollmentChart = lazy(() => import("../components/EnrollmentChart"));
+const ProjectDashboard = lazy(() => import("../components/ProjectDashboard"));
 
-const baseTabs: Array<[string, TransKey]> = [["overview", "project.tab.overview"], ["tasks", "project.tab.tasks"], ["updates", "project.tab.updates"]];
+const baseTabs: Array<[string, TransKey]> = [["overview", "project.tab.overview"], ["dashboard", "project.tab.dashboard"], ["tasks", "project.tab.tasks"], ["updates", "project.tab.updates"]];
 function projectTabs(groupType: string): Array<[string, TransKey]> {
   const extra: Array<[string, TransKey]> = groupType === "clinical" ? [["clinical", "project.tab.clinical"]]
     : groupType === "bd" ? [["bd", "project.tab.bd"]]
@@ -90,6 +91,7 @@ export function ProjectDetailPage() {
     <RelatedStrip current={data.project} siblings={siblings} />
     <div data-tour="project-tabs" className="project-tabs mb-5 flex items-end gap-1 px-1">{tabs.map(([key, label]) => <button key={key} className={`folder-tab ${tab === key ? "is-active" : ""}`} aria-current={tab === key ? "page" : undefined} onClick={() => setTab(key)}>{t(label)}</button>)}</div>
     {tab === "overview" && <Overview data={data} metadata={meta} siblings={siblings} reload={load} />}
+    {tab === "dashboard" && <Suspense fallback={<Loading />}><ProjectDashboard data={data} onOpenTask={(taskId) => navigate(`/projects/${id}?task=${encodeURIComponent(taskId)}`)} /></Suspense>}
     {tab === "tasks" && <TaskWorkspace data={data} metadata={meta} reload={load} />}
     {tab === "updates" && <Updates data={data} reload={load} />}
     {tab === "clinical" && <Clinical data={data} reload={load} />}

@@ -12,6 +12,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     key: "projects", label: "nav.projects",
     items: [
       { to: "/projects", label: "nav.projectList" },
+      { to: "/portfolio", label: "nav.portfolio" },
+      { to: "/my-tasks", label: "nav.myTasks" },
       { to: "/meetings", label: "nav.meetings" },
       { to: "/todos", label: "nav.todos" },
       { to: "/timeline", label: "nav.timeline" },

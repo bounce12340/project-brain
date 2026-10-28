@@ -54,6 +54,9 @@ interface ProjectRow {
   risk_summary: string | null;
   risk_suggestions: string | null;
   risk_updated_at: string | null;
+  /** 狀態燈號：最近一則有標示的進度紀錄（project-health.ts）。 */
+  health: "on_track" | "at_risk" | "off_track" | null;
+  health_at: string | null;
   owner_name: string;
   group_name: string;
   group_type: GroupType;
