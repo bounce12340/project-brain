@@ -33,14 +33,15 @@ interface ProjectListRow extends ProjectSummary {
   health?: Health | null; health_at?: string | null;
 }
 interface Stage { id: string; name: string; position: number }
-interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null }
+interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null; fields?: Record<string, string> }
+interface TaskFieldRow { id: string; name: string; type: "text" | "number" | "date" | "select"; options: string[] }
 interface MilestoneRow { id: string; title: string; due_date: string | null; end_date: string | null; done: number; kind: "milestone" | "event" }
 interface UpdateRow { created_at: string; author_name: string; content: string; health?: Health | null }
 interface ProjectDetail {
   project: ProjectListRow & { description: string; progress_mode: string; visibility: string; site: string };
   permissions: { can_edit: boolean; can_manage: boolean };
   members: Array<{ name: string }>;
-  stages: Stage[]; tasks: TaskRow[]; milestones: MilestoneRow[]; progress_updates?: UpdateRow[];
+  stages: Stage[]; tasks: TaskRow[]; milestones: MilestoneRow[]; progress_updates?: UpdateRow[]; task_fields?: TaskFieldRow[];
   parent?: { id: string; name: string } | null;
   children?: Array<{ id: string; name: string; status: string; progress: number; owner_name: string; target_date: string | null; task_total: number; task_done: number; task_overdue: number }>;
 }
@@ -164,6 +165,26 @@ async function subtaskForTool(ctx: ToolContext, subtaskId: unknown) {
   return { id: row.id, title: row.title, task: task.title, project: task.project };
 }
 
+/** create_task／update_task 的自訂欄位：{ 欄位名稱: 值 }，空字串代表清除。 */
+const fieldsSchema: JsonSchema = { type: "object", description: "自訂欄位：{ 欄位名稱: 值 }。欄位名稱與單選選項見 get_project 的 custom_fields；數字填數字、日期填 YYYY-MM-DD；空字串代表清除。", };
+
+function fieldValuesById(fields: TaskFieldRow[] | undefined, raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ToolError("fields 要是 { 欄位名稱: 值 } 的物件");
+  const known = fields ?? [];
+  const values: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    const field = known.find((item) => item.name === name.trim());
+    if (!field) throw new ToolError(known.length ? `沒有「${name}」這個自訂欄位。這個專案的欄位：${known.map((item) => item.name).join("、")}` : "這個專案還沒有自訂欄位，請先在艾爾水晶的任務分頁新增。");
+    values[field.id] = value;
+  }
+  return values;
+}
+
+const fieldsByName = (fields: TaskFieldRow[] | undefined, values: Record<string, string> | undefined) => {
+  const named = Object.fromEntries((fields ?? []).filter((field) => values?.[field.id] !== undefined).map((field) => [field.name, values![field.id]]));
+  return Object.keys(named).length ? { fields: named } : {};
+};
+
 export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "list_projects",
@@ -224,6 +245,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
           id: child.id, name: child.name, status: STATUS_LABEL[child.status] ?? child.status, progress: child.progress, owner: child.owner_name,
           target_date: child.target_date, tasks_done: child.task_done, tasks_total: child.task_total, overdue_tasks: child.task_overdue,
         })) } : {}),
+        ...(detail.task_fields?.length ? { custom_fields: detail.task_fields.map((field) => ({ name: field.name, type: field.type, ...(field.type === "select" ? { options: field.options } : {}) })) } : {}),
         // 依實際的欄位順序（position），和網頁看板由左到右一致。
         board: [...detail.stages].sort((a, b) => a.position - b.position).map((stage) => ({
           stage: stage.name,
@@ -231,6 +253,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
             id: task.id, title: task.title, done: !!task.done, start_date: task.start_date, due_date: task.due_date,
             assignee: task.assignee_name, ...(task.description ? { description: truncate(task.description, 500) } : {}),
             ...(subtasks.has(task.id) ? { subtasks: subtasks.get(task.id) } : {}),
+            ...(fieldsByName(detail.task_fields, task.fields)),
           })),
         })),
         milestones: detail.milestones.filter((item) => item.kind === "milestone").map((item) => ({ id: item.id, title: item.title, date: item.due_date, end_date: item.end_date, done: !!item.done })),
@@ -305,6 +328,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       start_date: date, due_date: date,
       assignee: { type: "string", maxLength: 200, description: "負責人的姓名或 Email" },
       description: { type: "string", maxLength: 2_000 },
+      fields: fieldsSchema,
     } },
     async run(args, ctx) {
       checkDate(args.start_date, "開始日"); checkDate(args.due_date, "到期日");
@@ -318,6 +342,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       });
       // 建立任務的端點不收開始日，另外補上。
       if (args.start_date) await ctx.api.send("PATCH", `/api/tasks/${id}`, { start_date: args.start_date });
+      if (args.fields !== undefined) await ctx.api.send("PUT", `/api/tasks/${id}/fields`, fieldValuesById(detail.task_fields, args.fields));
       await audit(ctx, "create_task", "task", id, `在「${project.name}」建立任務「${text(args.title)}」（${stage.name}）`);
       return { ok: true, id, project: project.name, stage: stage.name };
     },
@@ -336,9 +361,10 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       start_date: optionalDate, due_date: optionalDate,
       assignee: { type: "string", maxLength: 200, description: "姓名或 Email；空字串代表取消指派" },
       description: { type: "string", maxLength: 2_000 },
+      fields: fieldsSchema,
     } },
     async run(args, ctx) {
-      const fields = ["done", "stage", "title", "start_date", "due_date", "assignee", "description"].filter((key) => args[key] !== undefined);
+      const fields = ["done", "stage", "title", "start_date", "due_date", "assignee", "description", "fields"].filter((key) => args[key] !== undefined);
       if (!fields.length) throw new ToolError("沒有要修改的欄位");
       checkDate(args.start_date, "開始日"); checkDate(args.due_date, "到期日");
       const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t WHERE t.id=?").bind(text(args.task_id)).first<{ project_id: string; title: string }>();
@@ -352,7 +378,9 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       if (args.start_date !== undefined) body.start_date = args.start_date || null;
       if (args.due_date !== undefined) body.due_date = args.due_date || null;
       if (args.assignee !== undefined) body.assignee_id = await resolveAssignee(ctx, args.assignee);
-      await ctx.api.send("PATCH", `/api/tasks/${encodeURIComponent(text(args.task_id))}`, body);
+      const values = args.fields !== undefined ? fieldValuesById(detail.task_fields, args.fields) : null;
+      if (Object.keys(body).length) await ctx.api.send("PATCH", `/api/tasks/${encodeURIComponent(text(args.task_id))}`, body);
+      if (values) await ctx.api.send("PUT", `/api/tasks/${encodeURIComponent(text(args.task_id))}/fields`, values);
       await audit(ctx, "update_task", "task", text(args.task_id), `修改「${detail.project.name}」的任務「${task.title}」（${fields.join("、")}）`);
       return { ok: true, task_id: text(args.task_id), project: detail.project.name, changed: fields };
     },

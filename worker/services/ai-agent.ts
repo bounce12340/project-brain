@@ -98,7 +98,7 @@ const LABELS: Record<AiLang, Record<string, string>> = {
     background: "專案背景", objective: "專案目標", kind: "種類", starts_at: "開始時間", ends_at: "結束時間", location: "地點", attendees: "與會者",
     organizer: "主辦單位", summary: "摘要", category: "分類",
     name: "名稱", new_name: "新名稱", position: "放在第幾欄", order: "新順序", move_tasks_to: "任務搬到",
-    subtask_id: "子任務", health: "狀態燈號",
+    subtask_id: "子任務", health: "狀態燈號", fields: "自訂欄位",
   },
   en: {
     project: "Project", task_id: "Task", milestone_id: "Milestone", todo_id: "To-do", title: "Title", content: "Content", stage: "Column", assignee: "Assignee",
@@ -106,7 +106,7 @@ const LABELS: Record<AiLang, Record<string, string>> = {
     background: "Background", objective: "Objective", kind: "Kind", starts_at: "Starts", ends_at: "Ends", location: "Location", attendees: "Attendees",
     organizer: "Organizer", summary: "Summary", category: "Category",
     name: "Name", new_name: "New name", position: "Column position", order: "New order", move_tasks_to: "Move tasks to",
-    subtask_id: "Subtask", health: "Status",
+    subtask_id: "Subtask", health: "Status", fields: "Custom fields",
   },
 };
 const STATUS: Record<AiLang, Record<string, string>> = {

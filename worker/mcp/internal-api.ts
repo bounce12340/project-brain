@@ -5,7 +5,7 @@ import { ToolError } from "./protocol";
 
 export interface InternalApi {
   get<T>(path: string): Promise<T>;
-  send<T>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T>;
+  send<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T>;
 }
 
 /**
