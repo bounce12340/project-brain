@@ -8,6 +8,7 @@ import { generalRoutes } from "./routes/general";
 import { adminRoutes } from "./routes/admin";
 import { aiRoutes, reportsRoutes } from "./routes/reports";
 import { v2Routes } from "./routes/v2";
+import { subtasksRoutes } from "./routes/subtasks";
 import { registerRoutes } from "./routes/register";
 import { v6Routes } from "./routes/v6";
 import { adminImportRoutes, importRoutes } from "./routes/import";
@@ -30,6 +31,7 @@ export function mountApiRoutes(app: Hono<AppContext>): void {
   app.route("/api", resourcesRoutes);
   app.route("/api", generalRoutes);
   app.route("/api", v2Routes);
+  app.route("/api", subtasksRoutes);
   app.route("/api", v7Routes);
   app.route("/api", v6Routes);
   app.route("/api/reports", reportsRoutes);

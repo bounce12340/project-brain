@@ -183,12 +183,12 @@ describe("寫入", () => {
   });
 
   it("刪除工具標示為 destructive，需要寫入權限", () => {
-    for (const name of ["delete_task", "delete_milestone", "delete_stage"]) {
+    for (const name of ["delete_task", "delete_milestone", "delete_stage", "delete_subtask"]) {
       const tool = MCP_TOOLS.find((item) => item.name === name)!;
       expect(tool.write && tool.destructive, name).toBe(true);
       expect(tool.description, name).toMatch(/explicit confirmation/);
     }
-    expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_stage", "delete_task"]);
+    expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_stage", "delete_subtask", "delete_task"]);
   });
 
   it("update_project_settings：擁有者改目標日期、開始日與狀態，記稽核；空字串清除日期", async () => {

@@ -8,7 +8,7 @@ import { taipeiDate } from "./time";
 import { webSearchEndpoint } from "./web-search";
 
 /**
- * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 28 個工具（網路搜尋要有 DeepSeek 金鑰）。
+ * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 31 個工具（網路搜尋要有 DeepSeek 金鑰）。
  * - 查資料的工具（list_projects、get_project…）當場執行，結果交回 AI 繼續回答。
  * - 會改資料的工具不執行，整理成「確認卡」交給畫面；使用者按「確認」才由 executeAssistantAction 執行。
  * 工具一律以這位使用者的身分走網站自己的 /api，看得到、改得了的範圍和他在畫面上操作時一樣。
@@ -98,6 +98,7 @@ const LABELS: Record<AiLang, Record<string, string>> = {
     background: "專案背景", objective: "專案目標", kind: "種類", starts_at: "開始時間", ends_at: "結束時間", location: "地點", attendees: "與會者",
     organizer: "主辦單位", summary: "摘要", category: "分類",
     name: "名稱", new_name: "新名稱", position: "放在第幾欄", order: "新順序", move_tasks_to: "任務搬到",
+    subtask_id: "子任務", health: "狀態燈號",
   },
   en: {
     project: "Project", task_id: "Task", milestone_id: "Milestone", todo_id: "To-do", title: "Title", content: "Content", stage: "Column", assignee: "Assignee",
@@ -105,11 +106,16 @@ const LABELS: Record<AiLang, Record<string, string>> = {
     background: "Background", objective: "Objective", kind: "Kind", starts_at: "Starts", ends_at: "Ends", location: "Location", attendees: "Attendees",
     organizer: "Organizer", summary: "Summary", category: "Category",
     name: "Name", new_name: "New name", position: "Column position", order: "New order", move_tasks_to: "Move tasks to",
+    subtask_id: "Subtask", health: "Status",
   },
 };
 const STATUS: Record<AiLang, Record<string, string>> = {
   zh: { active: "進行中", paused: "暫停", done: "已完成" },
   en: { active: "Active", paused: "Paused", done: "Completed" },
+};
+const HEALTH: Record<AiLang, Record<string, string>> = {
+  zh: { on_track: "🟢 順利", at_risk: "🟡 有風險", off_track: "🔴 落後" },
+  en: { on_track: "🟢 On track", at_risk: "🟡 At risk", off_track: "🔴 Off track" },
 };
 const KIND: Record<AiLang, Record<string, string>> = {
   zh: { milestone: "里程碑", event: "歷程事件", meeting: "會議", course: "公司外訓" },
@@ -139,6 +145,10 @@ export async function describeAction(ctx: ToolContext, toolName: string, args: R
       const milestone = await ctx.db.prepare("SELECT project_id,title FROM milestones WHERE id=?").bind(String(raw)).first<{ project_id: string; title: string }>();
       if (!milestone) throw new ToolError(`找不到里程碑 ${String(raw)}`);
       value = `${milestone.title}（${await project(milestone.project_id)}）`;
+    } else if (key === "subtask_id") {
+      const subtask = await ctx.db.prepare("SELECT s.title,t.title AS task_title,t.project_id FROM subtasks s JOIN tasks t ON t.id=s.task_id WHERE s.id=?").bind(String(raw)).first<{ title: string; task_title: string; project_id: string }>();
+      if (!subtask) throw new ToolError(`找不到子任務 ${String(raw)}`);
+      value = `${subtask.title}（${subtask.task_title}／${await project(subtask.project_id)}）`;
     } else if (key === "todo_id") {
       const todo = await ctx.db.prepare("SELECT title FROM todos WHERE id=? AND user_id=?").bind(String(raw), ctx.user.id).first<{ title: string }>();
       if (!todo) throw new ToolError(`找不到待辦 ${String(raw)}`);
@@ -147,6 +157,7 @@ export async function describeAction(ctx: ToolContext, toolName: string, args: R
     else if (raw === "") value = lang === "zh" ? "（清除）" : "(clear)";
     else if (key === "status") value = STATUS[lang][String(raw)] ?? String(raw);
     else if (key === "kind") value = KIND[lang][String(raw)] ?? String(raw);
+    else if (key === "health") value = HEALTH[lang][String(raw)] ?? String(raw);
     else if (Array.isArray(raw)) value = shorten(raw.map(String).join(" → "));
     else value = shorten(typeof raw === "string" ? raw : JSON.stringify(raw), LONG_FIELDS.has(key) ? 4_000 : 300);
     lines.push(`${labels[key] ?? key}：${value}`);
@@ -268,7 +279,7 @@ export async function runAssistantTurn(env: Env, ctx: ToolContext, input: {
 }
 
 /** 整理專案能用的工具：只碰這一個專案的內容與設定。 */
-export const ORGANIZE_TOOLS = ["get_project", "update_project_settings", "update_project_background", "add_stage", "rename_stage", "reorder_stages", "delete_stage", "update_task", "create_task", "delete_task", "update_milestone", "add_milestone", "delete_milestone", "add_progress_update"] as const;
+export const ORGANIZE_TOOLS = ["get_project", "update_project_settings", "update_project_background", "add_stage", "rename_stage", "reorder_stages", "delete_stage", "update_task", "create_task", "delete_task", "add_subtask", "update_subtask", "delete_subtask", "update_milestone", "add_milestone", "delete_milestone", "add_progress_update"] as const;
 export const MAX_ORGANIZE_ACTIONS = 40;
 export const MAX_BRIEF = 8_000;
 
@@ -280,10 +291,10 @@ export function buildOrganizePrompt(lang: AiLang, today: string, project: { id: 
     "Compare the two and propose every change needed so the project matches the description, by calling the write tools:",
     "add_stage, rename_stage, reorder_stages and delete_stage when the description asks to change the kanban columns themselves (create_task never creates a missing column; add it first);",
     "update_project_settings for start date, target date (目標日期) or status; update_project_background only to add facts, settled decisions or requirements the description states (it replaces the text, so keep all existing content and add to it);",
-    "update_task for existing tasks that are now done, rescheduled, moved, reassigned or need a better description; create_task for work the description mentions that no task covers; update_milestone and add_milestone likewise (use kind=event for things that already happened, such as a submission or an authority's reply);",
-    "and finish with one add_progress_update that summarises what is new, dated facts first.",
+    "update_task for existing tasks that are now done, rescheduled, moved, reassigned or need a better description; create_task for work the description mentions that no task covers; update_milestone and add_milestone likewise (use kind=event for things that already happened, such as a submission or an authority's reply); add_subtask and update_subtask for checklist items under an existing task (by its id; for example the documents a submission still needs);",
+    "and finish with one add_progress_update that summarises what is new, dated facts first; set its health (on_track, at_risk, off_track) only when the description makes the project's state clear.",
     "Prefer updating an existing item over creating a near-duplicate. Delete only what the description says is cancelled or no longer needed. Never invent dates, people or requirements the description does not give; leave a field out when unsure.",
-    `Write tools are NOT executed when you call them: they go into a checklist the user reviews and confirms. Propose at most ${MAX_ORGANIZE_ACTIONS} changes, in this order: settings, background, kanban columns, existing tasks, new tasks, milestones, progress update.`,
+    `Write tools are NOT executed when you call them: they go into a checklist the user reviews and confirms. Propose at most ${MAX_ORGANIZE_ACTIONS} changes, in this order: settings, background, kanban columns, existing tasks, new tasks, subtasks, milestones, progress update.`,
     "When everything is proposed, reply with a short summary of the changes and list anything in the description you could not place or that conflicts with the background.",
     `Today is ${today}. Dates are YYYY-MM-DD in Asia/Taipei. Kanban stage names must be copied from the board.`,
     advisor ? ADVISOR_HINT : "",

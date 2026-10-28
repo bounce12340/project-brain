@@ -36,13 +36,13 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-**28개 도구**를 제공합니다.
+**31개 도구**를 제공합니다.
 
 | 용도 | 도구 |
 |---|---|
 | 출처 URL을 포함한 프로젝트 검색 | `search`, `fetch` |
 | 프로젝트와 기한 조회 | `list_projects`, `get_project`, `list_my_work` |
-| 진행 상황과 계획 수정 | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
+| 진행 상황과 계획 수정 | `add_progress_update`, `create_task`, `update_task`, `add_subtask`, `update_subtask`, `delete_subtask`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
 | 개인 할 일 | `list_todos`, `create_todo`, `update_todo` |
 | 칸반 열 | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | 회의와 외부 교육 | `list_meetings`, `create_meeting`, `update_meeting` |

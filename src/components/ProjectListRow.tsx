@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ProgressBar, StatusStamp } from "./UI";
+import { HealthBadge, ProgressBar, StatusStamp } from "./UI";
 import { ProjectGlance } from "./ProjectGlance";
 import { useT } from "../i18n/LangContext";
 import type { Project } from "../types";
@@ -32,6 +32,7 @@ export function ProjectListRow({ project, related, expanded, onToggle, tour }: {
             {project.site && <span>{project.site}</span>}
             {/* 進行中是常態不蓋章；只有例外狀態（暫停等）才蓋，才看得出來。 */}
             {project.status !== "active" && <StatusStamp status={project.status} />}
+            <HealthBadge health={project.health} at={project.health_at} />
             {related.length > 0 && <span className="text-psi">{t("projects.related")} {related.length}</span>}
           </span>
         </span>

@@ -228,7 +228,9 @@ projectsRoutes.get("/:id", async (c) => {
     c.env.DB.prepare(`SELECT t.*,u.name AS assignee_name,
       (SELECT GROUP_CONCAT(td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id) AS dependency_ids_csv,
       (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id=t.id) AS comment_count,
-      (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count
+      (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count,
+      (SELECT COUNT(*) FROM subtasks s WHERE s.task_id=t.id) AS subtask_total,
+      (SELECT COUNT(*) FROM subtasks s WHERE s.task_id=t.id AND s.done=1) AS subtask_done
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id=? ORDER BY t.stage_id,t.position`).bind(projectId).all<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY kind,due_date,position").bind(projectId).all(),
   ]);

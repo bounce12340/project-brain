@@ -9,6 +9,7 @@ import {
 import type { Metadata, ProjectDetail, Task, TaskComment } from "../types";
 import { relativeTime } from "../utils/localized";
 import { ProjectFiles } from "./ProjectFiles";
+import { SubtaskList } from "./SubtaskList";
 import { ErrorBox, Markdown } from "./UI";
 
 interface Mentionable { id: string; name: string }
@@ -169,6 +170,8 @@ export function TaskDrawer({ task, data, metadata, onClose, reload }: {
             {metadata?.users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}
           </select>
         </div>
+
+        <SubtaskList taskId={task.id} canEdit={data.permissions.can_edit} metadata={metadata} onChanged={reload} />
 
         <section data-task-drawer-section="dependencies" className="rounded-card border border-nexus-line p-3">
           <h3 className="font-bold">{t("task.dependencies")}</h3>

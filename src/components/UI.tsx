@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { translateBackendError } from "../i18n/errors";
 import { useT } from "../i18n/LangContext";
 import { markdownBlocks } from "../markdown";
+import { HEALTH_LEVELS, HEALTH_STALE_DAYS, healthState, type Health } from "../project-health";
 
 export function PageHeader({ title, description, actions }: { title: ReactNode; description?: string; actions?: ReactNode }) {
   return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-gold-bright">{title}</h1>{description && <p className="mt-1 text-sm text-star-dim">{description}</p>}</div>{actions}</div>;
@@ -29,6 +30,40 @@ export function RiskBadge({ level }: { level?: string | null }) {
   const style = level === "high" ? "risk-high" : level === "medium" ? "risk-medium" : "risk-low";
   const label = level === "high" ? t("risk.high") : level === "medium" ? t("risk.medium") : t("risk.low");
   return <span className={style}>{label}</span>;
+}
+
+const HEALTH_DOT: Record<Health, string> = { on_track: "bg-ok", at_risk: "bg-warn", off_track: "bg-danger" };
+const HEALTH_TEXT: Record<Health, string> = { on_track: "text-ok", at_risk: "text-warn", off_track: "text-danger" };
+const HEALTH_KEY = { on_track: "health.onTrack", at_risk: "health.atRisk", off_track: "health.offTrack" } as const;
+
+/**
+ * 狀態燈號：圓點＋文字（不只靠顏色）。沒標示過就不顯示；超過兩週沒再標示改成灰色「待更新」，
+ * 滑過去看得到上次的燈號與日期。fresh 用在進度紀錄本身——那是當時的判斷，不會過期。
+ */
+export function HealthBadge({ health, at, fresh = false, className = "" }: { health?: string | null; at?: string | null; fresh?: boolean; className?: string }) {
+  const t = useT();
+  const state = healthState(health, at);
+  if (!state.level) return null;
+  const label = t(HEALTH_KEY[state.level]);
+  const stale = state.stale && !fresh;
+  const date = state.since?.slice(0, 10) ?? "";
+  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold ${stale ? "text-star-dim" : HEALTH_TEXT[state.level]} ${className}`}
+    title={stale ? t("health.staleTitle", { label, date, days: HEALTH_STALE_DAYS }) : date ? t("health.sinceTitle", { label, date }) : label}>
+    <span aria-hidden="true" className={`inline-block h-2.5 w-2.5 rounded-full ${stale ? "bg-star-dim" : HEALTH_DOT[state.level]}`} />
+    {stale ? t("health.stale") : label}
+  </span>;
+}
+
+/** 發進度時選燈號；再點一次同一個就取消。 */
+export function HealthPicker({ value, onChange, disabled = false }: { value: Health | null; onChange(value: Health | null): void; disabled?: boolean }) {
+  const t = useT();
+  return <div role="radiogroup" aria-label={t("health.pick")} className="flex flex-wrap gap-2">
+    {HEALTH_LEVELS.map((level) => <button key={level} type="button" role="radio" aria-checked={value === level} disabled={disabled}
+      className={`inline-flex items-center gap-1.5 rounded-control border px-3 py-1.5 text-sm ${value === level ? `border-current ${HEALTH_TEXT[level]} bg-nexus-raised font-semibold` : "border-nexus-line text-star-dim hover:text-star"}`}
+      onClick={() => onChange(value === level ? null : level)}>
+      <span aria-hidden="true" className={`inline-block h-2.5 w-2.5 rounded-full ${HEALTH_DOT[level]}`} />{t(HEALTH_KEY[level])}
+    </button>)}
+  </div>;
 }
 
 /**
