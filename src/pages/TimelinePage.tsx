@@ -34,7 +34,10 @@ export function TimelinePage() {
   const [groups, setGroups] = useState<TimelineGroup[]>([]);
   const [groupFilter, setGroupFilter] = useState("");
   const [expanded, setExpanded] = useState<string[]>(initialExpanded);
-  useEffect(() => { void api<{ groups: TimelineGroup[] }>("/timeline").then((result) => setGroups(result.groups)); }, []);
+  const [allGroups, setAllGroups] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => { void api<{ groups: TimelineGroup[] }>("/timeline").then((result) => setGroups(result.groups)); void api<{ groups: Array<{ id: string; name: string }> }>("/metadata").then((meta) => setAllGroups(meta.groups)).catch(() => undefined); }, []);
+  // 篩選選項列出全部組別（剛建、還沒有進行中專案的組別標示 0），泳道仍只畫有專案的組別。
+  const groupOptions = [...groups.map((group) => ({ id: group.id, name: group.name, count: group.projects.length })), ...allGroups.filter((group) => !groups.some((item) => item.id === group.id)).map((group) => ({ ...group, count: 0 }))].sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
   const visibleGroups = groupFilter ? groups.filter((group) => group.id === groupFilter) : groups;
   const projects = visibleGroups.flatMap((group) => group.projects);
   const dates = [currentDate, ...projects.flatMap((project) => [project.start_date, project.target_date, ...project.tasks.flatMap((task) => [task.start_date ?? task.created_at.slice(0, 10), task.due_date]), ...project.markers.flatMap((marker) => [marker.due_date, marker.end_date])])].filter((value): value is string => !!value).sort();
@@ -71,7 +74,7 @@ export function TimelinePage() {
 
   return <>
     <PageHeader title={<span data-tour="timeline-lanes">{t("timeline.title")}</span>} description={t("timeline.description")} />
-    <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label></section>
+    <section className="panel mb-4 no-print"><label className="flex max-w-sm items-center gap-3"><span className="label mb-0 whitespace-nowrap">{t("timeline.groupFilter")}</span><select className="w-full" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">{t("timeline.allGroups")}</option>{groupOptions.map((group) => <option value={group.id} key={group.id}>{group.count ? group.name : t("dashboard.groupEmpty", { name: group.name })}</option>)}</select></label></section>
     <section className="panel overflow-x-auto !px-0"><div style={{ width: label + width }}>
       <div className="pl-5"><GanttLegend stages={legendStages} tasks={legendTasks} milestones={projects.flatMap((project) => project.markers).map((marker) => ({ kind: marker.kind, due_date: marker.due_date, end_date: marker.end_date, done: marker.done }))} milestoneLabel={t("project.milestones")} milestonePeriodLabel={t("gantt.legend.milestonePeriod")} eventLabel={t("project.historyEvents")} eventPeriodLabel={t("gantt.legend.eventPeriod")} doneLabel={t("gantt.legend.done")} overdueLabel={t("gantt.legend.overdue")} currentDate={currentDate} /></div>
       <div className="flex">

@@ -22,7 +22,7 @@ const rows = [
 describe("dashboardGroups", () => {
   it("每組只出現一次", () => expect(dashboardGroups(rows)).toHaveLength(2));
 
-  it("只列出真的有專案的組別，避免選了就空白", () => {
+  it("沒給組別清單時，只從專案整理出組別", () => {
     expect(dashboardGroups(rows).map((group) => group.id).sort()).toEqual(["g_bd", "g_ra"]);
   });
 
@@ -32,6 +32,12 @@ describe("dashboardGroups", () => {
   });
 
   it("沒有專案時回空陣列", () => expect(dashboardGroups([])).toEqual([]));
+  it("管理員建的組別即使還沒有專案也列出，數量為 0", () => {
+    const groups = dashboardGroups(rows, [{ id: "g_new", name: "醫保行銷" }, { id: "g_bd", name: "BD組" }]);
+    expect(groups).toHaveLength(3);
+    expect(groups.map((group) => [group.id, group.count]).sort()).toEqual([["g_bd", 2], ["g_new", 0], ["g_ra", 1]]);
+    expect(resolveDashboardGroup("g_new", groups)).toBe("g_new");
+  });
 });
 
 describe("resolveDashboardGroup", () => {

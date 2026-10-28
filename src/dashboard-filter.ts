@@ -5,21 +5,26 @@ const DASHBOARD_GROUP_KEY = "brain.dashboard.group";
 export interface DashboardGroup {
   id: string;
   name: string;
-}
-
-/** 只列出目前實際有專案的組別，避免下拉選單出現選了就空白的項目。 */
-export function dashboardGroups(projects: Array<Pick<Project, "group_id" | "group_name">>): DashboardGroup[] {
-  const byId = new Map<string, string>();
-  for (const project of projects) byId.set(project.group_id, project.group_name);
-  return [...byId.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-TW", { numeric: true }) || left.id.localeCompare(right.id));
+  /** 這一組有幾個（傳進來的）專案；剛建立還沒有專案的組別是 0。 */
+  count: number;
 }
 
 /**
- * 記住的組別可能已經沒有專案了（全部歸檔、或權限變動）。這時退回「全部」，
- * 而不是讓使用者面對一個空清單卻找不到原因。
+ * 組別下拉的選項：管理員建立的每個組別都列出來（allGroups，來自 /metadata），
+ * 加上專案上出現、但清單裡沒有的組別。剛新增、還沒有專案的組別也要選得到，否則看起來像沒建成功。
  */
+export function dashboardGroups(projects: Array<Pick<Project, "group_id" | "group_name">>, allGroups: Array<{ id: string; name: string }> = []): DashboardGroup[] {
+  const byId = new Map<string, DashboardGroup>(allGroups.map((group) => [group.id, { id: group.id, name: group.name, count: 0 }]));
+  for (const project of projects) {
+    const group = byId.get(project.group_id) ?? { id: project.group_id, name: project.group_name, count: 0 };
+    group.count += 1;
+    byId.set(project.group_id, group);
+  }
+  return [...byId.values()]
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-TW", { numeric: true }) || left.id.localeCompare(right.id));
+}
+
+/** 記住的組別可能已經被刪除。這時退回「全部」；沒有專案的組別仍可選，畫面會說明這組目前沒有專案。 */
 export function resolveDashboardGroup(saved: string, groups: DashboardGroup[]): string {
   return groups.some((group) => group.id === saved) ? saved : "";
 }
