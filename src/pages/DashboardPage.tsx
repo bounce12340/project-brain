@@ -30,13 +30,15 @@ export function DashboardPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const load = () => api<DashboardData>("/dashboard").then(setData);
-  useEffect(() => { void load(); }, []);
+  // 組別清單另外取：剛建立、還沒有專案的組別也要能選。
+  const [allGroups, setAllGroups] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => { void load(); void api<{ groups: Array<{ id: string; name: string }> }>("/metadata").then((meta) => setAllGroups(meta.groups)).catch(() => undefined); }, []);
   const clinical = useMemo(() => { let total = 0; return (data?.charts.clinical_enrollments ?? []).map((item) => ({ ...item, enrollment: total += Number(item.count), target: item.target_n })); }, [data]);
   // 進度條只列進行中的專案；已完成與已歸檔的收在歸檔專區。
   const ongoing = useMemo(() => ongoingOnly(data?.projects ?? []), [data]);
   // 組別篩選：只影響專案進度清單與最近動態，KPI 與圖表維持全站概況。
   const [savedGroup, setSavedGroup] = useState(readDashboardGroup);
-  const groups = useMemo(() => dashboardGroups(ongoing), [ongoing]);
+  const groups = useMemo(() => dashboardGroups(ongoing, allGroups), [ongoing, allGroups]);
   const group = resolveDashboardGroup(savedGroup, groups);
   // 「只看我負責的」是否有意義要看全部進行中的專案，不是篩過組別之後的：
   // 否則切到某一組時開關會忽隱忽現，而開著的狀態卻還在默默過濾。
@@ -105,7 +107,7 @@ export function DashboardPage() {
         <h2 className="font-bold">{t("dashboard.groupProgress")}<span className="ml-2 text-sm font-normal text-star-dim">{t("common.items", { count: visible.length })}</span></h2>
         <div className="flex flex-wrap items-center gap-3">
           {mineUseful && <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4" checked={mine} onChange={(event) => chooseMine(event.target.checked)} />{t("dashboard.mineOnly")}</label>}
-          {groups.length > 1 && <select className="!py-1.5 text-sm" aria-label={t("dashboard.groupFilter")} value={group} onChange={(event) => chooseGroup(event.target.value)}><option value="">{t("dashboard.allGroups")}</option>{groups.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>}
+          {groups.length > 1 && <select className="!py-1.5 text-sm" aria-label={t("dashboard.groupFilter")} value={group} onChange={(event) => chooseGroup(event.target.value)}><option value="">{t("dashboard.allGroups")}</option>{groups.map((item) => <option value={item.id} key={item.id}>{item.count ? item.name : t("dashboard.groupEmpty", { name: item.name })}</option>)}</select>}
           {selectable.length > 0 && <><button className="btn-secondary !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void archiveSelected()}>{busy ? t("common.processing") : t("dashboard.archiveSelected", { count: pending })}</button><button className="btn-danger !px-3 !py-1.5 text-sm" disabled={!pending || busy} onClick={() => void deleteSelected()}>{t("dashboard.deleteSelected", { count: pending })}</button></>}
         </div>
       </div>
@@ -123,7 +125,7 @@ export function DashboardPage() {
           </div>
           {expanded && <div id={`glance-${project.id}`} className="border-t border-nexus-line p-3 sm:p-4"><ProjectGlance projectId={project.id} /></div>}
         </div>;
-      }) : <Empty>{t(mine ? "dashboard.noMine" : "dashboard.noProjects")}</Empty>}</div>
+      }) : <Empty>{group && !groups.find((item) => item.id === group)?.count ? t("dashboard.noProjectsInGroup", { name: groups.find((item) => item.id === group)?.name ?? "" }) : t(mine ? "dashboard.noMine" : "dashboard.noProjects")}</Empty>}</div>
       {selectable.length > 0 && <p className="mt-4 text-sm text-star-dim">{t("dashboard.archiveHint")} <Link className="font-semibold text-psi hover:text-star" to="/archive">{t("archive.title")}</Link></p>}
     </section>
       <div className="space-y-6">

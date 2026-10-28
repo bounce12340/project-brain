@@ -24,12 +24,17 @@ export function PortfolioPage() {
   const [bucket, setBucket] = useState<HealthBucket | "">("");
   const [mine, setMine] = useState(false);
   const [sort, setSort] = useState<{ key: PortfolioSort; desc: boolean }>({ key: "health", desc: false });
-  useEffect(() => { void api<{ projects: PortfolioRow[]; today: string }>("/portfolio").then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : t("error.load"))); }, []);
+  const [allGroups, setAllGroups] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    void api<{ projects: PortfolioRow[]; today: string }>("/portfolio").then(setData).catch((cause) => setError(cause instanceof Error ? cause.message : t("error.load")));
+    void api<{ groups: Array<{ id: string; name: string }> }>("/metadata").then((meta) => setAllGroups(meta.groups)).catch(() => undefined);
+  }, []);
 
   const base = useMemo(() => (data?.projects ?? []).filter((row) => (STATUS_FILTERS[status] as readonly string[]).includes(row.status) && (!group || row.group_id === group) && (!mine || row.owner_id === user?.id)), [data, status, group, mine, user?.id]);
   const counts = useMemo(() => Object.fromEntries(HEALTH_BUCKETS.map((key) => [key, base.filter((row) => healthBucket(row) === key).length])) as Record<HealthBucket, number>, [base]);
   const rows = useMemo(() => sortPortfolio(base.filter((row) => !bucket || healthBucket(row) === bucket), sort.key, sort.desc), [base, bucket, sort]);
-  const groups = useMemo(() => [...new Map((data?.projects ?? []).map((row) => [row.group_id, row.group_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-Hant")), [data]);
+  // 管理員建的組別全部列出（剛建、還沒有專案的也選得到），再補上專案上出現的組別。
+  const groups = useMemo(() => [...new Map([...allGroups.map((group) => [group.id, group.name] as const), ...(data?.projects ?? []).map((row) => [row.group_id, row.group_name] as const)]).entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-Hant")), [data, allGroups]);
 
   if (!data) return error ? <ErrorBox message={error} /> : <Loading />;
   const today = data.today;
