@@ -8,6 +8,7 @@ import type { InternalApi } from "./internal-api";
 import { ToolError, type JsonSchema, type McpTool } from "./protocol";
 import { extendedTools } from "./extended-tools";
 import { stageColorFor } from "../services/stage-colors";
+import { HEALTH_LABEL, HEALTH_VALUES, type Health } from "../services/project-health";
 
 /**
  * 艾爾水晶提供給 AI 的工具。讀取類只查看；寫入類需要 mcp:write，每一筆都寫稽核紀錄，
@@ -29,16 +30,18 @@ interface ProjectSummary { id: string; name: string; group_name: string; status:
 interface ProjectListRow extends ProjectSummary {
   owner_id: string; owner_name: string; progress: number; start_date: string | null; target_date: string | null;
   last_activity_at: string; goal_summary: string; member_ids: string[]; parent_id?: string | null;
+  health?: Health | null; health_at?: string | null;
 }
 interface Stage { id: string; name: string; position: number }
-interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null }
+interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null; fields?: Record<string, string> }
+interface TaskFieldRow { id: string; name: string; type: "text" | "number" | "date" | "select"; options: string[] }
 interface MilestoneRow { id: string; title: string; due_date: string | null; end_date: string | null; done: number; kind: "milestone" | "event" }
-interface UpdateRow { created_at: string; author_name: string; content: string }
+interface UpdateRow { created_at: string; author_name: string; content: string; health?: Health | null }
 interface ProjectDetail {
   project: ProjectListRow & { description: string; progress_mode: string; visibility: string; site: string };
   permissions: { can_edit: boolean; can_manage: boolean };
   members: Array<{ name: string }>;
-  stages: Stage[]; tasks: TaskRow[]; milestones: MilestoneRow[]; progress_updates?: UpdateRow[];
+  stages: Stage[]; tasks: TaskRow[]; milestones: MilestoneRow[]; progress_updates?: UpdateRow[]; task_fields?: TaskFieldRow[];
   parent?: { id: string; name: string } | null;
   children?: Array<{ id: string; name: string; status: string; progress: number; owner_name: string; target_date: string | null; task_total: number; task_done: number; task_overdue: number }>;
 }
@@ -137,6 +140,51 @@ const audit = (ctx: ToolContext, tool: string, entityType: string, entityId: str
 
 const tool = <T extends McpTool<ToolContext>>(definition: T) => definition;
 
+/** 專案每個任務的子任務（呼叫前已確認看得到專案）。 */
+async function subtasksOfProject(ctx: ToolContext, projectId: string) {
+  const rows = (await ctx.db.prepare(`SELECT s.id,s.task_id,s.title,s.done,s.due_date,u.name AS assignee FROM subtasks s JOIN tasks t ON t.id=s.task_id
+    LEFT JOIN users u ON u.id=s.assignee_id WHERE t.project_id=? ORDER BY s.position,s.created_at`).bind(projectId)
+    .all<{ id: string; task_id: string; title: string; done: number; due_date: string | null; assignee: string | null }>()).results;
+  const byTask = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of rows) byTask.set(row.task_id, [...(byTask.get(row.task_id) ?? []), { id: row.id, title: row.title, done: !!row.done, ...(row.assignee ? { assignee: row.assignee } : {}), ...(row.due_date ? { due_date: row.due_date } : {}) }]);
+  return byTask;
+}
+
+/** 找任務並確認看得到它的專案；看不到時和不存在一樣回「找不到」。 */
+async function taskForTool(ctx: ToolContext, taskId: unknown) {
+  const task = await ctx.db.prepare("SELECT id,project_id,title FROM tasks WHERE id=?").bind(text(taskId)).first<{ id: string; project_id: string; title: string }>();
+  if (!task) throw new ToolError(`找不到任務 ${text(taskId)}`);
+  const detail = await loadProject(ctx, task.project_id);
+  return { id: task.id, title: task.title, project: detail.project.name };
+}
+
+async function subtaskForTool(ctx: ToolContext, subtaskId: unknown) {
+  const row = await ctx.db.prepare("SELECT s.id,s.title,s.task_id FROM subtasks s WHERE s.id=?").bind(text(subtaskId)).first<{ id: string; title: string; task_id: string }>();
+  if (!row) throw new ToolError(`找不到子任務 ${text(subtaskId)}`);
+  const task = await taskForTool(ctx, row.task_id).catch(() => { throw new ToolError(`找不到子任務 ${text(subtaskId)}`); });
+  return { id: row.id, title: row.title, task: task.title, project: task.project };
+}
+
+/** create_task／update_task 的自訂欄位：{ 欄位名稱: 值 }，空字串代表清除。 */
+const fieldsSchema: JsonSchema = { type: "object", description: "自訂欄位：{ 欄位名稱: 值 }。欄位名稱與單選選項見 get_project 的 custom_fields；數字填數字、日期填 YYYY-MM-DD；空字串代表清除。", };
+
+function fieldValuesById(fields: TaskFieldRow[] | undefined, raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ToolError("fields 要是 { 欄位名稱: 值 } 的物件");
+  const known = fields ?? [];
+  const values: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    const field = known.find((item) => item.name === name.trim());
+    if (!field) throw new ToolError(known.length ? `沒有「${name}」這個自訂欄位。這個專案的欄位：${known.map((item) => item.name).join("、")}` : "這個專案還沒有自訂欄位，請先在艾爾水晶的任務分頁新增。");
+    values[field.id] = value;
+  }
+  return values;
+}
+
+const fieldsByName = (fields: TaskFieldRow[] | undefined, values: Record<string, string> | undefined) => {
+  const named = Object.fromEntries((fields ?? []).filter((field) => values?.[field.id] !== undefined).map((field) => [field.name, values![field.id]]));
+  return Object.keys(named).length ? { fields: named } : {};
+};
+
 export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "list_projects",
@@ -162,6 +210,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
           id: project.id, name: project.name, ...(project.parent_id ? { parent: names.get(project.parent_id) ?? project.parent_id } : {}), group: project.group_name, status: STATUS_LABEL[project.status] ?? project.status,
           progress: project.progress, owner: project.owner_name, mine: mine(project), product: project.product || undefined,
           start_date: project.start_date, target_date: project.target_date, last_activity: project.last_activity_at,
+          ...(project.health ? { health: HEALTH_LABEL[project.health], health_since: project.health_at?.slice(0, 10) } : {}),
           objective: project.goal_summary ? truncate(project.goal_summary, 200) : undefined,
         })),
         ...(rows.length > 200 ? { note: "只列出前 200 個，請用 keyword 或 status 縮小範圍" } : {}),
@@ -180,11 +229,14 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const { id } = await resolveProject(ctx, args.project);
       const detail = await loadProject(ctx, id, "core,updates");
       const { project } = detail;
+      const subtasks = await subtasksOfProject(ctx, id);
       const limit = typeof args.updates_limit === "number" ? args.updates_limit : 10;
       return {
         id: project.id, name: project.name, group: project.group_name, owner: project.owner_name,
         ...(detail.parent ? { parent: detail.parent.name } : {}),
-        status: STATUS_LABEL[project.status] ?? project.status, progress: project.progress, progress_mode: project.progress_mode === "auto" ? (detail.children?.length ? "自動（依任務與里程碑，含子專案）" : "自動（依任務與里程碑）") : "手動",
+        status: STATUS_LABEL[project.status] ?? project.status,
+        ...(project.health ? { health: HEALTH_LABEL[project.health], health_since: project.health_at?.slice(0, 10) } : {}),
+        progress: project.progress, progress_mode: project.progress_mode === "auto" ? (detail.children?.length ? "自動（依任務與里程碑，含子專案）" : "自動（依任務與里程碑）") : "手動",
         start_date: project.start_date, target_date: project.target_date, product: project.product || undefined, site: project.site || undefined,
         background: project.description || null, objective: project.goal_summary || null,
         permissions: { can_edit: detail.permissions.can_edit, can_edit_background_and_objective: detail.permissions.can_manage },
@@ -193,17 +245,20 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
           id: child.id, name: child.name, status: STATUS_LABEL[child.status] ?? child.status, progress: child.progress, owner: child.owner_name,
           target_date: child.target_date, tasks_done: child.task_done, tasks_total: child.task_total, overdue_tasks: child.task_overdue,
         })) } : {}),
+        ...(detail.task_fields?.length ? { custom_fields: detail.task_fields.map((field) => ({ name: field.name, type: field.type, ...(field.type === "select" ? { options: field.options } : {}) })) } : {}),
         // 依實際的欄位順序（position），和網頁看板由左到右一致。
         board: [...detail.stages].sort((a, b) => a.position - b.position).map((stage) => ({
           stage: stage.name,
           tasks: detail.tasks.filter((task) => task.stage_id === stage.id).map((task) => ({
             id: task.id, title: task.title, done: !!task.done, start_date: task.start_date, due_date: task.due_date,
             assignee: task.assignee_name, ...(task.description ? { description: truncate(task.description, 500) } : {}),
+            ...(subtasks.has(task.id) ? { subtasks: subtasks.get(task.id) } : {}),
+            ...(fieldsByName(detail.task_fields, task.fields)),
           })),
         })),
         milestones: detail.milestones.filter((item) => item.kind === "milestone").map((item) => ({ id: item.id, title: item.title, date: item.due_date, end_date: item.end_date, done: !!item.done })),
         history_events: detail.milestones.filter((item) => item.kind === "event").map((item) => ({ id: item.id, title: item.title, date: item.due_date, end_date: item.end_date })),
-        recent_progress_updates: (detail.progress_updates ?? []).slice(0, limit).map((update) => ({ date: update.created_at.slice(0, 10), author: update.author_name, content: truncate(update.content, 2_000) })),
+        recent_progress_updates: (detail.progress_updates ?? []).slice(0, limit).map((update) => ({ date: update.created_at.slice(0, 10), author: update.author_name, ...(update.health ? { health: HEALTH_LABEL[update.health] } : {}), content: truncate(update.content, 2_000) })),
       };
     },
   }),
@@ -247,15 +302,16 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "add_progress_update",
     title: "新增進度紀錄",
-    description: "Post a progress update (進度紀錄) to a project, written as the user. Use it for narrative updates: what happened, decisions, blockers, next steps. Markdown bullets are fine. Ask the user to confirm the wording first unless they dictated it.",
+    description: "Post a progress update (進度紀錄) to a project, written as the user. Use it for narrative updates: what happened, decisions, blockers, next steps. Markdown bullets are fine. Optionally set the project's status light (health): on_track 順利, at_risk 有風險, off_track 落後; the project shows the latest one. Only set it when the user states or clearly implies it. Ask the user to confirm the wording first unless they dictated it.",
     write: true,
     inputSchema: { type: "object", additionalProperties: false, required: ["project", "content"], properties: {
       project: projectRef,
       content: { type: "string", minLength: 1, maxLength: 5_000, description: "進度內容" },
+      health: { type: "string", enum: [...HEALTH_VALUES], description: "狀態燈號：on_track＝順利、at_risk＝有風險、off_track＝落後；省略＝不標示" },
     } },
     async run(args, ctx) {
       const project = await resolveProject(ctx, args.project);
-      const { id } = await ctx.api.send<{ id: string }>("POST", `/api/projects/${project.id}/progress-updates`, { content: text(args.content) });
+      const { id } = await ctx.api.send<{ id: string }>("POST", `/api/projects/${project.id}/progress-updates`, { content: text(args.content), ...(args.health ? { health: args.health } : {}) });
       await audit(ctx, "add_progress_update", "progress_update", id, `新增進度紀錄到「${project.name}」`);
       return { ok: true, id, project: project.name };
     },
@@ -272,6 +328,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       start_date: date, due_date: date,
       assignee: { type: "string", maxLength: 200, description: "負責人的姓名或 Email" },
       description: { type: "string", maxLength: 2_000 },
+      fields: fieldsSchema,
     } },
     async run(args, ctx) {
       checkDate(args.start_date, "開始日"); checkDate(args.due_date, "到期日");
@@ -285,6 +342,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       });
       // 建立任務的端點不收開始日，另外補上。
       if (args.start_date) await ctx.api.send("PATCH", `/api/tasks/${id}`, { start_date: args.start_date });
+      if (args.fields !== undefined) await ctx.api.send("PUT", `/api/tasks/${id}/fields`, fieldValuesById(detail.task_fields, args.fields));
       await audit(ctx, "create_task", "task", id, `在「${project.name}」建立任務「${text(args.title)}」（${stage.name}）`);
       return { ok: true, id, project: project.name, stage: stage.name };
     },
@@ -303,9 +361,10 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       start_date: optionalDate, due_date: optionalDate,
       assignee: { type: "string", maxLength: 200, description: "姓名或 Email；空字串代表取消指派" },
       description: { type: "string", maxLength: 2_000 },
+      fields: fieldsSchema,
     } },
     async run(args, ctx) {
-      const fields = ["done", "stage", "title", "start_date", "due_date", "assignee", "description"].filter((key) => args[key] !== undefined);
+      const fields = ["done", "stage", "title", "start_date", "due_date", "assignee", "description", "fields"].filter((key) => args[key] !== undefined);
       if (!fields.length) throw new ToolError("沒有要修改的欄位");
       checkDate(args.start_date, "開始日"); checkDate(args.due_date, "到期日");
       const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t WHERE t.id=?").bind(text(args.task_id)).first<{ project_id: string; title: string }>();
@@ -319,9 +378,79 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       if (args.start_date !== undefined) body.start_date = args.start_date || null;
       if (args.due_date !== undefined) body.due_date = args.due_date || null;
       if (args.assignee !== undefined) body.assignee_id = await resolveAssignee(ctx, args.assignee);
-      await ctx.api.send("PATCH", `/api/tasks/${encodeURIComponent(text(args.task_id))}`, body);
+      const values = args.fields !== undefined ? fieldValuesById(detail.task_fields, args.fields) : null;
+      if (Object.keys(body).length) await ctx.api.send("PATCH", `/api/tasks/${encodeURIComponent(text(args.task_id))}`, body);
+      if (values) await ctx.api.send("PUT", `/api/tasks/${encodeURIComponent(text(args.task_id))}/fields`, values);
       await audit(ctx, "update_task", "task", text(args.task_id), `修改「${detail.project.name}」的任務「${task.title}」（${fields.join("、")}）`);
       return { ok: true, task_id: text(args.task_id), project: detail.project.name, changed: fields };
+    },
+  }),
+  tool({
+    name: "add_subtask",
+    title: "新增子任務",
+    description: "Add a subtask (子任務, a checklist item) under a task, for example one document in a submission checklist. Subtasks show on the task as done/total and do not count toward project progress. The assignee may be a user's name or email. Get task ids from get_project.",
+    write: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["task_id", "title"], properties: {
+      task_id: { type: "string", minLength: 1, maxLength: 100 },
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      assignee: { type: "string", maxLength: 200, description: "負責人的姓名或 Email" },
+      due_date: date,
+      done: { type: "boolean" },
+    } },
+    async run(args, ctx) {
+      checkDate(args.due_date, "到期日");
+      const task = await taskForTool(ctx, args.task_id);
+      const body: Record<string, unknown> = { title: text(args.title) };
+      if (args.assignee !== undefined) body.assignee_id = await resolveAssignee(ctx, args.assignee);
+      if (args.due_date !== undefined) body.due_date = args.due_date;
+      if (args.done !== undefined) body.done = args.done;
+      const { id } = await ctx.api.send<{ id: string }>("POST", `/api/tasks/${encodeURIComponent(task.id)}/subtasks`, body);
+      await audit(ctx, "add_subtask", "subtask", id, `在「${task.project}」的任務「${task.title}」新增子任務「${text(args.title)}」`);
+      return { ok: true, id, task: task.title, project: task.project };
+    },
+  }),
+  tool({
+    name: "update_subtask",
+    title: "修改子任務",
+    description: "Update a subtask: check it off (done) or reopen it, rename it, or change its assignee or due date. Pass an empty string for assignee or due_date to clear it. Get subtask ids from get_project (each task lists its subtasks).",
+    write: true,
+    idempotent: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["subtask_id"], properties: {
+      subtask_id: { type: "string", minLength: 1, maxLength: 100 },
+      done: { type: "boolean" },
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      assignee: { type: "string", maxLength: 200, description: "姓名或 Email；空字串代表取消指派" },
+      due_date: optionalDate,
+    } },
+    async run(args, ctx) {
+      const fields = ["done", "title", "assignee", "due_date"].filter((key) => args[key] !== undefined);
+      if (!fields.length) throw new ToolError("沒有要修改的欄位");
+      checkDate(args.due_date, "到期日");
+      const subtask = await subtaskForTool(ctx, args.subtask_id);
+      const body: Record<string, unknown> = {};
+      if (args.done !== undefined) body.done = args.done;
+      if (args.title !== undefined) body.title = text(args.title);
+      if (args.due_date !== undefined) body.due_date = args.due_date || null;
+      if (args.assignee !== undefined) body.assignee_id = await resolveAssignee(ctx, args.assignee);
+      await ctx.api.send("PATCH", `/api/subtasks/${encodeURIComponent(subtask.id)}`, body);
+      await audit(ctx, "update_subtask", "subtask", subtask.id, `修改「${subtask.project}」任務「${subtask.task}」的子任務「${subtask.title}」（${fields.join("、")}）`);
+      return { ok: true, subtask_id: subtask.id, task: subtask.task, changed: fields };
+    },
+  }),
+  tool({
+    name: "delete_subtask",
+    title: "刪除子任務",
+    description: "Permanently delete a subtask (checklist item) under a task. This cannot be undone. Before calling, show the user the exact subtask and its task and get their explicit confirmation. To mark one finished, use update_subtask with done=true instead.",
+    write: true,
+    destructive: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["subtask_id"], properties: {
+      subtask_id: { type: "string", minLength: 1, maxLength: 100 },
+    } },
+    async run(args, ctx) {
+      const subtask = await subtaskForTool(ctx, args.subtask_id);
+      await ctx.api.send("DELETE", `/api/subtasks/${encodeURIComponent(subtask.id)}`);
+      await audit(ctx, "delete_subtask", "subtask", subtask.id, `刪除「${subtask.project}」任務「${subtask.task}」的子任務「${subtask.title}」`);
+      return { ok: true, deleted: subtask.title, task: subtask.task };
     },
   }),
   tool({

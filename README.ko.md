@@ -6,22 +6,22 @@
 
 > 칼라처럼, 팀 모두가 크리스털 안에서 각 프로젝트의 맥박을 함께 느낄 수 있습니다.
 
-**운영 사이트**: <https://projects.uic-ai.com>｜**버전**: v11.2｜**테스트**: 1012/1012 ✅｜**플랫폼**: Cloudflare Workers
+**운영 사이트**: <https://projects.uic-ai.com>｜**버전**: v12.2｜**테스트**: 1012/1012 ✅｜**플랫폼**: Cloudflare Workers
 
 대만 의약품 대리점(UIC) 내부 팀을 위한 프로젝트 진행 현황 공유 플랫폼입니다. 기존에는 추적 업무가 6개의 Excel 파일로 분산되어 BD, RA, QA, 임상 팀이 서로 따로 관리하고 같은 프로젝트를 여러 사람이 중복 기록했습니다. 이제 프로젝트, 진행 현황, OKR, 규제 동향, 라이선스 만료일, 변경 관리를 하나의 크리스털에 모아 전 구성원이 실시간으로 상황을 공유하고, 단계별 권한과 AI 지원, 자동 알림을 활용합니다.
 
 ## ✨ 기능 개요
 
 - **프로젝트 관리**: 팀 구분(BD／임상／QA／RA-PV), 3단계 공개 범위(전사／같은 팀／비공개), 같은 팀 구성원 간 입력 지원, 인턴의 제한된 열람 범위, 자동／수동 진행률, 마일스톤, 단계 템플릿
-- **4가지 작업 보기**: 칸반(드래그 앤 드롭)｜목록｜달력｜간트(종속성 화살표＋today 선). 작업 서랍에는 `@멘션` 댓글, 첨부 파일, 종속성, AI 요약이 포함됩니다
+- **4가지 작업 보기**: 칸반(드래그 앤 드롭)｜목록｜달력｜간트(종속성 화살표＋today 선). 작업 서랍은 날짜보다 선행 작업을 먼저 보여 주고, 선행 작업의 가장 늦은 마감일 다음 날을 시작일로 제안하되 직접 수정한 시작일은 덮어쓰지 않습니다
 - **OKR**: 분기 목표＋Key Results(담당자／상태／정렬 순서). 달성률은 자동 진행률에 반영됩니다
 - **전용 모듈**: 임상 환자 등록(목표 vs 누적, 일별 등록)｜BD 허가 등록(건별 상태 머신, 이력, 비용)｜QA 라이선스 만료(만료 단계별 경고＋자동 알림)와 CCR 변경 관리(`CCR-YYYY-NNN` 상태 머신＋이력)
 - **규제 동향**: 2018년 이후 TFDA 규제 600+건을 담은 지식 베이스로, 공고일순 정렬과 제품군／분류／키워드 필터를 지원합니다. 매일 TFDA RSS를 자동 수집해 검토 대기 초안을 만들고 승인 후에만 전 구성원에게 공개합니다. 공고문을 붙여 넣거나 여러 파일을 함께 업로드하여 AI로 구조화해 가져올 수도 있습니다
-- **AI 지원**(Ollama Cloud, deepseek-v4-pro): 진행 기록 빠른 작성, 작업 요약, 프로젝트 위험 예측, 일정 제안, 주간／월간 보고서 자동 생성
+- **AI 지원**(Ollama Cloud: 주력 deepseek-v4.1-flash, 자문 glm-5.3): 진행 기록 빠른 작성, 작업 요약, 프로젝트 위험 예측, 일정 제안, 주간／월간 보고서 자동 생성
 - **자동화**: “만약…이면…” 규칙 엔진. 매일 TFDA RSS 수집＋알림, AI 주간 보고서(월요일), AI 월간 보고서(매월 1일)를 위한 3개의 cron이 실행됩니다
 - **보고서**: 팀별 주간／월간 보고서 원클릭 생성＋인쇄, CSV 내보내기, 팀별 스윔레인 타임라인
 - **계정**: 직접 가입＋Email 인증 코드＋관리자 승인. 관리 권한 이전(공동 관리자／완전 이전)과 마지막 관리자 보호 기능을 제공합니다
-- **인터페이스**: StarCraft Protoss 테마(금색＝구조, 파란색＝에너지, 모서리를 깎은 패널, 보호막 진행률 표시줄), 다크／라이트 전환, 번체 중국어／English 전환, 최초 로그인 안내, 글자 크기 전환
+- **인터페이스**: StarCraft Protoss 테마(금색＝구조, 파란색＝에너지, 모서리를 깎은 패널, 보호막 진행률 표시줄), 다크／라이트 전환, 번체 중국어／English 전환, 구체적인 인라인 도움말, 다시 볼 수 있는 두 가지 안내 투어, 상황별 사용 설명서, 글자 크기 전환
 
 ## 🔌 AI 커넥터（MCP）
 
@@ -36,16 +36,18 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-**21개 도구**를 제공합니다.
+**31개 도구**를 제공합니다.
 
 | 용도 | 도구 |
 |---|---|
 | 출처 URL을 포함한 프로젝트 검색 | `search`, `fetch` |
 | 프로젝트와 기한 조회 | `list_projects`, `get_project`, `list_my_work` |
-| 진행 상황과 계획 수정 | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
+| 진행 상황과 계획 수정 | `add_progress_update`, `create_task`, `update_task`, `add_subtask`, `update_subtask`, `delete_subtask`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
 | 개인 할 일 | `list_todos`, `create_todo`, `update_todo` |
-| 회의와 외부 교육 | `list_meetings`, `create_meeting` |
+| 칸반 열 | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
+| 회의와 외부 교육 | `list_meetings`, `create_meeting`, `update_meeting` |
 | 연락처와 게시된 규제 정보 | `search_contacts`, `list_regulations` |
+| 웹 검색(DeepSeek) | `web_search`, `web_fetch` |
 
 웹사이트와 같은 권한을 적용합니다. 쓰기에는 `mcp:write`가 필요하며 사용자와 커넥터를 감사 로그에 기록합니다. 비공개 프로젝트는 권한으로 제한하고 규제 초안은 반환하지 않습니다. 날짜와 회의 시간은 Asia/Taipei를 사용합니다. OAuth에는 `OAUTH_KV` binding, 배포 token에는 Account → Workers KV Storage → Edit가 필요합니다.
 
@@ -58,7 +60,7 @@ flowchart LR
   U[브라우저 SPA<br/>React + Protoss 테마] -->|HTTPS<br/>projects.uic-ai.com| W[Cloudflare Worker<br/>Hono API + 정적 자산]
   W --> D1[(D1 데이터베이스<br/>27개 테이블)]
   W --> R2[(R2 파일<br/>첨부/공고 원본)]
-  W -->|OpenAI 호환| LLM[Ollama Cloud<br/>deepseek-v4-pro]
+  W -->|OpenAI 호환| LLM[Ollama Cloud<br/>deepseek-v4.1-flash + glm-5.3]
   W -.->|key가 없을 때 fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>매일/매주/매월] --> W
   W -->|알림·보고서·초대| MAIL[AgentMail<br/>uic_ai@agentmail.to]
@@ -71,7 +73,7 @@ flowchart LR
 | 프런트엔드 | React 18 · Vite · TypeScript · Tailwind CSS · @dnd-kit(드래그 앤 드롭) · Recharts(차트) · 자체 제작 달력／간트 SVG |
 | 백엔드 | Cloudflare Workers · Hono · Workers Static Assets |
 | 데이터 | D1(SQLite, raw SQL migrations) · R2(파일) · unpdf(PDF 텍스트 레이어 추출) |
-| AI | OpenAI 호환 계층(Ollama Cloud `deepseek-v4-pro`)＋ Workers AI fallback |
+| AI | OpenAI 호환 계층(Ollama Cloud: 주력 `deepseek-v4.1-flash`, 자문 `glm-5.3`. `OLLAMA_API_KEY`가 없으면 `LLM_*`의 DeepSeek API 사용)＋ Workers AI fallback |
 | 메일 | AgentMail REST API |
 | 인증 | PBKDF2-SHA256(WebCrypto) · httpOnly session cookie · Email OTP |
 | 테스트 | Vitest 1012 tests(권한 매트릭스, 상태 머신, i18n key parity, theme 대비, 알고리즘, 가져오기 멱등성) |
@@ -81,7 +83,7 @@ flowchart LR
 ```
 worker/            # Hono API：routes、middleware、services（permissions/llm/mailer/crypto…）
 src/               # React SPA：pages、components、Protoss design tokens
-migrations/        # D1 migrations 0001–0007
+migrations/        # D1 migrations 0001–0011
 tests/             # Vitest（＋fixtures）
 scripts/           # 各版正式站 E2E 驗收腳本
 SPEC*.md           # 各版規格書（開發都由規格驅動）
@@ -116,9 +118,20 @@ npm test
 npm run build
 ```
 
-`.dev.vars`에는 `LLM_API_KEY`와 `AGENTMAIL_API_KEY`만 저장하며 Git에서 무시하도록 설정되어 있습니다. 값을 `wrangler.jsonc`, README, log, commit에 넣으면 안 됩니다.
+`.dev.vars`에는 `OLLAMA_API_KEY`, `LLM_API_KEY`, `AGENTMAIL_API_KEY`만 저장하며 Git에서 무시하도록 설정되어 있습니다. 값을 `wrangler.jsonc`, README, log, commit에 넣으면 안 됩니다.
 
 ## ☁️ 배포
+
+`main`에 병합하면 GitHub Actions가 배포합니다. 테스트 통과 → migrations 적용 → `wrangler deploy` 실행 후, 운영 사이트의 entry chunk를 가져와 빌드 결과와 비교합니다. 운영 사이트가 실제로 새 빌드를 제공해야만 배포 성공으로 간주합니다.
+
+repository secret 두 개가 필요합니다(Settings → Secrets and variables → Actions).
+
+| Secret | 내용 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Account → Workers Scripts → Edit, Account → D1 → Edit, Zone → Zone → Read, Zone → Workers Routes → Edit 권한이 필요합니다(마지막 두 개는 사용자 지정 도메인용). 배포 작업은 빌드 전에 네 가지를 모두 점검하고 누락된 권한을 한 번에 모두 보고하므로, 실패할 때마다 하나씩 발견하지 않아도 됩니다 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
+
+Actions 탭에서 워크플로를 수동으로 실행할 수도 있습니다. 로컬에서 배포하려면:
 
 ```powershell
 npx wrangler d1 migrations apply project-brain-db --remote
@@ -127,7 +140,7 @@ npx wrangler deploy
 
 Secrets는 반드시 `.dev.vars`에서 읽어 stdin으로 Wrangler에 전달해야 하며, 명령 인수나 출력에 포함하면 안 됩니다. 배포 후 `npx wrangler secret list`를 사용해 이름만 표시되는지 확인할 수 있습니다.
 
-**LLM 모델 변경**: `wrangler.jsonc`의 `vars.LLM_MODEL`을 변경합니다(엔드포인트도 바꾸려면 `vars.LLM_BASE_URL`도 변경) → `typecheck`＋`build`＋`deploy`. 시스템은 OpenAI 호환 엔드포인트를 우선 호출하며, `LLM_API_KEY`가 없으면 Workers AI로 fallback합니다.
+**LLM 모델 변경**: `OLLAMA_API_KEY` secret이 설정되어 있으면 Ollama Cloud를 사용합니다. `vars.OLLAMA_MODEL`이 주력 모델이고, `vars.OLLAMA_ADVISOR_MODEL`은 AI 도우미가 어려운 질문에서 의견을 구하는 자문 모델입니다. 설정되어 있지 않으면 `vars.LLM_MODEL`／`vars.LLM_BASE_URL`과 `LLM_API_KEY`를 사용하며(자문 모델 없음), 두 key가 모두 없으면 Workers AI로 fallback합니다. `wrangler.jsonc`의 vars를 변경 → `typecheck`＋`build`＋`deploy` 후 관리자로 `/api/ai/diagnostics`를 열어 확인합니다.
 
 **사용자 지정 도메인 다시 연결**: 현재 `projects.uic-ai.com`이 연결되어 있습니다. 향후 Worker를 재구축한 뒤 custom domain 연결에 실패하면 먼저 `routes`를 제거하고 workers.dev에 배포한 다음 Dashboard → Workers → project-brain → Settings → Domains & Routes에서 수동으로 추가합니다. 마지막으로 `APP_BASE_URL`을 원래대로 되돌리고 다시 배포합니다.
 
@@ -159,6 +172,7 @@ LLM이 실패해도 데이터만 포함된 보고서를 저장합니다. 미리 
 | `group` 보기 | 전체 | ✔ | ✔ | ✔ | 참여 중인 프로젝트만 |
 | `private` 보기 | 전체 | ✔ | ✘ | ✔ | 참여 중인 프로젝트만 |
 | 진행／작업／칸반／환자 등록／BD 이벤트 입력 | 전체 | ✔ | ✔ | ✔ | 참여 중인 프로젝트만 |
+| 진행 기록 수정／삭제 | 전체 | 모든 기록 | 본인 기록만 | 본인 기록만 | 참여 프로젝트의 본인 기록 |
 | 공개 범위／구성원／보관／삭제 변경 | 전체 | ✔ | ✘ | ✘ | ✘ |
 | BD 비용 보기 및 입력 | 전체 | ✔ | 같은 팀 정규 직원 | 다른 팀에서는 불가 | ✘ |
 | 규제 published 목록 | 전체 | ✔ | ✔ | ✔ | ✔ |
@@ -195,9 +209,13 @@ LLM이 실패해도 데이터만 포함된 보고서를 저장합니다. 미리 
 ### 프로젝트, 작업 및 자동 진행률
 
 1. “프로젝트 → 새 프로젝트”에서 팀, 공개 범위, 목표일, 단계 템플릿을 설정합니다.
-2. “개요”에서 수동／자동 진행률을 전환할 수 있습니다. 자동 모드＝작업＋마일스톤＋연결된 할 일＋KR의 완료 비율이며, 새 프로젝트는 자동이 기본값입니다.
-3. “작업”에서 4가지 보기를 자유롭게 전환합니다. 칸반에서는 단계와 카드를 드래그할 수 있습니다. 작업을 선택해 서랍을 열면 내용, 담당자, 시작／종료일, 종속성을 편집하고 `@멘션` 댓글, 첨부 파일, AI 요약을 사용할 수 있습니다.
+2. “개요”에서 수동／자동 진행률을 전환할 수 있습니다. 자동 모드＝작업＋마일스톤＋연결된 할 일＋KR의 완료 비율이며, 새 프로젝트는 자동이 기본값입니다. 이력 이벤트는 과거 날짜의 완료된 사실이므로 진행률, 지연 KPI, 알림에서 항상 제외됩니다.
+3. “작업”에서 4가지 보기를 자유롭게 전환합니다. 칸반에서는 단계와 카드를 드래그할 수 있습니다. 작업을 선택해 서랍을 열면 내용, 담당자, 시작／종료일, 종속성을 편집하고 `@멘션` 댓글, 첨부 파일, AI 요약을 사용할 수 있습니다. 마감일／이벤트일만 있는 마일스톤이나 이력 이벤트는 한 점으로 표시되며, 선택 사항인 종료일을 설정하면 달력에서는 날짜 범위로, 간트에서는 양 끝이 마름모인 막대로 표시됩니다. 완료된 작업 막대는 빗금으로, 지연된 미완료 작업과 마일스톤은 빨간 끝 표시로 나타납니다.
 4. “진행 기록”에 메모를 붙여 넣고 “AI 빠른 작성”으로 3단 구성의 초안을 만든 뒤 확인하여 게시합니다.
+5. 작성자, 프로젝트 owner 또는 관리자는 기록 오른쪽 위의 버튼으로 그 자리에서 수정하거나 삭제할 수 있습니다. 수정해도 원래의 진행률 스냅숏은 유지되고 수정 시각이 추가됩니다. 삭제는 되돌릴 수 없지만 감사 기록은 남으며, 자동 생성된 완료 기록을 삭제해도 작업이나 마일스톤의 완료 상태는 되돌아가지 않습니다.
+6. 기록을 저장하면 AI가 명시적으로 완료된 작업의 완료 처리, 후속 작업이나 향후 마일스톤 생성, 과거에 완료된 사실의 이력 이벤트 기록, 기존 미완료 작업의 날짜 설정을 제안할 수 있습니다. 제안이 스스로 데이터를 쓰는 일은 없습니다. 모든 체크 상자는 비어 있는 상태로 시작하며 “선택 항목 적용”을 눌러야만 기존 작업／마일스톤 엔드포인트로 전송됩니다. 제안된 제목과 날짜는 수정할 수 있고, 이력 이벤트는 대량 입력을 위한 전체 선택도 제공합니다. 날짜가 지난 사실은 마일스톤이 되지 않으며 진행률도 바꾸지 않습니다. 개인 설정에서 이 안내를 끌 수 있습니다(`AIUR_PROGRESS_LINKS`, 기본값은 켜짐).
+
+서버 시각은 UTC로 저장하고 인터페이스의 모든 시각은 `Asia/Taipei`로 표시합니다. 날짜만 있는 프로젝트／작업 날짜는 타이베이 달력 날짜 그대로 유지됩니다.
 
 ### 파일, 자동화 및 AI
 
@@ -217,7 +235,7 @@ LLM이 실패해도 데이터만 포함된 보고서를 저장합니다. 미리 
 
 매일 09:00의 사전 작업에서 TFDA 공고 RSS를 읽습니다. RA/PV 정규 직원과 admin은 규제 동향에서 “지금 TFDA 수집”을 선택할 수도 있습니다. 시스템은 기존 TFDA news id, 거절 툼스톤, `(공고일, 제목)`의 3단계 중복 제거를 거쳐 공고 전문(표의 행 포함)을 기존 단일 공고 AI 파이프라인으로 정리합니다. AI가 일시적으로 실패해도 “기타” 분류와 원문 앞 500자로 초안을 만들어 공고가 누락되지 않게 합니다.
 
-새 데이터는 항상 `TFDA 초안`으로 생성되며 검토자에게 앱 내 알림을 보내고 매일의 Email digest에도 포함합니다. 관리 권한이 있는 사용자는 “검토 대기 N”을 선택해 핵심 내용 전문을 펼치고, 편집(초안 상태 유지), 개별 승인／삭제, 선택한 여러 항목의 일괄 승인／삭제 또는 확인 후 전체 승인을 할 수 있습니다. 다른 member와 모든 intern에게는 승인 전까지 전혀 보이지 않습니다. 승인된 후에만 일반 published 목록에 들어갑니다. TFDA 초안이나 게시된 항목을 삭제할 때는 먼저 source ref 묘비를 남겨 이후 cron이 같은 공고를 다시 만들지 못하게 하며, 수동 항목은 영향을 받지 않습니다. 운영 및 인수 테스트 중에는 업무 담당자를 대신해 실제 TFDA 초안을 승인하거나 삭제하면 안 됩니다.
+새 데이터는 항상 `TFDA 초안`으로 생성되며 검토자에게 앱 내 알림을 보내고 매일의 Email digest에도 포함합니다. 관리 권한이 있는 사용자는 “검토 대기 N”을 선택해 핵심 내용 전문을 펼치고, 편집(초안 상태 유지), 개별 승인／삭제, 선택한 여러 항목의 일괄 승인／삭제 또는 확인 후 전체 승인을 할 수 있습니다. 다른 member와 모든 intern에게는 승인 전까지 전혀 보이지 않습니다. 승인된 후에만 일반 published 목록에 들어갑니다. TFDA 초안이나 게시된 항목을 삭제할 때는 먼저 source ref 툼스톤을 남겨 이후 cron이 같은 공고를 다시 만들지 못하게 하며, 수동 항목은 영향을 받지 않습니다. 운영 및 인수 테스트 중에는 업무 담당자를 대신해 실제 TFDA 초안을 승인하거나 삭제하면 안 됩니다.
 
 ### 보고서 및 타임라인
 
@@ -258,6 +276,12 @@ LLM이 실패해도 데이터만 포함된 보고서를 저장합니다. 미리 
 | v11 | TFDA RSS 매일 자동 수집＋AI 초안 fallback＋수동 검토 및 게시 | [SPEC](SPEC-V11.md) / [검수](ACCEPTANCE-V11.md) |
 | v11.1 | 여러 TFDA 초안을 선택해 일괄 승인／삭제＋고아 첨부 파일 정리 | [SPEC](SPEC-V11-1.md) / [검수](ACCEPTANCE-V11-1.md) |
 | v11.2 | TFDA 거절 툼스톤으로 삭제된 공고가 cron에 의해 되살아나는 것을 방지 | [SPEC](SPEC-V11-2.md) / [검수](ACCEPTANCE-V11-2.md) |
+| v12 | 진행 기록에서 AI 작업 연결 제안을 만들고, 사람이 직접 체크해야만 적용 | [SPEC](SPEC-V12.md) / [검수](ACCEPTANCE-V12.md) |
+| v12.1 | 작성자, 프로젝트 owner, admin이 진행 기록을 수정／삭제할 수 있으며 스냅숏은 불변, 감사 기록 유지 | [SPEC](SPEC-V12-1.md) / [검수](ACCEPTANCE-V12-1.md) |
+| v12.2 | 타이베이 시각 표시와 빠른 중복 제출 문제 수정, 진행 기록에서 마일스톤과 기존 작업 날짜도 제안 | [SPEC](SPEC-V12-2.md) / [검수](ACCEPTANCE-V12-2.md) |
+| v12.4 | 과거에 완료된 사실을 이력 이벤트로 달력과 간트에 표시하되 진행률과 알림에서는 제외 | [SPEC](SPEC-V12-4.md) / [검수](ACCEPTANCE-V12-4.md) |
+| v12.5 | 작업 서랍을 종속성 우선으로 바꾸고, 선행 작업에서 시작일을 이어 받되 직접 수정한 값은 유지 | [SPEC](SPEC-V12-5.md) / [검수](ACCEPTANCE-V12-5.md) |
+| v13.2 | 마일스톤과 이력 이벤트에 선택적 날짜 범위 지원, 간트에 큰 라벨·완료 빗금·지연 끝 표시 추가 | [SPEC](SPEC-V13-2.md) / [검수](ACCEPTANCE-V13-2.md) |
 
 ## 🧭 개발 방식
 

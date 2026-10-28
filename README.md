@@ -36,13 +36,13 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-The interface provides **28 tools**:
+The interface provides **31 tools**:
 
 | Workflow | Tools |
 |---|---|
 | Research with source URLs | `search`, `fetch` |
 | Projects and deadlines | `list_projects`, `get_project`, `list_my_work` |
-| Progress and project planning | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
+| Progress and project planning | `add_progress_update`, `create_task`, `update_task`, `add_subtask`, `update_subtask`, `delete_subtask`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
 | Personal reminders | `list_todos`, `create_todo`, `update_todo` |
 | Kanban columns | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | Meetings and training | `list_meetings`, `create_meeting`, `update_meeting` |

@@ -36,13 +36,13 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-**28 個のツール**を提供します。
+**31 個のツール**を提供します。
 
 | 用途 | ツール |
 |---|---|
 | 出典付きプロジェクト検索 | `search`, `fetch` |
 | プロジェクトと期限 | `list_projects`, `get_project`, `list_my_work` |
-| 進捗と計画の更新 | `add_progress_update`, `create_task`, `update_task`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
+| 進捗と計画の更新 | `add_progress_update`, `create_task`, `update_task`, `add_subtask`, `update_subtask`, `delete_subtask`, `add_milestone`, `update_milestone`, `update_project_background`, `update_project_settings`, `delete_task`, `delete_milestone` |
 | 個人 To-do | `list_todos`, `create_todo`, `update_todo` |
 | カンバンの列 | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | 会議と外部研修 | `list_meetings`, `create_meeting`, `update_meeting` |

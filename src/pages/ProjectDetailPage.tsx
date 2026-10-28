@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api, formatDate, jsonBody, patchBody, today } from "../api";
 import { useAuth } from "../auth";
 import { CHART } from "../chartTheme";
-import { Empty, ErrorBox, Loading, Markdown, MarkdownInline, PageHeader, ProgressBar, RiskBadge, StatusStamp } from "../components/UI";
+import { Empty, ErrorBox, HealthBadge, HealthPicker, Loading, Markdown, MarkdownInline, PageHeader, ProgressBar, RiskBadge, StatusStamp } from "../components/UI";
+import type { Health } from "../project-health";
 import type { BdCase, BdEvent, ChildProject, Metadata, ProgressUpdate, Project, ProjectDetail } from "../types";
 import { relatedProjects } from "../project-grouping";
 import { groupProjectsForSwitch, nextProjectId, type SwitchableProject } from "../project-switcher";
@@ -28,8 +29,9 @@ import { PROJECT_TEXT_LIMITS } from "../project-text";
 import { taipeiDateTimeInput, taipeiInputToIso } from "../utils/server-date";
 
 const EnrollmentChart = lazy(() => import("../components/EnrollmentChart"));
+const ProjectDashboard = lazy(() => import("../components/ProjectDashboard"));
 
-const baseTabs: Array<[string, TransKey]> = [["overview", "project.tab.overview"], ["tasks", "project.tab.tasks"], ["updates", "project.tab.updates"]];
+const baseTabs: Array<[string, TransKey]> = [["overview", "project.tab.overview"], ["dashboard", "project.tab.dashboard"], ["tasks", "project.tab.tasks"], ["updates", "project.tab.updates"]];
 function projectTabs(groupType: string): Array<[string, TransKey]> {
   const extra: Array<[string, TransKey]> = groupType === "clinical" ? [["clinical", "project.tab.clinical"]]
     : groupType === "bd" ? [["bd", "project.tab.bd"]]
@@ -85,10 +87,11 @@ export function ProjectDetailPage() {
   if (error) return <ErrorBox message={error} />; if (!data) return <Loading />;
   const tabs = projectTabs(data.project.group_type);
   const remove = async () => { if (window.confirm(t("project.deleteConfirm"))) { await api(`/projects/${id}`, { method: "DELETE" }); navigate("/projects"); } };
-  return <>{data.parent && <nav className="mb-1 text-sm" aria-label={t("subprojects.parentNav")}><Link className="font-semibold text-psi hover:text-star" to={`/projects/${data.parent.id}`}>↰ {data.parent.name}</Link><span className="ml-2 text-xs text-star-dim">{t("subprojects.childOf")}</span></nav>}<PageHeader title={`${data.project.visibility === "private" ? "🔒 " : ""}${data.project.name}`} description={`${data.project.group_name} · ${t("common.owner", { name: data.project.owner_name })}`} actions={<div className="flex flex-wrap items-center gap-2"><ProjectSwitcher projects={siblings} current={data.project} /><StatusStamp status={data.project.status} />{data.permissions.can_manage && <button className="btn-danger !py-1.5" onClick={() => void remove()}>{t("common.delete")}</button>}</div>} />
+  return <>{data.parent && <nav className="mb-1 text-sm" aria-label={t("subprojects.parentNav")}><Link className="font-semibold text-psi hover:text-star" to={`/projects/${data.parent.id}`}>↰ {data.parent.name}</Link><span className="ml-2 text-xs text-star-dim">{t("subprojects.childOf")}</span></nav>}<PageHeader title={`${data.project.visibility === "private" ? "🔒 " : ""}${data.project.name}`} description={`${data.project.group_name} · ${t("common.owner", { name: data.project.owner_name })}`} actions={<div className="flex flex-wrap items-center gap-2"><ProjectSwitcher projects={siblings} current={data.project} /><HealthBadge health={data.project.health} at={data.project.health_at} /><StatusStamp status={data.project.status} />{data.permissions.can_manage && <button className="btn-danger !py-1.5" onClick={() => void remove()}>{t("common.delete")}</button>}</div>} />
     <RelatedStrip current={data.project} siblings={siblings} />
     <div data-tour="project-tabs" className="project-tabs mb-5 flex items-end gap-1 px-1">{tabs.map(([key, label]) => <button key={key} className={`folder-tab ${tab === key ? "is-active" : ""}`} aria-current={tab === key ? "page" : undefined} onClick={() => setTab(key)}>{t(label)}</button>)}</div>
     {tab === "overview" && <Overview data={data} metadata={meta} siblings={siblings} reload={load} />}
+    {tab === "dashboard" && <Suspense fallback={<Loading />}><ProjectDashboard data={data} onOpenTask={(taskId) => navigate(`/projects/${id}?task=${encodeURIComponent(taskId)}`)} /></Suspense>}
     {tab === "tasks" && <TaskWorkspace data={data} metadata={meta} reload={load} />}
     {tab === "updates" && <Updates data={data} reload={load} />}
     {tab === "clinical" && <Clinical data={data} reload={load} />}
@@ -203,11 +206,13 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
   const [content, setContent] = useState(""); const [raw, setRaw] = useState(""); const [busy, setBusy] = useState(false); const [links, setLinks] = useState<ProgressLinksResponse | null>(null); const [toast, setToast] = useState("");
   const [mode, setMode] = useState<"entries" | "free">("entries");
   const [composeKey, setComposeKey] = useState(0); const [composeError, setComposeError] = useState("");
+  // 這次要標的狀態燈號；不選就不標示，專案沿用上一次的燈號。
+  const [health, setHealth] = useState<Health | null>(null);
   const draft = async () => { if (!raw.trim()) return; setBusy(true); try { const result = await api<{ draft: string }>("/ai/draft-update", { method: "POST", body: JSON.stringify({ raw_text: raw, project_id: data.project.id, lang }) }); setContent(result.draft); } finally { setBusy(false); } };
   const save = async () => {
     const publishedContent = content;
-    const result = await api<{ id: string }>(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content: publishedContent, progress_snapshot: data.project.progress }) });
-    setContent(""); setRaw(""); reload();
+    const result = await api<{ id: string }>(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content: publishedContent, progress_snapshot: data.project.progress, ...(health ? { health } : {}) }) });
+    setContent(""); setRaw(""); setHealth(null); reload();
     if (!readProgressLinksPreference()) return;
     try {
       const suggestions = await api<ProgressLinksResponse>("/ai/progress-links", { method: "POST", body: JSON.stringify({ project_id: data.project.id, content: publishedContent, progress_update_id: result.id, lang }) });
@@ -221,7 +226,8 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
     if (warnProgress && !window.confirm(t("compose.confirm", { count: entries.length }))) return;
     setBusy(true); setComposeError("");
     try {
-      await api(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content: composed, progress_snapshot: data.project.progress }) });
+      await api(`/projects/${data.project.id}/progress-updates`, { method: "POST", body: JSON.stringify({ content: composed, progress_snapshot: data.project.progress, ...(health ? { health } : {}) }) });
+      setHealth(null);
       const results = await Promise.allSettled(planEntryActions(entries, data.tasks, today()).map(async (action) => {
         const project = data.project.id;
         if (action.type === "complete") return api(`/tasks/${action.taskId}`, patchBody({ done: true }));
@@ -252,6 +258,7 @@ function Updates({ data, reload }: { data: ProjectDetail; reload(): void }) {
   };
   if (!data.progress_updates) return <Loading />;
   return <>{toast && <div className="fixed bottom-5 right-5 z-[60] rounded-card border border-ok bg-nexus p-4 text-sm text-ok shadow-2xl" role="status">{toast}</div>}<div data-tour="progress-updates" className="grid gap-6 lg:grid-cols-5"><section className="panel lg:col-span-2"><h2 className="mb-4 font-bold">{t("project.newUpdate")}</h2>{data.permissions.can_edit ? <>
+      <div className="mb-4"><p className="label">{t("health.pick")}</p><HealthPicker value={health} onChange={setHealth} disabled={busy} /><p className="mt-1 text-xs text-star-dim">{t("health.pickHint")}</p></div>
       <div className="mb-4 flex gap-1 border-b border-nexus-line">{([["entries", "compose.modeEntries"], ["free", "compose.modeFree"]] as const).map(([key, labelKey]) => <button key={key} type="button" className={`border-b-2 px-3 py-2 text-sm font-medium ${mode === key ? "border-psi text-psi" : "border-transparent text-star-dim"}`} onClick={() => setMode(key)}>{t(labelKey)}</button>)}</div>
       {composeError && <ErrorBox message={composeError} />}
       {mode === "entries"
@@ -265,6 +272,7 @@ function ProgressUpdateCard({ item, reload }: { item: ProgressUpdate; reload(): 
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.content);
+  const [health, setHealth] = useState<Health | null>(item.health ?? null);
   // 紀錄上標示的時間可以調整（例如補記上週的會議）；有改才送。
   const initialTime = taipeiDateTimeInput(item.created_at);
   const [time, setTime] = useState(initialTime);
@@ -274,7 +282,7 @@ function ProgressUpdateCard({ item, reload }: { item: ProgressUpdate; reload(): 
     if (!draft.trim() || !time) return;
     setBusy(true); setError("");
     try {
-      await api(`/progress-updates/${item.id}`, patchBody({ content: draft, ...(time !== initialTime ? { created_at: taipeiInputToIso(time) } : {}) }));
+      await api(`/progress-updates/${item.id}`, patchBody({ content: draft, ...(time !== initialTime ? { created_at: taipeiInputToIso(time) } : {}), ...(health !== (item.health ?? null) ? { health } : {}) }));
       setEditing(false);
       reload();
     } catch (cause) {
@@ -295,8 +303,8 @@ function ProgressUpdateCard({ item, reload }: { item: ProgressUpdate; reload(): 
       setBusy(false);
     }
   };
-  const cancel = () => { setDraft(item.content); setTime(initialTime); setEditing(false); setError(""); };
-  return <article className="panel"><div className="mb-3 flex items-start justify-between gap-3 text-xs text-star-dim"><span>{item.author_name}{item.is_support ? t("project.supportBy", { name: item.author_name }) : ""}</span><div className="flex items-center gap-1"><span>{formatDate(item.created_at, true, lang)}</span>{item.can_edit && <><button type="button" className="progress-update-edit" data-progress-update-edit aria-label={t("project.editUpdate")} title={t("project.editUpdate")} disabled={busy} onClick={() => { setDraft(item.content); setTime(initialTime); setEditing(true); }}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.6-10.6-3.2-3.2L5 15.8 4 20Zm9.8-13 3.2 3.2M14.8 6l1.7-1.7a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L18 9.2" /></svg></button><button type="button" className="regwatch-row-delete" data-progress-update-delete aria-label={t("project.deleteUpdate")} title={t("project.deleteUpdate")} disabled={busy} onClick={() => void remove()}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg></button></>}</div></div>{error && <ErrorBox message={error} />}{editing ? <div><label className="label" htmlFor={`update-time-${item.id}`}>{t("project.updateTime")}</label><input id={`update-time-${item.id}`} aria-label={t("project.updateTime")} className="mb-3 w-full sm:w-64" type="datetime-local" value={time} max={taipeiDateTimeInput(new Date())} onChange={(event) => setTime(event.target.value)} required /><textarea aria-label={t("project.editUpdate")} className="min-h-32 w-full" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="mt-3 flex gap-2"><button className="btn" type="button" disabled={busy || !draft.trim() || !time} onClick={() => void save()}>{t("common.save")}</button><button className="btn-secondary" type="button" disabled={busy} onClick={cancel}>{t("common.cancel")}</button></div></div> : <Markdown content={item.content} />}{item.edited_at && <p className="mt-3 text-xs text-star-dim">{t("project.editedAt", { date: formatProgressEditedAt(item.edited_at, lang) })}</p>}{isAutoGeneratedProgressUpdate(item.content) && <p className="mt-3 text-xs text-star-dim">{t("project.autoDeleteHint")}</p>}{item.progress_snapshot !== null && <div className="mt-4"><ProgressBar value={item.progress_snapshot} /></div>}</article>;
+  const cancel = () => { setDraft(item.content); setTime(initialTime); setHealth(item.health ?? null); setEditing(false); setError(""); };
+  return <article className="panel"><div className="mb-3 flex items-start justify-between gap-3 text-xs text-star-dim"><span className="flex flex-wrap items-center gap-3"><span>{item.author_name}{item.is_support ? t("project.supportBy", { name: item.author_name }) : ""}</span><HealthBadge health={item.health} at={item.created_at} fresh /></span><div className="flex items-center gap-1"><span>{formatDate(item.created_at, true, lang)}</span>{item.can_edit && <><button type="button" className="progress-update-edit" data-progress-update-edit aria-label={t("project.editUpdate")} title={t("project.editUpdate")} disabled={busy} onClick={() => { setDraft(item.content); setTime(initialTime); setEditing(true); }}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.6-10.6-3.2-3.2L5 15.8 4 20Zm9.8-13 3.2 3.2M14.8 6l1.7-1.7a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L18 9.2" /></svg></button><button type="button" className="regwatch-row-delete" data-progress-update-delete aria-label={t("project.deleteUpdate")} title={t("project.deleteUpdate")} disabled={busy} onClick={() => void remove()}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg></button></>}</div></div>{error && <ErrorBox message={error} />}{editing ? <div><label className="label" htmlFor={`update-time-${item.id}`}>{t("project.updateTime")}</label><input id={`update-time-${item.id}`} aria-label={t("project.updateTime")} className="mb-3 w-full sm:w-64" type="datetime-local" value={time} max={taipeiDateTimeInput(new Date())} onChange={(event) => setTime(event.target.value)} required /><p className="label">{t("health.pick")}</p><div className="mb-3"><HealthPicker value={health} onChange={setHealth} disabled={busy} /></div><textarea aria-label={t("project.editUpdate")} className="min-h-32 w-full" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="mt-3 flex gap-2"><button className="btn" type="button" disabled={busy || !draft.trim() || !time} onClick={() => void save()}>{t("common.save")}</button><button className="btn-secondary" type="button" disabled={busy} onClick={cancel}>{t("common.cancel")}</button></div></div> : <Markdown content={item.content} />}{item.edited_at && <p className="mt-3 text-xs text-star-dim">{t("project.editedAt", { date: formatProgressEditedAt(item.edited_at, lang) })}</p>}{isAutoGeneratedProgressUpdate(item.content) && <p className="mt-3 text-xs text-star-dim">{t("project.autoDeleteHint")}</p>}{item.progress_snapshot !== null && <div className="mt-4"><ProgressBar value={item.progress_snapshot} /></div>}</article>;
 }
 
 function Clinical({ data, reload }: { data: ProjectDetail; reload(): void }) {

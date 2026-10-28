@@ -4,6 +4,8 @@ export interface User {
 
 export interface Project {
   id: string; name: string; description: string; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; owner_id: string; owner_name: string; visibility: "all" | "group" | "private"; status: "active" | "paused" | "done" | "archived"; progress: number; progress_mode: "manual" | "auto"; goal_summary: string; product: string; site: string; start_date: string | null; target_date: string | null; auto_archive: number; archived_at: string | null; last_activity_at: string; risk_level: "low" | "medium" | "high" | null; risk_summary: string | null; risk_suggestions: string | null; risk_updated_at: string | null;
+  /** 狀態燈號：最近一則有標示的進度紀錄。 */
+  health?: "on_track" | "at_risk" | "off_track" | null; health_at?: string | null;
   /** 清單類端點才有；專案內頁另有 members。 */
   member_ids?: string[];
   /** 母專案；null 是一般（或母）專案。子專案只有一層。 */
@@ -17,9 +19,11 @@ export interface Metadata {
 }
 
 export interface Stage { id: string; project_id: string; name: string; color: string; position: number }
-export interface Task { id: string; project_id: string; stage_id: string; title: string; description: string; assignee_id: string | null; assignee_name?: string; start_date: string | null; due_date: string | null; position: number; done: number; done_at: string | null; created_at: string; dependency_ids: string[]; comment_count: number; attachment_count: number }
+export interface Task { id: string; project_id: string; stage_id: string; title: string; description: string; assignee_id: string | null; assignee_name?: string; start_date: string | null; due_date: string | null; position: number; done: number; done_at: string | null; created_at: string; dependency_ids: string[]; comment_count: number; attachment_count: number; subtask_total?: number; subtask_done?: number; fields?: Record<string, string> }
+export interface TaskField { id: string; name: string; type: "text" | "number" | "date" | "select"; options: string[]; position: number }
+export interface Subtask { id: string; task_id: string; title: string; done: number; done_at: string | null; assignee_id: string | null; assignee_name?: string | null; due_date: string | null; position: number; created_at: string }
 export interface Milestone { id: string; title: string; due_date: string | null; end_date: string | null; done: number; done_at?: string | null; position: number; kind: "milestone" | "event" }
-export interface ProgressUpdate { id: string; author_id: string; content: string; progress_snapshot: number | null; author_name: string; is_support: number; created_at: string; edited_at: string | null; edited_by: string | null; can_edit: boolean }
+export interface ProgressUpdate { id: string; author_id: string; content: string; progress_snapshot: number | null; author_name: string; is_support: number; created_at: string; edited_at: string | null; edited_by: string | null; can_edit: boolean; health?: "on_track" | "at_risk" | "off_track" | null }
 export interface Enrollment { id: string; record_date: string; site: string | null; count: number; note: string; created_by_name: string }
 export interface BdCase { id: string; case_name: string; product_name: string; case_type: string; submission_no: string | null; current_status: string; submitted_at: string | null; expected_approval: string | null; note: string }
 export interface BdEvent { id: string; case_id: string; event_date: string; event_type: string; description: string; created_by_name: string }
@@ -43,6 +47,8 @@ export interface ProjectDetail {
   children?: ChildProject[];
   members: Array<{ id: string; name: string; email: string; role: string; group_name: string }>;
   stages: Stage[]; tasks: Task[]; milestones: Milestone[];
+  /** 任務自訂欄位（這個專案自己定義的）。 */
+  task_fields?: TaskField[];
   // 以下集合只在對應分頁開啟時才載入；undefined 代表「尚未載入」，與「載入後為空」不同。
   progress_updates?: ProgressUpdate[];
   clinical_settings?: { project_id: string; target_n: number } | null; enrollments?: Enrollment[];

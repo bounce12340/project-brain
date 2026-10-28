@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { useAuth } from "../auth";
 import { CHART } from "../chartTheme";
-import { Empty, ErrorBox, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
+import { Empty, ErrorBox, HealthBadge, Loading, PageHeader, ProgressBar, RiskBadge } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
 import { dashboardGroups, filterMine, isMine, filterProjectsByGroup, filterUpdatesByGroup, mineToggleUseful, readDashboardGroup, readDashboardMine, resolveDashboardGroup, writeDashboardGroup, writeDashboardMine } from "../dashboard-filter";
 import { archivableSelection, canArchive, ongoingOnly, deleteConfirmed } from "../project-archive";
@@ -117,7 +117,7 @@ export function DashboardPage() {
             {canArchive(project, user) && <label className="touch-target shrink-0 cursor-pointer"><input type="checkbox" className="h-4 w-4" checked={selected.has(project.id)} onChange={() => toggle(project.id)} aria-label={t("dashboard.selectProject", { name: project.name })} /></label>}
             {/* 整列是展開快覽的按鈕；進專案內頁的連結在快覽裡，兩者不能巢狀。 */}
             <button type="button" className="block min-w-0 flex-1 text-left" aria-expanded={expanded} aria-controls={`glance-${project.id}`} aria-label={t("glance.toggle", { name: project.name })} onClick={() => toggleOpen(project.id)}>
-              <div className="mb-2 flex justify-between gap-3"><span className="font-serif font-semibold"><span aria-hidden="true" className={`mr-1.5 inline-block font-sans text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex shrink-0 items-center gap-3 text-xs text-star-dim">{project.group_name}<RiskBadge level={project.risk_level} /></span></div>
+              <div className="mb-2 flex justify-between gap-3"><span className="font-serif font-semibold"><span aria-hidden="true" className={`mr-1.5 inline-block font-sans text-star-dim transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>{project.visibility === "private" && "🔒 "}{project.name}</span><span className="flex shrink-0 items-center gap-3 text-xs text-star-dim">{project.group_name}<HealthBadge health={project.health} at={project.health_at} /><RiskBadge level={project.risk_level} /></span></div>
               <ProgressBar value={project.progress} />
             </button>
           </div>

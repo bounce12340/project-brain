@@ -9,6 +9,7 @@ import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 import { stageColorFor } from "../services/stage-colors";
 import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
+import { projectFields } from "../services/task-fields";
 import { taipeiDate } from "../services/time";
 
 /** 專案背景與目標是給人讀的長文字：可以清空，但不能無限長。上限與前端編輯器共用。 */
@@ -54,6 +55,9 @@ interface ProjectRow {
   risk_summary: string | null;
   risk_suggestions: string | null;
   risk_updated_at: string | null;
+  /** 狀態燈號：最近一則有標示的進度紀錄（project-health.ts）。 */
+  health: "on_track" | "at_risk" | "off_track" | null;
+  health_at: string | null;
   owner_name: string;
   group_name: string;
   group_type: GroupType;
@@ -228,10 +232,18 @@ projectsRoutes.get("/:id", async (c) => {
     c.env.DB.prepare(`SELECT t.*,u.name AS assignee_name,
       (SELECT GROUP_CONCAT(td.depends_on_task_id) FROM task_dependencies td WHERE td.task_id=t.id) AS dependency_ids_csv,
       (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id=t.id) AS comment_count,
-      (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count
+      (SELECT COUNT(*) FROM files f WHERE f.task_id=t.id) AS attachment_count,
+      (SELECT COUNT(*) FROM subtasks s WHERE s.task_id=t.id) AS subtask_total,
+      (SELECT COUNT(*) FROM subtasks s WHERE s.task_id=t.id AND s.done=1) AS subtask_done
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.project_id=? ORDER BY t.stage_id,t.position`).bind(projectId).all<Record<string, unknown>>(),
     c.env.DB.prepare("SELECT * FROM milestones WHERE project_id = ? ORDER BY kind,due_date,position").bind(projectId).all(),
   ]);
+  const [taskFields, fieldValues] = await Promise.all([
+    projectFields(c.env.DB, projectId),
+    c.env.DB.prepare("SELECT v.task_id,v.field_id,v.value FROM task_field_values v JOIN tasks t ON t.id=v.task_id WHERE t.project_id=?").bind(projectId).all<{ task_id: string; field_id: string; value: string }>(),
+  ]);
+  const valuesByTask = new Map<string, Record<string, string>>();
+  for (const value of fieldValues.results) valuesByTask.set(value.task_id, { ...(valuesByTask.get(value.task_id) ?? {}), [value.field_id]: value.value });
   const updates = sections.has("updates")
     ? await c.env.DB.prepare("SELECT pu.*, u.name AS author_name, CASE WHEN pu.author_id != ? THEN 1 ELSE 0 END AS is_support FROM progress_updates pu JOIN users u ON u.id = pu.author_id WHERE pu.project_id = ? ORDER BY pu.created_at DESC").bind(row.owner_id, projectId).all<ProgressUpdateRow>()
     : null;
@@ -254,11 +266,12 @@ projectsRoutes.get("/:id", async (c) => {
     row.parent_id ? Promise.resolve([]) : childSummaries(c.env.DB, user, projectId),
   ]);
   const { member_ids_csv: _memberIds, ...project } = row;
-  const taskRows = tasks.results.map((task) => ({ ...task, dependency_ids: typeof task.dependency_ids_csv === "string" ? task.dependency_ids_csv.split(",").filter(Boolean) : [] }));
+  const taskRows = tasks.results.map((task) => ({ ...task, dependency_ids: typeof task.dependency_ids_csv === "string" ? task.dependency_ids_csv.split(",").filter(Boolean) : [], fields: valuesByTask.get(String(task.id)) ?? {} }));
   return c.json({
     project,
     permissions: { can_edit: canEditProgress(user, access), can_manage: canManageProject(user, access), can_view_fees: canViewFees(user, access) },
     members: members.results, stages: stages.results, tasks: taskRows, milestones: milestones.results,
+    task_fields: taskFields.map(({ id, name, type, options, position }) => ({ id, name, type, options, position })),
     parent: parent && canViewProject(user, accessFrom(parent)) ? { id: parent.id, name: parent.name } : null,
     children,
     ...(updates ? { progress_updates: updates.results.map((update) => ({ ...update, can_edit: canEditProgressUpdate(user, access, update.author_id) })) } : {}),

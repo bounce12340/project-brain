@@ -8,6 +8,7 @@ import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules, type AutomationEvent } from "../services/automation";
 import { milestoneDateRangeError } from "../services/milestone-dates";
 import { progressAuditExcerpt } from "../services/progress-updates";
+import { parseHealth, refreshProjectHealth, HEALTH_LABEL } from "../services/project-health";
 import { wouldCreateDependencyCycle, type DependencyEdge } from "../services/dependencies";
 
 export const resourcesRoutes = new Hono<AppContext>();
@@ -220,9 +221,12 @@ resourcesRoutes.post("/projects/:id/progress-updates", async (c) => {
   const content = requiredString(body, "content");
   if (!content) return c.json({ error: "請輸入進度內容" }, 422);
   const snapshot = "progress_snapshot" in body ? boundedNumber(body, "progress_snapshot", 0, 100) : null;
+  const health = parseHealth(body.health);
+  if (health && typeof health === "object") return c.json(health, 422);
   const id = createId("upd");
-  await c.env.DB.prepare("INSERT INTO progress_updates (id,project_id,author_id,content,progress_snapshot) VALUES (?,?,?,?,?)").bind(id, projectId, user.id, content, snapshot).run();
+  await c.env.DB.prepare("INSERT INTO progress_updates (id,project_id,author_id,content,progress_snapshot,health) VALUES (?,?,?,?,?,?)").bind(id, projectId, user.id, content, snapshot, health ?? null).run();
   if (snapshot !== null) await c.env.DB.prepare("UPDATE projects SET progress=? WHERE id=?").bind(snapshot, projectId).run();
+  if (health) await refreshProjectHealth(c.env.DB, projectId);
   await touchProject(c.env.DB, projectId);
   if (user.id !== access.owner_id) await writeAudit(c.env.DB, user, "support_update", "project", projectId, `${user.name} 支援填寫進度`);
   return c.json({ id }, 201);
@@ -245,12 +249,16 @@ export function parseRecordedAt(value: unknown): { error: string } | { value: st
 resourcesRoutes.patch("/progress-updates/:id", async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
-  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot,created_at FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null; created_at: string }>();
+  const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot,created_at,health FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null; created_at: string; health: string | null }>();
   if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, update.project_id);
   if (!access || !canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  if (!("content" in body) && !("created_at" in body)) return c.json({ error: "請輸入進度內容" }, 422);
+  if (!("content" in body) && !("created_at" in body) && !("health" in body)) return c.json({ error: "請輸入進度內容" }, 422);
+  const health = parseHealth(body.health);
+  if (health && typeof health === "object") return c.json(health, 422);
+  const nextHealth = health === undefined ? update.health : health;
+  const healthChanged = nextHealth !== update.health;
   const content = "content" in body ? requiredString(body, "content") : update.content;
   if (!content) return c.json({ error: "請輸入進度內容" }, 422);
   let createdAt = update.created_at;
@@ -261,17 +269,17 @@ resourcesRoutes.patch("/progress-updates/:id", async (c) => {
     if (recorded.value !== createdAt.slice(0, 19).replace("T", " ")) { createdAt = recorded.value; movedTo = recorded.date; }
   }
   const contentChanged = content !== update.content;
-  if (!contentChanged && !movedTo) return c.json({ ok: true, created_at: update.created_at });
+  if (!contentChanged && !movedTo && !healthChanged) return c.json({ ok: true, created_at: update.created_at });
   const editedAt = new Date().toISOString();
-  const summary = [contentChanged && "編輯進度紀錄", movedTo && `時間改為 ${taipeiDateTime(movedTo)}`].filter(Boolean).join("，");
+  const healthLabel = nextHealth ? HEALTH_LABEL[nextHealth as keyof typeof HEALTH_LABEL] : "不標示";
+  const summary = [contentChanged && "編輯進度紀錄", movedTo && `時間改為 ${taipeiDateTime(movedTo)}`, healthChanged && `狀態燈號改為${healthLabel}`].filter(Boolean).join("，");
   await c.env.DB.batch([
-    movedTo
-      ? c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=?,created_at=? WHERE id=?").bind(content, editedAt, user.id, createdAt, id)
-      : c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=? WHERE id=?").bind(content, editedAt, user.id, id),
+    c.env.DB.prepare("UPDATE progress_updates SET content=?,edited_at=?,edited_by=?,created_at=?,health=? WHERE id=?").bind(content, editedAt, user.id, createdAt, nextHealth, id),
     c.env.DB.prepare("UPDATE projects SET last_activity_at=?,updated_at=? WHERE id=?").bind(editedAt, editedAt, update.project_id),
     c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
       .bind(createId("audit"), user.id, "progress_edited", "progress_update", id, `${summary}：「${progressAuditExcerpt(content)}」`),
   ]);
+  if (healthChanged || (movedTo && nextHealth)) await refreshProjectHealth(c.env.DB, update.project_id);
   return c.json({ ok: true, edited_at: editedAt, created_at: createdAt });
 });
 
@@ -287,6 +295,7 @@ resourcesRoutes.delete("/progress-updates/:id", async (c) => {
       .bind(createId("audit"), user.id, "progress_deleted", "progress_update", id, `刪除進度紀錄：「${progressAuditExcerpt(update.content)}」`),
     c.env.DB.prepare("DELETE FROM progress_updates WHERE id=?").bind(id),
   ]);
+  await refreshProjectHealth(c.env.DB, update.project_id);
   return c.json({ ok: true });
 });
 
