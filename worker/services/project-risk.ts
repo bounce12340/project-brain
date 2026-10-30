@@ -21,6 +21,7 @@ export const RISK_PROMPT = [
   "Count a slip only when work is behind the current dates, or when updates suggest a delay that has not been re-planned yet.",
   "low: everything else. When the evidence is thin, choose low.",
   "Waiting on a regulator, partner or supplier (for example a TFDA review) is normal when no deadline is near; quiet periods while waiting are not stagnation.",
+  "Once the application, renewal or deficiency reply has been submitted to the authority and the project is only awaiting its decision, rate low unless a task or milestone is overdue: an approaching target date or licence expiry during the review is not a risk by itself.",
   "When progress_meaningful is false the project has no tasks or milestones, so its progress percentage means nothing: never treat 0% as being behind.",
   "owner_status_light is the owner's own judgement (on_track, at_risk, off_track); respect it unless the facts clearly contradict it.",
   "project.background holds the project's context and hard requirements and project.goal its objective: when recent updates show work drifting from them (for example a choice that breaks a stated specification), name it as a risk.",
