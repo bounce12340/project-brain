@@ -65,6 +65,18 @@ describe("讀取", () => {
     expect((await run("list_projects", { keyword: "效期" })).count).toBe(2); // 名稱或背景裡有「效期」
   });
 
+  it("AI 風險：list_projects 列出等級與分析日期、可依等級篩選；get_project 帶出摘要與建議；沒分析過就不列", async () => {
+    await db.prepare("UPDATE projects SET risk_level='high',risk_summary='CRM 已過目標日',risk_suggestions=?,risk_updated_at='2026-10-30 06:10:00' WHERE id='p_qa'").bind(JSON.stringify(["更新目標日期"])).run();
+    await db.prepare("UPDATE projects SET risk_level='low',risk_summary='順利',risk_suggestions='not json',risk_updated_at='2026-10-29 01:00:00' WHERE id='p_food'").run();
+    const listed = await run("list_projects", {});
+    expect(listed.projects.find((project: { id: string }) => project.id === "p_qa")).toMatchObject({ risk: "高", risk_analyzed: "2026-10-30" });
+    expect(listed.projects.find((project: { id: string }) => project.id === "p_mate")).not.toHaveProperty("risk");
+    expect((await run("list_projects", { risk: "high" })).projects.map((project: { id: string }) => project.id)).toEqual(["p_qa"]);
+    expect((await run("get_project", { project: "p_qa" })).ai_risk).toEqual({ level: "高", summary: "CRM 已過目標日", suggestions: ["更新目標日期"], analyzed_at: "2026-10-30" });
+    expect((await run("get_project", { project: "p_food" })).ai_risk.suggestions).toEqual([]);
+    expect(await run("get_project", { project: "p_mate" })).not.toHaveProperty("ai_risk");
+  });
+
   it("get_project：用名稱找（全形半形不影響），帶出背景、看板、里程碑、歷程與進度紀錄", async () => {
     const project = await run("get_project", { project: "qa:gdp/gmp" });
     expect(project).toMatchObject({ id: "p_qa", name: "QA：GDP/GMP", background: "# 硬性規格\n- 效期 24 個月", objective: "年度查核", permissions: { can_edit: true, can_edit_background_and_objective: true } });

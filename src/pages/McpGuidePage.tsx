@@ -117,8 +117,8 @@ export const MCP_GUIDE = {
     toolText: {
       search: "搜尋看得到的專案（含結案與歸檔），回傳可引用的網址",
       fetch: "用 search 的 id 取得專案內容與引用網址",
-      list_projects: "列出專案，可依關鍵字、狀態、只看自己的篩選",
-      get_project: "單一專案的背景、目標、看板、里程碑、歷程與最近進度",
+      list_projects: "列出專案與 AI 風險等級，可依關鍵字、狀態、風險等級、只看自己的篩選",
+      get_project: "單一專案的背景、目標、AI 風險分析、看板、里程碑、歷程與最近進度",
       list_my_work: "指派給自己的任務、里程碑與個人待辦，分逾期與接下來",
       list_todos: "查自己的個人待辦",
       list_meetings: "查會議與外訓紀錄及摘要",
@@ -270,8 +270,8 @@ export const MCP_GUIDE = {
     toolText: {
       search: "Search visible projects, including closed and archived ones, with citable URLs",
       fetch: "Get a project's content and citation URL by a search result id",
-      list_projects: "List projects, filtered by keyword, status or only your own",
-      get_project: "One project's background, goals, board, milestones, history and recent updates",
+      list_projects: "List projects with their AI risk level, filtered by keyword, status, risk level or only your own",
+      get_project: "One project's background, goals, AI risk analysis, board, milestones, history and recent updates",
       list_my_work: "Tasks assigned to you, milestones and personal to-dos, split into overdue and upcoming",
       list_todos: "List your personal to-dos",
       list_meetings: "List meeting and training records with summaries",

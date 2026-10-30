@@ -31,6 +31,7 @@ interface ProjectListRow extends ProjectSummary {
   owner_id: string; owner_name: string; progress: number; start_date: string | null; target_date: string | null;
   last_activity_at: string; goal_summary: string; member_ids: string[]; parent_id?: string | null;
   health?: Health | null; health_at?: string | null;
+  risk_level?: RiskLevel | null; risk_summary?: string | null; risk_suggestions?: string | null; risk_updated_at?: string | null;
 }
 interface Stage { id: string; name: string; position: number }
 interface TaskRow { id: string; stage_id: string; title: string; description: string; done: number; start_date: string | null; due_date: string | null; assignee_name: string | null; fields?: Record<string, string> }
@@ -46,6 +47,14 @@ interface ProjectDetail {
   children?: Array<{ id: string; name: string; status: string; progress: number; owner_name: string; target_date: string | null; task_total: number; task_done: number; task_overdue: number }>;
 }
 interface MetadataUser { id: string; name: string; email: string }
+
+type RiskLevel = "low" | "medium" | "high";
+const RISK_LABEL: Record<RiskLevel, string> = { low: "低", medium: "中", high: "高" };
+/** AI 風險分析的結果；還沒分析過就不列。分析時間是 UTC，只取日期。 */
+const riskOf = (project: ProjectListRow) => project.risk_level ? { risk: RISK_LABEL[project.risk_level], risk_analyzed: project.risk_updated_at?.slice(0, 10) ?? null } : {};
+function riskSuggestions(raw: string | null | undefined): string[] {
+  try { const parsed: unknown = JSON.parse(raw ?? "[]"); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; } catch { return []; }
+}
 
 const STATUS_LABEL: Record<string, string> = { active: "進行中", paused: "暫停", done: "已完成", archived: "已歸檔" };
 const STATUS_FILTER: Record<string, string> = { ongoing: "active,paused", done: "done", archived: "archived", all: "" };
@@ -199,11 +208,12 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "list_projects",
     title: "列出專案",
-    description: "List the projects the user can see in 艾爾水晶, with status, progress, owner, dates and objective. Filter by keyword (matches project name and background), status, or only the user's own projects (owner or member). Use this to find a project's exact name or id before calling other tools.",
+    description: "List the projects the user can see in 艾爾水晶, with status, progress, owner, dates, objective, the owner's status light (health) and the AI risk level (risk 高/中/低, with the date it was analyzed). Filter by keyword (matches project name and background), status, AI risk level, or only the user's own projects (owner or member). Use this to find a project's exact name or id before calling other tools; get_project gives the risk summary and suggestions.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       keyword: { type: "string", maxLength: 100, description: "專案名稱或背景裡的關鍵字" },
       status: { type: "string", enum: ["ongoing", "done", "archived", "all"], description: "ongoing＝進行中與暫停（預設）；done＝已完成；archived＝已歸檔；all＝全部" },
       mine: { type: "boolean", description: "只列自己負責或參與的專案" },
+      risk: { type: "string", enum: ["high", "medium", "low"], description: "只列 AI 風險為此等級的專案：high＝高、medium＝中、low＝低" },
     } },
     async run(args, ctx) {
       const query = new URLSearchParams();
@@ -212,7 +222,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       if (text(args.keyword)) query.set("keyword", text(args.keyword));
       const { projects } = await ctx.api.get<{ projects: ProjectListRow[] }>(`/api/projects?${query}`);
       const mine = (project: ProjectListRow) => project.owner_id === ctx.user.id || project.member_ids.includes(ctx.user.id);
-      const rows = projects.filter((project) => !args.mine || mine(project));
+      const rows = projects.filter((project) => (!args.mine || mine(project)) && (!args.risk || project.risk_level === args.risk));
       const names = new Map(projects.map((project) => [project.id, project.name]));
       return {
         count: rows.length,
@@ -221,6 +231,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
           progress: project.progress, owner: project.owner_name, mine: mine(project), product: project.product || undefined,
           start_date: project.start_date, target_date: project.target_date, last_activity: project.last_activity_at,
           ...(project.health ? { health: HEALTH_LABEL[project.health], health_since: project.health_at?.slice(0, 10) } : {}),
+          ...riskOf(project),
           objective: project.goal_summary ? truncate(project.goal_summary, 200) : undefined,
         })),
         ...(rows.length > 200 ? { note: "只列出前 200 個，請用 keyword 或 status 縮小範圍" } : {}),
@@ -230,7 +241,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "get_project",
     title: "查看專案",
-    description: "Get one project in full: its background (context and hard requirements — read this before proposing work), objective, kanban stages with their tasks, milestones, history events, recent progress updates, members, and whether the user may edit it. A large project can have sub-projects (one level): a parent lists them under sub_projects with their progress, and a sub-project names its parent; call get_project on a sub-project for its own board. Accepts a project id or name.",
+    description: "Get one project in full: its background (context and hard requirements — read this before proposing work), objective, the owner's status light, the latest AI risk analysis (level, summary, suggestions, date), kanban stages with their tasks, milestones, history events, recent progress updates, members, and whether the user may edit it. A large project can have sub-projects (one level): a parent lists them under sub_projects with their progress, and a sub-project names its parent; call get_project on a sub-project for its own board. Accepts a project id or name.",
     inputSchema: { type: "object", additionalProperties: false, required: ["project"], properties: {
       project: projectRef,
       updates_limit: { type: "integer", minimum: 0, maximum: 50, description: "最近幾則進度紀錄，預設 10" },
@@ -246,6 +257,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
         ...(detail.parent ? { parent: detail.parent.name } : {}),
         status: STATUS_LABEL[project.status] ?? project.status,
         ...(project.health ? { health: HEALTH_LABEL[project.health], health_since: project.health_at?.slice(0, 10) } : {}),
+        ...(project.risk_level ? { ai_risk: { level: RISK_LABEL[project.risk_level], summary: project.risk_summary ?? "", suggestions: riskSuggestions(project.risk_suggestions), analyzed_at: project.risk_updated_at?.slice(0, 10) ?? null } } : {}),
         progress: project.progress, progress_mode: project.progress_mode === "auto" ? (detail.children?.length ? "自動（依任務與里程碑，含子專案）" : "自動（依任務與里程碑）") : "手動",
         start_date: project.start_date, target_date: project.target_date, product: project.product || undefined, site: project.site || undefined,
         background: project.description || null, objective: project.goal_summary || null,
