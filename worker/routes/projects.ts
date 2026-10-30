@@ -290,7 +290,7 @@ projectsRoutes.patch("/:id", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const progress = boundedNumber(body, "progress", 0, 100);
   const manager = canManageProject(user, access);
-  const hasSettings = ["name", "description", "goal_summary", "product", "site", "visibility", "status", "start_date", "target_date", "auto_archive", "progress_mode"].some((key) => key in body);
+  const hasSettings = ["name", "description", "goal_summary", "product", "site", "visibility", "status", "start_date", "target_date", "auto_archive", "progress_mode", "group_id"].some((key) => key in body);
   if (hasSettings && !manager) return c.json({ error: "只有 owner 或管理員可修改專案設定" }, 403);
   const current = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(id).first<ProjectRow>();
   if (!current) return c.json({ error: "找不到專案" }, 404);
@@ -304,6 +304,15 @@ projectsRoutes.patch("/:id", async (c) => {
   const visibility = optionalString(body, "visibility") ?? current.visibility;
   const status = optionalString(body, "status") ?? current.status;
   if (!visibilityValues.has(visibility) || !statusValues.has(status)) return c.json({ error: "狀態或可見性不正確" }, 422);
+  // 組別：母專案改了，子專案一起跟著改；子專案本身不能單獨改，組別一律沿用母專案。
+  const wantedGroup = optionalString(body, "group_id");
+  let nextGroup: { id: string; name: string } | null = null;
+  if (wantedGroup && wantedGroup !== current.group_id) {
+    const detaching = "parent_id" in body && !optionalString(body, "parent_id");
+    if (current.parent_id && !detaching) return c.json({ error: "子專案的組別跟著母專案，請改母專案的組別" }, 422);
+    nextGroup = await c.env.DB.prepare("SELECT id,name FROM groups WHERE id=?").bind(wantedGroup).first<{ id: string; name: string }>();
+    if (!nextGroup) return c.json({ error: "找不到組別" }, 422);
+  }
   await c.env.DB.prepare(`UPDATE projects SET name=?, description=?, goal_summary=?, product=?, site=?, visibility=?, status=?, progress=?, start_date=?, target_date=?, auto_archive=?,progress_mode=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?`)
     .bind(optionalString(body, "name") ?? current.name, description ?? current.description, goal ?? current.goal_summary, optionalString(body, "product") ?? current.product, optionalString(body, "site") ?? current.site, visibility, status, progress ?? current.progress, "start_date" in body ? optionalString(body, "start_date") : current.start_date, "target_date" in body ? optionalString(body, "target_date") : current.target_date, "auto_archive" in body ? booleanInt(body, "auto_archive", current.auto_archive) : current.auto_archive, progressMode, id).run();
   if (progress !== null && progress !== current.progress) {
@@ -311,17 +320,25 @@ projectsRoutes.patch("/:id", async (c) => {
       .bind(createId("upd"), id, user.id, `專案進度更新為 ${progress}%`, progress).run();
     await runAutomationRules(c.env.DB, user.id, id, [{ type: "progress_reached", previousProgress: current.progress, progress }]);
   }
+  if (nextGroup) {
+    await c.env.DB.prepare("UPDATE projects SET group_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? OR parent_id=?").bind(nextGroup.id, id, id).run();
+    const previous = await c.env.DB.prepare("SELECT name FROM groups WHERE id=?").bind(current.group_id).first<string>("name");
+    await writeAudit(c.env.DB, user, "update", "project", id, `組別由「${previous ?? current.group_id}」改為「${nextGroup.name}」`);
+  }
   if ("parent_id" in body) {
     const nextParent = optionalString(body, "parent_id");
     if (nextParent !== current.parent_id) {
       if (!manager) return c.json({ error: "只有 owner 或管理員可以移動專案" }, 403);
       let parentName = "";
+      let parentGroup = nextGroup?.id ?? current.group_id;
       if (nextParent) {
         const check = await checkParent(c.env.DB, user, nextParent, id);
         if ("error" in check) return c.json({ error: check.error }, check.status);
         parentName = check.parent.name;
+        parentGroup = check.parent.group_id;
       }
-      await c.env.DB.prepare("UPDATE projects SET parent_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(nextParent, id).run();
+      // 掛到母專案底下就沿用母專案的組別，和新增子專案時一樣。
+      await c.env.DB.prepare("UPDATE projects SET parent_id=?,group_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(nextParent, parentGroup, id).run();
       for (const affected of [current.parent_id, nextParent]) if (affected) await recomputeAutoProgress(c.env.DB, affected, user.id);
       await writeAudit(c.env.DB, user, "update", "project", id, nextParent ? `移到「${parentName}」底下當子專案` : "移出母專案，變回一般專案");
     }

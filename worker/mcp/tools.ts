@@ -26,7 +26,7 @@ export interface ToolContext {
   env?: Env;
 }
 
-interface ProjectSummary { id: string; name: string; group_name: string; status: string; product: string }
+interface ProjectSummary { id: string; name: string; group_id?: string; group_name: string; status: string; product: string }
 interface ProjectListRow extends ProjectSummary {
   owner_id: string; owner_name: string; progress: number; start_date: string | null; target_date: string | null;
   last_activity_at: string; goal_summary: string; member_ids: string[]; parent_id?: string | null;
@@ -129,6 +129,16 @@ async function resolveAssignee(ctx: ToolContext, wanted: unknown): Promise<strin
   if (byName.length === 1) return byName[0].id;
   if (byName.length > 1) throw new ToolError(`有 ${byName.length} 位同名的「${value}」，請改用 Email 指定負責人。`);
   throw new ToolError(`找不到使用者「${value}」。請用系統上的姓名或 Email。`);
+}
+
+/** 組別可用 id 或名稱指定，「RA/PV」和「RA/PV組」都算同一組。 */
+async function resolveGroup(ctx: ToolContext, wanted: unknown): Promise<{ id: string; name: string }> {
+  const value = text(wanted);
+  const { groups } = await ctx.api.get<{ groups: Array<{ id: string; name: string }> }>("/api/metadata");
+  const key = (name: string) => normalizeProjectName(name).replace(/組$/, "");
+  const found = groups.find((group) => group.id === value) ?? groups.find((group) => key(group.name) === key(value));
+  if (!found) throw new ToolError(`找不到組別「${value}」。現有組別：${groups.map((group) => group.name).join("、")}`);
+  return found;
 }
 
 /** 網站裡的 AI 小幫手也用這些工具；稽核紀錄寫成「經 AI 小幫手」，和外部 AI 工具分開。 */
@@ -680,7 +690,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
   tool({
     name: "update_project_settings",
     title: "修改專案設定",
-    description: "Change a project's start date, target date (目標日期) or status: active (進行中), paused (暫停) or done (已完成). Pass an empty string for a date to clear it. Only the project owner or an admin may do this, as on the website. Archiving is not offered here; do that on the website. Confirm with the user before pausing or completing a project.",
+    description: "Change a project's start date, target date (目標日期), status — active (進行中), paused (暫停) or done (已完成) — or team (組別). Pass an empty string for a date to clear it. Changing the team moves its sub-projects too; a sub-project always follows its parent's team. Only the project owner or an admin may do this, as on the website. Archiving is not offered here; do that on the website. Confirm with the user before pausing or completing a project.",
     write: true,
     idempotent: true,
     inputSchema: { type: "object", additionalProperties: false, required: ["project"], properties: {
@@ -688,9 +698,10 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       start_date: optionalDate,
       target_date: optionalDate,
       status: { type: "string", enum: ["active", "paused", "done"], description: "active＝進行中；paused＝暫停；done＝已完成" },
+      group: { type: "string", minLength: 1, maxLength: 100, description: "組別名稱或 id，例如「RA/PV組」；子專案會一起改" },
     } },
     async run(args, ctx) {
-      const fields = ["start_date", "target_date", "status"].filter((key) => args[key] !== undefined);
+      const fields = ["start_date", "target_date", "status", "group"].filter((key) => args[key] !== undefined);
       if (!fields.length) throw new ToolError("沒有要修改的欄位");
       checkDate(args.start_date, "開始日"); checkDate(args.target_date, "目標日期");
       const project = await resolveProject(ctx, args.project);
@@ -702,11 +713,16 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       if (args.start_date !== undefined) body.start_date = start;
       if (args.target_date !== undefined) body.target_date = target;
       if (args.status !== undefined) body.status = args.status;
+      const group = args.group !== undefined ? await resolveGroup(ctx, args.group) : null;
+      if (group) {
+        if (current.parent_id && group.id !== current.group_id) throw new ToolError(`「${project.name}」是子專案，組別跟著母專案；請改母專案的組別。`);
+        body.group_id = group.id;
+      }
       await ctx.api.send("PATCH", `/api/projects/${project.id}`, body);
-      const label = { start_date: "開始日", target_date: "目標日期", status: "狀態" } as Record<string, string>;
-      const shown = (key: string) => key === "status" ? STATUS_LABEL[String(args.status)] : (body[key] as string | null) ?? "（清除）";
+      const label = { start_date: "開始日", target_date: "目標日期", status: "狀態", group: "組別" } as Record<string, string>;
+      const shown = (key: string) => key === "status" ? STATUS_LABEL[String(args.status)] : key === "group" ? group!.name : (body[key] as string | null) ?? "（清除）";
       await audit(ctx, "update_project_settings", "project", project.id, `修改「${project.name}」的${fields.map((key) => `${label[key]}為 ${shown(key)}`).join("、")}`);
-      return { ok: true, project: project.name, changed: Object.fromEntries(fields.map((key) => [key, key === "status" ? STATUS_LABEL[String(args.status)] : body[key]])) };
+      return { ok: true, project: project.name, changed: Object.fromEntries(fields.map((key) => [key, key === "status" || key === "group" ? shown(key) : body[key]])) };
     },
   }),
 ];

@@ -128,6 +128,39 @@ describe("移動", () => {
   });
 });
 
+describe("組別", () => {
+  const groupOf = async (id: string) => (await env.DB.prepare("SELECT group_id FROM projects WHERE id=?").bind(id).first<string>("group_id"));
+
+  it("母專案改組別，子專案一起改，稽核寫明從哪組改到哪組；子專案不能自己改", async () => {
+    const child = (await createProject("elvis", { name: "預算管理：業務", parent_id: parentId })).id!;
+    expect((await send("elvis", "PATCH", `/projects/${parentId}`, { group_id: "grp_general" })).status).toBe(200);
+    expect([await groupOf(parentId), await groupOf(child)]).toEqual(["grp_general", "grp_general"]);
+    expect(await env.DB.prepare("SELECT summary FROM audit_log WHERE entity_id=? AND summary LIKE '組別%'").bind(parentId).first()).toEqual({ summary: "組別由「QA組」改為「RA/PV組」" });
+    const refused = await send("elvis", "PATCH", `/projects/${child}`, { group_id: "grp_bd" });
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toEqual({ error: "子專案的組別跟著母專案，請改母專案的組別" });
+    // 設定表單每次都會送出目前的組別，沒變就不算修改。
+    expect((await send("elvis", "PATCH", `/projects/${child}`, { group_id: "grp_general" })).status).toBe(200);
+  });
+
+  it("只有負責人或管理員能改；不存在的組別擋下，其他欄位也不會先被寫進去", async () => {
+    expect((await send("mate", "PATCH", `/projects/${parentId}`, { group_id: "grp_general" })).status).toBe(403);
+    const bad = await send("elvis", "PATCH", `/projects/${parentId}`, { group_id: "grp_nope", product: "不該寫入" });
+    expect(bad.status).toBe(422);
+    expect(await env.DB.prepare("SELECT group_id, product FROM projects WHERE id=?").bind(parentId).first()).toEqual({ group_id: "grp_qa", product: "2027 預算" });
+    expect((await send("boss", "PATCH", `/projects/${parentId}`, { group_id: "grp_bd" })).status).toBe(200);
+    expect(await groupOf(parentId)).toBe("grp_bd");
+  });
+
+  it("移到母專案底下就沿用母專案的組別；移出時可以順便換組", async () => {
+    const other = (await createProject("elvis", { name: "CRM 系統", group_id: "grp_bd" })).id!;
+    await send("elvis", "PATCH", `/projects/${other}`, { parent_id: parentId, group_id: "grp_general" });
+    expect(await groupOf(other)).toBe("grp_qa");
+    await send("elvis", "PATCH", `/projects/${other}`, { parent_id: null, group_id: "grp_general" });
+    expect(await env.DB.prepare("SELECT parent_id, group_id FROM projects WHERE id=?").bind(other).first()).toEqual({ parent_id: null, group_id: "grp_general" });
+  });
+});
+
 describe("刪除", () => {
   it("刪掉子專案，母專案進度重算；刪掉母專案，子專案變回一般專案", async () => {
     const sales = (await createProject("elvis", { name: "預算管理：業務", parent_id: parentId })).id!;
