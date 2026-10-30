@@ -64,6 +64,8 @@ describe("analyzeProjectRisk", () => {
     expect(sent!.system).toContain(RISK_PROMPT);
     expect(RISK_PROMPT).toMatch(/When the evidence is thin, choose low/);
     expect(RISK_PROMPT).toMatch(/TFDA review/);
+    // 已確認的延後以新的日期判斷，不因「延後」本身判有風險。
+    expect(RISK_PROMPT).toMatch(/confirmed and re-planned .* is not a risk by itself: rate only the risk of meeting the new dates/);
     expect(sent!.input).toMatchObject({ progress_meaningful: false, tasks: { total: 0, done: 0, overdue: 0 }, next_milestone: null, owner_status_light: { level: "on_track", stale: false } });
     expect(typeof sent!.input.days_to_target).toBe("number");
   });
