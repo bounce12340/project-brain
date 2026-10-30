@@ -112,6 +112,27 @@ describe("狀態燈號", () => {
     expect(list.projects.find((project) => project.id === "p1")).toMatchObject({ health: "at_risk", health_at: expect.any(String) });
   });
 
+  it("燈號變了就把 AI 風險標成待重新分析；沒標燈號的進度紀錄不影響", async () => {
+    const api = as(owner);
+    const analyzed = () => row<{ risk_updated_at: string | null }>("SELECT risk_updated_at FROM projects WHERE id='p1'");
+    const markAnalyzed = () => db.prepare("UPDATE projects SET risk_level='high',risk_updated_at='2026-10-30 06:00:00' WHERE id='p1'").run();
+    await markAnalyzed();
+    await api.send("POST", "/api/projects/p1/progress-updates", { content: "一般進度" });
+    expect((await analyzed())?.risk_updated_at).toBe("2026-10-30 06:00:00");
+    const update = await api.send<{ id: string }>("POST", "/api/projects/p1/progress-updates", { content: "已送件", health: "on_track" });
+    expect((await analyzed())?.risk_updated_at).toBeNull();
+    // 等級保留到重新分析為止。
+    expect(await row("SELECT risk_level FROM projects WHERE id='p1'")).toEqual({ risk_level: "high" });
+    await markAnalyzed();
+    await api.send("PATCH", `/api/progress-updates/${update.id}`, { content: "已送件，等候審查" });
+    expect((await analyzed())?.risk_updated_at).toBe("2026-10-30 06:00:00");
+    await api.send("PATCH", `/api/progress-updates/${update.id}`, { health: "at_risk" });
+    expect((await analyzed())?.risk_updated_at).toBeNull();
+    await markAnalyzed();
+    await api.send("DELETE", `/api/progress-updates/${update.id}`);
+    expect((await analyzed())?.risk_updated_at).toBeNull();
+  });
+
   it("MCP：add_progress_update 可帶 health；list_projects／get_project 顯示燈號", async () => {
     await run("add_progress_update", { project: "p1", content: "送件延到 5 月底", health: "at_risk" });
     expect((await run("list_projects", {})).projects.find((project: { id: string }) => project.id === "p1")).toMatchObject({ health: "有風險" });
