@@ -212,6 +212,17 @@ describe("寫入", () => {
     expect(await row("SELECT target_date, status FROM projects WHERE id='p_qa'")).toEqual({ target_date: null, status: "active" });
   });
 
+  it("update_project_settings：改組別可用名稱（「RA/PV」或「RA/PV組」）或 id，記稽核；找不到的組別列出現有組別", async () => {
+    expect(await fails("update_project_settings", { project: "p_qa", group: "RA/PV組" }, mate)).toBe("只有 owner 或管理員可修改專案設定");
+    const result = await run("update_project_settings", { project: "p_qa", group: "RA/PV" });
+    expect(result).toEqual({ ok: true, project: "QA：GDP/GMP", changed: { group: "RA/PV組" } });
+    expect(await row("SELECT group_id FROM projects WHERE id='p_qa'")).toEqual({ group_id: "grp_general" });
+    expect(await row("SELECT summary FROM audit_log WHERE action='mcp_update_project_settings'")).toEqual({ summary: "經 AI 連接器（Claude）修改「QA：GDP/GMP」的組別為 RA/PV組" });
+    await run("update_project_settings", { project: "p_qa", group: "grp_bd" });
+    expect(await row("SELECT group_id FROM projects WHERE id='p_qa'")).toEqual({ group_id: "grp_bd" });
+    expect(await fails("update_project_settings", { project: "p_qa", group: "行銷組" })).toMatch(/^找不到組別「行銷組」。現有組別：.*RA\/PV組/);
+  });
+
   it("update_project_background：擁有者可以改背景與目標；同組成員不行", async () => {
     await run("update_project_background", { project: "p_food", background: "# 背景\n取代味噌湯米粉", objective: "三款上市" });
     expect(await row("SELECT description, goal_summary FROM projects WHERE id='p_food'")).toEqual({ description: "# 背景\n取代味噌湯米粉", goal_summary: "三款上市" });
