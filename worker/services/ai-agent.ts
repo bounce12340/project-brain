@@ -8,7 +8,7 @@ import { taipeiDate } from "./time";
 import { webSearchEndpoint } from "./web-search";
 
 /**
- * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 31 個工具（網路搜尋要有 DeepSeek 金鑰）。
+ * AI 小幫手的「操作」：讓網站裡的 AI 用和 AI 連接器同一套 32 個工具（網路搜尋要有 DeepSeek 金鑰）。
  * - 查資料的工具（list_projects、get_project…）當場執行，結果交回 AI 繼續回答。
  * - 會改資料的工具不執行，整理成「確認卡」交給畫面；使用者按「確認」才由 executeAssistantAction 執行。
  * 工具一律以這位使用者的身分走網站自己的 /api，看得到、改得了的範圍和他在畫面上操作時一樣。

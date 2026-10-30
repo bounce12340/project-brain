@@ -136,7 +136,7 @@ describe("SPEC-V11 TFDA RSS parser", () => {
     const cron = readFileSync(new URL("../worker/services/cron.ts", import.meta.url), "utf8");
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
     expect(page).toContain('t("regwatch.pending", { count: data.pending_count })');
-    expect(page).toContain('t("regwatch.tfdaDraft")');
+    expect(page).toContain('item.source === "tfda_rss" ? "regwatch.tfdaDraft" : "regwatch.manualDraft"');
     expect(page).toContain('void approve(item)');
     expect(page).toContain('void approveAll()');
     expect(page).toContain('void fetchTfda()');

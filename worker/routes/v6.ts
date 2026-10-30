@@ -349,16 +349,18 @@ v6Routes.post("/regwatch", async (c) => {
   const line = requiredString(body, "product_line");
   const title = requiredString(body, "title");
   if (!date || !isIsoDate(date) || !entryTypes.has(type) || !line || !productLines.has(line) || !title) return c.json({ error: "法規動態資料不完整" }, 422);
+  // status=draft：先進「待審核」，核准後才對全員發布（AI 連接器新增的一律走這條）。
+  const status = body.status === "draft" ? "draft" : "published";
   const id = createId("reg");
   try {
-    await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
-      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id).run();
+    await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id, status).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
   }
-  await writeAudit(c.env.DB, user, "create", "reg_entry", id, `新增法規動態「${title}」`);
-  return c.json({ id }, 201);
+  await writeAudit(c.env.DB, user, "create", "reg_entry", id, `${status === "draft" ? "新增法規動態草稿" : "新增法規動態"}「${title}」`);
+  return c.json({ id, status }, 201);
 });
 
 v6Routes.patch("/regwatch/:id", async (c) => {

@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-**31 個のツール**を提供します。
+**32 個のツール**を提供します。
 
 | 用途 | ツール |
 |---|---|
@@ -46,7 +46,7 @@ codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registr
 | 個人 To-do | `list_todos`, `create_todo`, `update_todo` |
 | カンバンの列 | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | 会議と外部研修 | `list_meetings`, `create_meeting`, `update_meeting` |
-| 連絡先と公開済み規制情報 | `search_contacts`, `list_regulations` |
+| 連絡先と公開済み規制情報 | `search_contacts`, `list_regulations`, `create_regulation` |
 | Web 検索（DeepSeek） | `web_search`, `web_fetch` |
 
 Web サイトと同じ権限を適用します。書き込みには `mcp:write` が必要で、ユーザーとコネクターを監査ログに記録します。非公開プロジェクトは権限で制限し、規制情報の下書きは返しません。日時は Asia/Taipei です。OAuth には `OAUTH_KV` binding、デプロイ token には Account → Workers KV Storage → Edit が必要です。
