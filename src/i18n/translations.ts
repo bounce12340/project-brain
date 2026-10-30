@@ -94,6 +94,7 @@ export const zh = {
   "pdash.noneCompleted": "最近 {weeks} 週還沒有完成的任務。",
   "fields.button": "自訂欄位（{count}）", "fields.manage": "任務自訂欄位", "fields.manageHint": "為這個專案的任務加欄位，例如「文件類型」「主管機關」「審查輪次」。單選欄位可以在清單篩選，也會顯示在看板卡片上。刪除欄位會一併刪除每個任務填的值。", "fields.name": "欄位名稱", "fields.namePlaceholder": "例如：文件類型", "fields.type": "欄位類型", "fields.type.text": "文字", "fields.type.number": "數字", "fields.type.date": "日期", "fields.type.select": "單選", "fields.options": "選項", "fields.optionsPlaceholder": "選項用逗號或頓號分開，例如：CMC、臨床、行政", "fields.noOptions": "不需要選項", "fields.add": "新增欄位", "fields.renameNamed": "欄位「{name}」的名稱", "fields.optionsNamed": "欄位「{name}」的選項", "fields.deleteNamed": "刪除欄位「{name}」", "fields.deleteConfirm": "刪除欄位「{name}」？每個任務在這個欄位填的值也會一起刪除。", "fields.removeOptionsConfirm": "拿掉選項「{options}」？選了這些選項的任務會變成未填。", "fields.title": "自訂欄位", "fields.empty": "（未填）", "fields.filterNamed": "依「{name}」篩選", "fields.filterAll": "全部{name}",
   "dashboard.groupEmpty": "{name}（0）", "dashboard.noProjectsInGroup": "「{name}」目前沒有進行中的專案。新增專案時選這個組別，就會出現在這裡。",
+  "regwatch.manualDraft": "待審草稿",
 } as const;
 
 export type TransKey = keyof typeof zh;

@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-**31개 도구**를 제공합니다.
+**32개 도구**를 제공합니다.
 
 | 용도 | 도구 |
 |---|---|
@@ -46,7 +46,7 @@ codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registr
 | 개인 할 일 | `list_todos`, `create_todo`, `update_todo` |
 | 칸반 열 | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | 회의와 외부 교육 | `list_meetings`, `create_meeting`, `update_meeting` |
-| 연락처와 게시된 규제 정보 | `search_contacts`, `list_regulations` |
+| 연락처와 게시된 규제 정보 | `search_contacts`, `list_regulations`, `create_regulation` |
 | 웹 검색(DeepSeek) | `web_search`, `web_fetch` |
 
 웹사이트와 같은 권한을 적용합니다. 쓰기에는 `mcp:write`가 필요하며 사용자와 커넥터를 감사 로그에 기록합니다. 비공개 프로젝트는 권한으로 제한하고 규제 초안은 반환하지 않습니다. 날짜와 회의 시간은 Asia/Taipei를 사용합니다. OAuth에는 `OAUTH_KV` binding, 배포 token에는 Account → Workers KV Storage → Edit가 필요합니다.

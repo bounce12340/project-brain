@@ -20,6 +20,7 @@ const schema = (properties: Record<string, JsonSchema>, required: string[] = [])
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const take = (args: Row) => typeof args.limit === "number" ? args.limit : 50;
 const page = (rows: Row[], args: Row, key: string) => ({ [key]: rows.slice(0, take(args)), count: rows.length, truncated: rows.length > take(args) });
+const REG_PRODUCT_LINES = ["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"];
 const checkDate = (value: unknown) => { if (value !== undefined && value !== "" && !isIsoDate(String(value))) throw new ToolError("日期不是有效日期"); };
 const projectUrl = (ctx: ToolContext, id: string) => new URL(`/projects/${encodeURIComponent(id)}`, ctx.baseUrl).href;
 
@@ -165,6 +166,29 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         for (const key of ["keyword", "year", "page"]) if (args[key] !== undefined) query.set(key, String(args[key]));
         const result = await ctx.api.get<{ entries: Row[]; page: number; total: number; total_pages: number }>(`/api/regwatch?${query}`);
         return { entries: result.entries, page: result.page, total: result.total, total_pages: result.total_pages };
+      },
+    },
+    {
+      name: "create_regulation", title: "新增法規動態（待審草稿）", write: true,
+      description: "Add a regulatory update (法規動態) to 艾爾水晶, for example a new TFDA announcement or guideline the user gives you. It is always saved as a draft in 法規動態 → 待審核; an RA/PV member or admin must approve it on the website before everyone can see it, so tell the user that. Only RA/PV members and admins may add entries. entry_date is the announcement or issue date (發文日期), never the effective date; put the effective date in key_points. Write key_points as concise Markdown bullets in Traditional Chinese, quoting the document number (文號) and only facts stated in the source. Check list_regulations first to avoid duplicates; the same date and title cannot be added twice. Attachments (PDF) cannot be added here; the user can upload them on the website.",
+      inputSchema: schema({
+        title: { ...string(200), minLength: 1 },
+        entry_date: { ...date, description: "公告／發文日期（YYYY-MM-DD），不是生效日" },
+        product_line: { type: "string", enum: REG_PRODUCT_LINES, description: "產品線" },
+        entry_type: { type: "string", enum: ["announcement", "meeting"], description: "announcement＝法規公告（預設）；meeting＝外部會議" },
+        category: string(50, "分類短標籤，例如「上市後變更」「指引」"),
+        key_points: string(5_000, "重點（Markdown 條列）"),
+        link: { ...string(500), pattern: "^https?://" },
+      }, ["title", "entry_date", "product_line"]),
+      async run(args, ctx) {
+        checkDate(args.entry_date);
+        const title = text(args.title);
+        const { id } = await ctx.api.send<{ id: string }>("POST", "/api/regwatch", {
+          status: "draft", title, entry_date: args.entry_date, product_line: args.product_line, entry_type: args.entry_type ?? "announcement",
+          category: args.category, key_points: args.key_points, link: args.link,
+        });
+        await helpers.audit(ctx, "create_regulation", "reg_entry", id, `新增法規動態草稿「${title}」`);
+        return { ok: true, id, status: "待審草稿", next: "請在艾爾水晶「法規動態 → 待審核」檢查內容後核准；核准前一般清單看不到。", url: new URL("/regwatch?view=drafts", ctx.baseUrl).href };
       },
     },
     {
