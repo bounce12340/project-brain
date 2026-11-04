@@ -42,6 +42,19 @@ export function llmEndpoint(env: Env, role: LlmRole = "main"): LlmEndpoint | nul
   return String(env.LLM_MAIN_PROVIDER) === "deepseek" ? direct ?? ollama(env.OLLAMA_MODEL) : ollama(env.OLLAMA_MODEL) ?? direct;
 }
 
+/**
+ * DeepSeek 官方 API 的 deepseek-v4-pro 預設開思考模式：帶工具時每一輪都要把上一輪的 reasoning_content 傳回去，
+ * 否則請求會失敗；思考也會拖慢回應、增加費用。這裡的用途（問答、整理專案、風險分析、週報）不需要長推理，一律關掉。
+ * 其他端點（Ollama Cloud、測試用的假端點）不認得這個參數，不送。
+ */
+export function providerOptions(endpoint: LlmEndpoint): Record<string, unknown> {
+  try {
+    return new URL(endpoint.baseUrl).hostname === "api.deepseek.com" ? { thinking: { type: "disabled" } } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -76,7 +89,7 @@ export async function llmChat(env: Env, messages: ChatMessage[], options: LlmCha
           method: "POST",
           signal,
           headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: endpoint.model, messages, response_format: options.json ? { type: "json_object" } : undefined }),
+          body: JSON.stringify({ model: endpoint.model, messages, response_format: options.json ? { type: "json_object" } : undefined, ...providerOptions(endpoint) }),
         }), timeoutMs);
         if (!response.ok) {
           // 帶上供應商自己的錯誤訊息。只回「LLM HTTP 401」的話，看的人分不出是金鑰無效、
@@ -120,7 +133,7 @@ export async function llmChatWithTools(env: Env, messages: AgentMessage[], tools
     method: "POST",
     signal,
     headers: { Authorization: `Bearer ${endpoint.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: endpoint.model, messages, tools, tool_choice: "auto" }),
+    body: JSON.stringify({ model: endpoint.model, messages, tools, tool_choice: "auto", ...providerOptions(endpoint) }),
   }), timeoutMs);
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

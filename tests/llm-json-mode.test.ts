@@ -65,3 +65,25 @@ describe("LLM 端點設定", () => {
     expect(base).not.toMatch(/\/$/);
   });
 });
+
+describe("DeepSeek 官方 API 關閉思考模式", () => {
+  it("llmChat 打 api.deepseek.com 時送 thinking: disabled；其他端點不送", async () => {
+    const { llmChat, providerOptions } = await import("../worker/services/llm");
+    const bodies: Array<Record<string, unknown>> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return Response.json({ choices: [{ message: { content: "ok" } }] });
+    }) as typeof fetch;
+    try {
+      const deepseek = { LLM_API_KEY: "k", LLM_BASE_URL: "https://api.deepseek.com/v1", LLM_MODEL: "deepseek-v4-pro" } as unknown as Env;
+      await llmChat(deepseek, [{ role: "user", content: "回 json" }], { json: true });
+      await llmChat({ ...deepseek, LLM_BASE_URL: "https://llm.test" } as unknown as Env, [{ role: "user", content: "hi" }]);
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(bodies[0]).toMatchObject({ model: "deepseek-v4-pro", thinking: { type: "disabled" }, response_format: { type: "json_object" } });
+    expect(bodies[1]).not.toHaveProperty("thinking");
+    expect(providerOptions({ provider: "x", baseUrl: "not a url", model: "m", apiKey: "k" })).toEqual({});
+  });
+});
