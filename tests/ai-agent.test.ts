@@ -221,6 +221,21 @@ describe("主力與顧問（Ollama Cloud）", () => {
     expect(llmEndpoint({ ...env(), LLM_API_KEY: undefined } as unknown as Env)).toBeNull();
   });
 
+  it("LLM_MAIN_PROVIDER=deepseek：兩把金鑰都有時主力改用 DeepSeek，顧問仍是 Ollama 的 glm-5.3；DeepSeek 沒金鑰就退回 Ollama", async () => {
+    const both = () => ({ ...ollama(), LLM_MAIN_PROVIDER: "deepseek", LLM_API_KEY: "ds-test", LLM_BASE_URL: "https://api.deepseek.com/v1", LLM_MODEL: "deepseek-v4-pro" }) as unknown as Env;
+    expect(llmEndpoint(both())).toEqual({ provider: "OpenAI 相容端點", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-v4-pro", apiKey: "ds-test" });
+    expect(llmEndpoint(both(), "advisor")).toMatchObject({ provider: "Ollama Cloud", model: "glm-5.3", apiKey: "ollama-test" });
+    expect(llmEndpoint({ ...both(), LLM_API_KEY: undefined } as unknown as Env)).toMatchObject({ provider: "Ollama Cloud", model: "deepseek-v4.1-flash" });
+    expect(llmEndpoint({ ...env(), LLM_MAIN_PROVIDER: "ollama" } as unknown as Env)).toMatchObject({ model: "m", apiKey: "test" });
+    const calls = fakeOllama([
+      { calls: [{ name: "ask_advisor", args: { question: "q", context: "c" } }] },
+      { content: "好。" },
+    ]);
+    const turn = await askWith(both(), "難題");
+    expect(turn).toMatchObject({ reply: "好。", advisor: "glm-5.3" });
+    expect(calls.map((call) => [call.body.model, call.auth])).toEqual([["deepseek-v4-pro", "Bearer ds-test"], ["glm-5.3", "Bearer ollama-test"], ["deepseek-v4-pro", "Bearer ds-test"]]);
+  });
+
   it("主力遇到難題請教顧問：顧問的意見交回主力，回答標示請教過哪個顧問", async () => {
     const calls = fakeOllama([
       { calls: [{ name: "ask_advisor", args: { question: "展延前要先處理 CEP 嗎？", context: "CEP Rev.03→04；展延文件明年 2 月" } }] },

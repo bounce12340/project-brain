@@ -428,6 +428,7 @@ aiRoutes.get("/diagnostics", async (c) => {
   const main = llmEndpoint(c.env);
   const advisor = llmEndpoint(c.env, "advisor");
   const result: Record<string, unknown> = {
+    main_provider_setting: c.env.LLM_MAIN_PROVIDER ?? "ollama",
     key_present: !!c.env.LLM_API_KEY,
     ollama_key_present: !!c.env.OLLAMA_API_KEY,
     // 沒有任何金鑰時 llmChat 會靜靜地改用 Workers AI，答案品質不同但不會報錯。

@@ -30,16 +30,16 @@ export type LlmRole = "main" | "advisor";
 export interface LlmEndpoint { provider: string; baseUrl: string; model: string; apiKey: string }
 
 /**
- * 要打哪個端點。設定了 OLLAMA_API_KEY 就走 Ollama Cloud：主力 OLLAMA_MODEL、顧問 OLLAMA_ADVISOR_MODEL，同一把金鑰。
- * 沒有的話照舊用 LLM_*（目前是 DeepSeek 官方 API），沒有顧問。都沒有時回 null，llmChat 改用 Workers AI。
+ * 要打哪個端點。主力由 LLM_MAIN_PROVIDER 決定：deepseek＝LLM_*（DeepSeek 官方 API）、ollama＝Ollama Cloud 的 OLLAMA_MODEL；
+ * 選的那邊沒有金鑰就改用另一邊，兩邊都沒有時回 null，llmChat 改用 Workers AI。
+ * 顧問一律是 Ollama Cloud 的 OLLAMA_ADVISOR_MODEL，沒有 OLLAMA_API_KEY 就沒有顧問。
  */
 export function llmEndpoint(env: Env, role: LlmRole = "main"): LlmEndpoint | null {
-  if (env.OLLAMA_API_KEY) {
-    const model = role === "advisor" ? env.OLLAMA_ADVISOR_MODEL : env.OLLAMA_MODEL;
-    return model ? { provider: "Ollama Cloud", baseUrl: env.OLLAMA_BASE_URL, model, apiKey: env.OLLAMA_API_KEY } : null;
-  }
-  if (role === "advisor" || !env.LLM_API_KEY) return null;
-  return { provider: "OpenAI 相容端點", baseUrl: env.LLM_BASE_URL, model: env.LLM_MODEL, apiKey: env.LLM_API_KEY };
+  const ollama = (model: string | undefined): LlmEndpoint | null => env.OLLAMA_API_KEY && model ? { provider: "Ollama Cloud", baseUrl: env.OLLAMA_BASE_URL, model, apiKey: env.OLLAMA_API_KEY } : null;
+  if (role === "advisor") return ollama(env.OLLAMA_ADVISOR_MODEL);
+  const direct: LlmEndpoint | null = env.LLM_API_KEY ? { provider: "OpenAI 相容端點", baseUrl: env.LLM_BASE_URL, model: env.LLM_MODEL, apiKey: env.LLM_API_KEY } : null;
+  // 沒設定時維持舊行為：有 Ollama 金鑰就走 Ollama。
+  return String(env.LLM_MAIN_PROVIDER) === "deepseek" ? direct ?? ollama(env.OLLAMA_MODEL) : ollama(env.OLLAMA_MODEL) ?? direct;
 }
 
 async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {

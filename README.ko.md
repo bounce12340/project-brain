@@ -17,7 +17,7 @@
 - **OKR**: 분기 목표＋Key Results(담당자／상태／정렬 순서). 달성률은 자동 진행률에 반영됩니다
 - **전용 모듈**: 임상 환자 등록(목표 vs 누적, 일별 등록)｜BD 허가 등록(건별 상태 머신, 이력, 비용)｜QA 라이선스 만료(만료 단계별 경고＋자동 알림)와 CCR 변경 관리(`CCR-YYYY-NNN` 상태 머신＋이력)
 - **규제 동향**: 2018년 이후 TFDA 규제 600+건을 담은 지식 베이스로, 공고일순 정렬과 제품군／분류／키워드 필터를 지원합니다. 매일 TFDA RSS를 자동 수집해 검토 대기 초안을 만들고 승인 후에만 전 구성원에게 공개합니다. 공고문을 붙여 넣거나 여러 파일을 함께 업로드하여 AI로 구조화해 가져올 수도 있습니다
-- **AI 지원**(Ollama Cloud: 주력 deepseek-v4.1-flash, 자문 glm-5.3): 진행 기록 빠른 작성, 작업 요약, 프로젝트 위험 예측, 일정 제안, 주간／월간 보고서 자동 생성
+- **AI 지원**(주력 DeepSeek deepseek-v4-pro, 자문 Ollama Cloud glm-5.3): 진행 기록 빠른 작성, 작업 요약, 프로젝트 위험 예측, 일정 제안, 주간／월간 보고서 자동 생성
 - **자동화**: “만약…이면…” 규칙 엔진. 매일 TFDA RSS 수집＋알림, AI 주간 보고서(월요일), AI 월간 보고서(매월 1일)를 위한 3개의 cron이 실행됩니다
 - **보고서**: 팀별 주간／월간 보고서 원클릭 생성＋인쇄, CSV 내보내기, 팀별 스윔레인 타임라인
 - **계정**: 직접 가입＋Email 인증 코드＋관리자 승인. 관리 권한 이전(공동 관리자／완전 이전)과 마지막 관리자 보호 기능을 제공합니다
@@ -60,7 +60,7 @@ flowchart LR
   U[브라우저 SPA<br/>React + Protoss 테마] -->|HTTPS<br/>projects.uic-ai.com| W[Cloudflare Worker<br/>Hono API + 정적 자산]
   W --> D1[(D1 데이터베이스<br/>27개 테이블)]
   W --> R2[(R2 파일<br/>첨부/공고 원본)]
-  W -->|OpenAI 호환| LLM[Ollama Cloud<br/>deepseek-v4.1-flash + glm-5.3]
+  W -->|OpenAI 호환| LLM[DeepSeek deepseek-v4-pro<br/>+ Ollama Cloud glm-5.3]
   W -.->|key가 없을 때 fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>매일/매주/매월] --> W
   W -->|알림·보고서·초대| MAIL[AgentMail<br/>uic_ai@agentmail.to]
@@ -73,7 +73,7 @@ flowchart LR
 | 프런트엔드 | React 18 · Vite · TypeScript · Tailwind CSS · @dnd-kit(드래그 앤 드롭) · Recharts(차트) · 자체 제작 달력／간트 SVG |
 | 백엔드 | Cloudflare Workers · Hono · Workers Static Assets |
 | 데이터 | D1(SQLite, raw SQL migrations) · R2(파일) · unpdf(PDF 텍스트 레이어 추출) |
-| AI | OpenAI 호환 계층(Ollama Cloud: 주력 `deepseek-v4.1-flash`, 자문 `glm-5.3`. `OLLAMA_API_KEY`가 없으면 `LLM_*`의 DeepSeek API 사용)＋ Workers AI fallback |
+| AI | OpenAI 호환 계층(주력은 `LLM_MAIN_PROVIDER`로 선택: 현재 `deepseek`＝`LLM_*`의 DeepSeek `deepseek-v4-pro`, `ollama`＝Ollama Cloud `deepseek-v4.1-flash`. 자문 Ollama Cloud `glm-5.3`)＋ Workers AI fallback |
 | 메일 | AgentMail REST API |
 | 인증 | PBKDF2-SHA256(WebCrypto) · httpOnly session cookie · Email OTP |
 | 테스트 | Vitest 1012 tests(권한 매트릭스, 상태 머신, i18n key parity, theme 대비, 알고리즘, 가져오기 멱등성) |
