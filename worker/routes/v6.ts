@@ -312,7 +312,7 @@ v6Routes.get("/regwatch", async (c) => {
   const where = `WHERE ${conditions.join(" AND ")}`;
   const page = Math.max(1, Number(c.req.query("page")) || 1);
   const [rows, total, pendingCount] = await Promise.all([
-    c.env.DB.prepare(`SELECT r.*,CASE WHEN r.source='tfda_rss' THEN 'TFDA 自動抓取' WHEN r.source='nhi_rss' THEN '健保署自動抓取' ELSE COALESCE(u.name,'系統') END AS created_by_name
+    c.env.DB.prepare(`SELECT r.*,CASE WHEN r.source='tfda_rss' THEN 'TFDA 自動抓取' ELSE COALESCE(u.name,'系統') END AS created_by_name
       FROM reg_entries r LEFT JOIN users u ON u.id=r.created_by ${where}
       ORDER BY r.entry_date DESC,r.created_at DESC LIMIT 50 OFFSET ?`).bind(...values, (page - 1) * 50).all(),
     c.env.DB.prepare(`SELECT COUNT(*) AS value FROM reg_entries r ${where}`).bind(...values).first<number>("value"),
