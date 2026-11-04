@@ -72,7 +72,8 @@ export async function deleteRegwatchEntry(
   const linked = await env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(id).all<{ file_id: string }>();
   const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
   const deleteStatement = env.DB.prepare(`DELETE FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id);
-  const result = current.source === "tfda_rss" && current.source_ref
+  // 自動抓取的草稿刪掉時留下墓碑，下次抓取不會再建回來。
+  const result = (current.source === "tfda_rss" || current.source === "nhi_rss") && current.source_ref
     ? (await env.DB.batch([
       env.DB.prepare("INSERT OR IGNORE INTO tfda_rejected(source_ref,title,rejected_by) VALUES (?,?,?)")
         .bind(current.source_ref, current.title, rejectedBy),

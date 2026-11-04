@@ -120,6 +120,7 @@ describe("SPEC-V11 TFDA RSS parser", () => {
     let remindersRan = false;
     const result = await runDailyWorkflow({} as Env, {
       tfdaFetch: async () => { throw new Error("offline"); },
+      nhiFetch: async () => { throw new Error("blocked"); },
       reminders: async () => {
         remindersRan = true;
         return { notifications: 3, emails: 2, archived: 0, license_notifications: 0 };
@@ -127,6 +128,7 @@ describe("SPEC-V11 TFDA RSS parser", () => {
     });
     expect(remindersRan).toBe(true);
     expect(result.tfda.errors).toEqual(["cron: offline"]);
+    expect(result.nhi.errors).toEqual(["cron: blocked"]);
     expect(result.reminders).toMatchObject({ notifications: 3, emails: 2 });
   });
 
@@ -136,7 +138,7 @@ describe("SPEC-V11 TFDA RSS parser", () => {
     const cron = readFileSync(new URL("../worker/services/cron.ts", import.meta.url), "utf8");
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
     expect(page).toContain('t("regwatch.pending", { count: data.pending_count })');
-    expect(page).toContain('item.source === "tfda_rss" ? "regwatch.tfdaDraft" : "regwatch.manualDraft"');
+    expect(page).toContain('item.source === "tfda_rss" ? "regwatch.tfdaDraft" : item.source === "nhi_rss" ? "regwatch.nhiDraft" : "regwatch.manualDraft"');
     expect(page).toContain('void approve(item)');
     expect(page).toContain('void approveAll()');
     expect(page).toContain('void fetchTfda()');

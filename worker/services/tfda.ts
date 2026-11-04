@@ -3,6 +3,8 @@ import { extractRegwatchEntries, type RegwatchExtractedEntry } from "./regwatch-
 import { taipeiDate } from "./time";
 
 export const TFDA_RSS_URL = "https://www.fda.gov.tw/TC/rssAnnouncement.ashx";
+/** 健保署「法規公告」RSS（藥品給付規定、支付價格、特材等）。 */
+export const NHI_RSS_URL = "https://www.nhi.gov.tw/ch/rss-3258-1.xml";
 export const TFDA_RSS_TIMEOUT_MS = 20_000;
 export const TFDA_RSS_MAX_BYTES = 2_000_000;
 export const TFDA_TEXT_LIMIT = 24_000;
@@ -126,6 +128,35 @@ export function extractTfdaSourceRef(link: string): string | null {
   }
 }
 
+/** 健保署連結長這樣：https://www.nhi.gov.tw/ch/cp-20687-74a57-3258-1.html，取文章編號，加前綴避免和 TFDA 的編號撞在同一個唯一索引。 */
+export function extractNhiSourceRef(link: string): string | null {
+  try {
+    const url = new URL(link);
+    if (!/(^|\.)nhi\.gov\.tw$/.test(url.hostname)) return null;
+    const id = url.pathname.match(/\/cp-(\d+)-[0-9a-z]+-/i)?.[1];
+    return id ? `nhi-${id}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export type RegFeedSource = "tfda_rss" | "nhi_rss";
+
+/** 一個自動抓取的公告來源。抓取、去重、AI 整理、存草稿、通知都共用 fetchFeedDrafts。 */
+export interface RegFeed {
+  source: RegFeedSource;
+  /** 記錄與通知用的名稱 */
+  label: string;
+  url: string;
+  sourceRef(link: string): string | null;
+  /** 內文只有「附件如下」這類說明時，主旨才是重點，交給 AI 的文字要連標題一起。 */
+  titleInText: boolean;
+}
+
+export const TFDA_FEED: RegFeed = { source: "tfda_rss", label: "TFDA", url: TFDA_RSS_URL, sourceRef: extractTfdaSourceRef, titleInText: false };
+export const NHI_FEED: RegFeed = { source: "nhi_rss", label: "健保署", url: NHI_RSS_URL, sourceRef: extractNhiSourceRef, titleInText: true };
+export const REG_FEEDS: Record<RegFeedSource, RegFeed> = { tfda_rss: TFDA_FEED, nhi_rss: NHI_FEED };
+
 export function tfdaPubDateToTaipeiDate(pubDate: string): string | null {
   const timestamp = Date.parse(pubDate);
   return Number.isFinite(timestamp) ? taipeiDate(new Date(timestamp)) : null;
@@ -186,7 +217,7 @@ async function responseTextWithinLimit(response: Response, limit: number): Promi
   }
 }
 
-async function notifyTfdaDrafts(db: D1Database, count: number): Promise<void> {
+async function notifyTfdaDrafts(db: D1Database, count: number, label: string): Promise<void> {
   if (count <= 0) return;
   const recipients = await db.prepare(`SELECT id FROM users
     WHERE is_active=1 AND approval_status='approved'
@@ -198,7 +229,7 @@ async function notifyTfdaDrafts(db: D1Database, count: number): Promise<void> {
     createId("noti"),
     recipient.id,
     "tfda_draft",
-    `TFDA 新公告 ${count} 則待審核`,
+    `${label} 新公告 ${count} 則待審核`,
     "請至法規動態的草稿檢視進行審核。",
     "/regwatch?view=drafts",
   )));
@@ -208,13 +239,22 @@ function emptyStats(): TfdaFetchStats {
   return { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_rejected: 0, skipped_dup: 0, ai_fallback: 0, errors: [] };
 }
 
-export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
+export function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
+  return fetchFeedDrafts(env, TFDA_FEED, dependencies);
+}
+
+export function fetchNhiDrafts(env: Env, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
+  return fetchFeedDrafts(env, NHI_FEED, dependencies);
+}
+
+/** 抓一個來源的 RSS，新的公告用 AI 整理後存成待審草稿；同一個來源編號、被駁回過、或同日同標題的都略過。 */
+export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
   const stats = emptyStats();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TFDA_RSS_TIMEOUT_MS);
   let xml: string;
   try {
-    const response = await (dependencies.fetcher ?? fetch)(TFDA_RSS_URL, {
+    const response = await (dependencies.fetcher ?? fetch)(feed.url, {
       signal: controller.signal,
       headers: { "User-Agent": "ProjectBrain-Regwatch/11.0 (+https://projects.uic-ai.com)" },
     });
@@ -223,7 +263,7 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     stats.errors.push(`fetch: ${message}`);
-    console.error(JSON.stringify({ message: "TFDA RSS fetch failed", error: message }));
+    console.error(JSON.stringify({ message: `${feed.label} RSS fetch failed`, error: message }));
     return stats;
   } finally {
     clearTimeout(timer);
@@ -233,11 +273,11 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
   stats.fetched = items.length;
   if (!items.length) {
     stats.errors.push("parse: no RSS items");
-    console.error(JSON.stringify({ message: "TFDA RSS parse failed", error: "no RSS items" }));
+    console.error(JSON.stringify({ message: `${feed.label} RSS parse failed`, error: "no RSS items" }));
     return stats;
   }
   const processItem = async (item: TfdaRssItem): Promise<void> => {
-    const sourceRef = extractTfdaSourceRef(item.link);
+    const sourceRef = feed.sourceRef(item.link);
     const entryDate = tfdaPubDateToTaipeiDate(item.pubDate);
     if (!sourceRef || !entryDate || !item.title) {
       stats.errors.push(`item: invalid metadata (${item.link || item.title || "unknown"})`);
@@ -260,7 +300,8 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
         return;
       }
 
-      const plainText = tfdaHtmlToText(item.descriptionHtml);
+      const body = tfdaHtmlToText(item.descriptionHtml);
+      const plainText = feed.titleInText && !body.includes(item.title) ? `${item.title}\n${body}`.trim() : body;
       let extracted: RegwatchExtractedEntry | undefined;
       try {
         extracted = (await (dependencies.extract ?? ((activeEnv, text) => extractRegwatchEntries(
@@ -271,7 +312,7 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
         )))(env, plainText))[0];
       } catch (error) {
         console.error(JSON.stringify({
-          message: "TFDA RSS AI enrichment failed",
+          message: `${feed.label} RSS AI enrichment failed`,
           source_ref: sourceRef,
           error: error instanceof Error ? error.message : String(error),
         }));
@@ -279,9 +320,9 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
       const draft = buildTfdaDraft(item, sourceRef, entryDate, plainText, extracted);
       const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO reg_entries
         (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,source,source_ref)
-        SELECT ?,?,?,?,?,?,?,?,NULL,'draft','tfda_rss',?
+        SELECT ?,?,?,?,?,?,?,?,NULL,'draft',?,?
         WHERE NOT EXISTS (SELECT 1 FROM tfda_rejected WHERE source_ref=?)`)
-        .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, draft.sourceRef, draft.sourceRef)
+        .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, feed.source, draft.sourceRef, draft.sourceRef)
         .run();
       if ((inserted.meta.changes ?? 0) > 0) {
         stats.new_drafts += 1;
@@ -296,7 +337,7 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       stats.errors.push(`item ${sourceRef}: ${message}`);
-      console.error(JSON.stringify({ message: "TFDA RSS item failed", source_ref: sourceRef, error: message }));
+      console.error(JSON.stringify({ message: `${feed.label} RSS item failed`, source_ref: sourceRef, error: message }));
     }
   };
   let nextItem = 0;
@@ -309,11 +350,11 @@ export async function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependenc
   };
   await Promise.all(Array.from({ length: Math.min(4, items.length) }, () => processNext()));
   try {
-    await notifyTfdaDrafts(env.DB, stats.new_drafts);
+    await notifyTfdaDrafts(env.DB, stats.new_drafts, feed.label);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     stats.errors.push(`notification: ${message}`);
-    console.error(JSON.stringify({ message: "TFDA draft notification failed", error: message }));
+    console.error(JSON.stringify({ message: `${feed.label} draft notification failed`, error: message }));
   }
   return stats;
 }
