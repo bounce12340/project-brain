@@ -234,6 +234,8 @@ describe("主力與顧問（Ollama Cloud）", () => {
     const turn = await askWith(both(), "難題");
     expect(turn).toMatchObject({ reply: "好。", advisor: "glm-5.3" });
     expect(calls.map((call) => [call.body.model, call.auth])).toEqual([["deepseek-v4-pro", "Bearer ds-test"], ["glm-5.3", "Bearer ollama-test"], ["deepseek-v4-pro", "Bearer ds-test"]]);
+    // DeepSeek 官方 API 關掉思考模式（帶工具時否則要回傳 reasoning_content）；Ollama 不送這個參數。
+    expect(calls.map((call) => (call.body as { thinking?: unknown }).thinking)).toEqual([{ type: "disabled" }, undefined, { type: "disabled" }]);
   });
 
   it("主力遇到難題請教顧問：顧問的意見交回主力，回答標示請教過哪個顧問", async () => {
