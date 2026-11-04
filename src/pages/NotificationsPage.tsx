@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { Empty, PageHeader } from "../components/UI";
 import { useLang, useT } from "../i18n/LangContext";
@@ -29,7 +29,7 @@ export function NotificationsPage() {
     <PageHeader
       title={t("notifications.title")}
       description={t("notifications.description")}
-      actions={<button className="btn-secondary" onClick={() => void api("/notifications/read-all", { method: "POST" }).then(load)}>{t("notifications.readAll")}</button>}
+      actions={<div className="flex flex-wrap gap-2"><Link className="btn-secondary" to="/profile#email-notifications">{t("notifications.emailSettings")}</Link><button className="btn-secondary" onClick={() => void api("/notifications/read-all", { method: "POST" }).then(load)}>{t("notifications.readAll")}</button></div>}
     />
     {items.length ? <div className="space-y-3">{items.map((item) => <button className={`panel w-full text-left ${item.read ? "opacity-60" : "border-psi-deep"}`} key={item.id} onClick={() => void open(item)}>
       <div className="flex justify-between gap-3">
