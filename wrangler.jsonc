@@ -30,7 +30,9 @@
     "APP_BASE_URL": "https://projects.uic-ai.com",
     "LLM_BASE_URL": "https://api.deepseek.com/v1",
     "LLM_MODEL": "deepseek-v4-pro",
-    // 設定了 OLLAMA_API_KEY（secret）就改走 Ollama Cloud：主力 deepseek-v4.1-flash，需要時請教顧問 glm-5.3。
+    // 主力模型：deepseek＝上面的 LLM_*（DeepSeek v4 pro）；ollama＝Ollama Cloud 的 OLLAMA_MODEL。選的那邊沒有金鑰就用另一邊。
+    "LLM_MAIN_PROVIDER": "deepseek",
+    // 設定了 OLLAMA_API_KEY（secret）時，AI 小幫手遇到難題可以請教顧問 glm-5.3。
     "OLLAMA_BASE_URL": "https://ollama.com/v1",
     "OLLAMA_MODEL": "deepseek-v4.1-flash",
     "OLLAMA_ADVISOR_MODEL": "glm-5.3",
