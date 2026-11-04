@@ -237,6 +237,8 @@ The 09:00 daily pre-processing step reads the TFDA announcement RSS feed. RA/PV 
 
 New data is always created as a `TFDA draft`; reviewers receive an in-app notification included in the daily Email digest. Authorized users can select “N awaiting review” to expand the full key points, edit entries (which remain drafts), approve/delete entries individually, approve/delete multiple selected entries in a batch, or approve all after confirmation. Other members and all interns cannot see entries at all until approval. Only then do they enter the regular published list. When a TFDA draft or published entry is deleted, the source-ref tombstone is retained first, preventing a later cron run from recreating the same announcement; manual entries are unaffected. During operation and acceptance testing, never approve or delete genuine TFDA drafts on behalf of business users.
 
+**NHIA regulatory announcements**: The same pre-processing step then reads the NHIA “法規公告” RSS feed (`https://www.nhi.gov.tw/ch/rss-3258-1.xml`: drug reimbursement rules, payment prices, special materials and more) with the same pipeline and deduplication. Source refs are `nhi-<article id>`, drafts are labelled `NHIA draft`, and Regulatory updates has a “Fetch NHIA now” button. The NHIA site uses bot protection; if a fetch is blocked, only the error is recorded (for example `RSS_HTTP_403`) and TFDA fetching and daily reminders are unaffected.
+
 ### Reports and Timeline
 
 - “Reports → Generate report”: Select a team + (this week / last week / this month / last month) to generate a report with one click; printing is supported. Members are limited to their own team, while admins can choose the whole company or a version that includes private projects.

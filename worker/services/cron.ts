@@ -4,7 +4,7 @@ import { sendNotificationMail } from "./notification-mail";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
 import { licenseNotificationStage } from "./licenses";
-import { fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
+import { fetchNhiDrafts, fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
 
 interface Recipient { id: string; email: string; email_notifications: number }
 
@@ -97,23 +97,30 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
 
 export interface DailyWorkflowResult {
   tfda: TfdaFetchStats;
+  nhi: TfdaFetchStats;
   reminders: Awaited<ReturnType<typeof runDailyReminders>>;
 }
 
 interface DailyWorkflowDependencies {
   tfdaFetch?: (env: Env) => Promise<TfdaFetchStats>;
+  nhiFetch?: (env: Env) => Promise<TfdaFetchStats>;
   reminders?: (env: Env) => ReturnType<typeof runDailyReminders>;
 }
 
-export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDependencies = {}): Promise<DailyWorkflowResult> {
-  let tfda: TfdaFetchStats;
+/** 抓一個公告來源；拋錯也只記在統計裡，不擋後面的來源與提醒。 */
+async function fetchFeedSafely(env: Env, label: string, fetcher: (env: Env) => Promise<TfdaFetchStats>): Promise<TfdaFetchStats> {
   try {
-    tfda = await (dependencies.tfdaFetch ?? fetchTfdaDrafts)(env);
+    return await fetcher(env);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    tfda = { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_rejected: 0, skipped_dup: 0, ai_fallback: 0, errors: [`cron: ${message}`] };
-    console.error(JSON.stringify({ message: "TFDA cron pre-step failed", error: message }));
+    console.error(JSON.stringify({ message: `${label} cron pre-step failed`, error: message }));
+    return { fetched: 0, new_drafts: 0, skipped_ref: 0, skipped_rejected: 0, skipped_dup: 0, ai_fallback: 0, errors: [`cron: ${message}`] };
   }
+}
+
+export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDependencies = {}): Promise<DailyWorkflowResult> {
+  const tfda = await fetchFeedSafely(env, "TFDA", dependencies.tfdaFetch ?? fetchTfdaDrafts);
+  const nhi = await fetchFeedSafely(env, "健保署", dependencies.nhiFetch ?? fetchNhiDrafts);
   const reminders = await (dependencies.reminders ?? runDailyReminders)(env);
-  return { tfda, reminders };
+  return { tfda, nhi, reminders };
 }
