@@ -117,11 +117,14 @@ async function cleanupSourceFiles(env: Env, files: Array<{ id: string; storageKe
   }
 }
 
+/** 稽核紀錄附上第一個錯誤（截短），事後查得到是被擋還是格式變了。 */
+const firstError = (stats: { errors: string[] }) => stats.errors.length ? `, first_error=${stats.errors[0].slice(0, 200)}` : "";
+
 v7Routes.post("/regwatch/tfda-fetch", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取 TFDA" }, 403);
   const stats = await fetchTfdaDrafts(c.env);
-  await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}`);
+  await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}${firstError(stats)}`);
   return c.json(stats);
 });
 
@@ -129,7 +132,7 @@ v7Routes.post("/regwatch/nhi-fetch", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取健保署公告" }, 403);
   const stats = await fetchNhiDrafts(c.env);
-  await writeAudit(c.env.DB, user, "nhi_fetch", "reg_entry", "nhi_rss", `健保署 RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}`);
+  await writeAudit(c.env.DB, user, "nhi_fetch", "reg_entry", "nhi_rss", `健保署 RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}${firstError(stats)}`);
   return c.json(stats);
 });
 

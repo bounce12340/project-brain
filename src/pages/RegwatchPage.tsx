@@ -4,6 +4,7 @@ import { api, patchBody, today } from "../api";
 import { Empty, ErrorBox, Loading, Markdown, PageHeader } from "../components/UI";
 import type { RegEntry } from "../types";
 import { useT } from "../i18n/LangContext";
+import { summarizeFetchErrors } from "../regwatch-fetch";
 
 const productLines = ["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"];
 const currentTaipeiYear = Number(today().slice(0, 4));
@@ -127,11 +128,26 @@ export function RegwatchPage() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("regwatch.batchActionFailed")); }
     finally { setBatchAction(null); }
   };
+  /** 抓取結果；有錯誤時附上看得懂的原因與原始代碼。 */
+  const fetchResultText = (result: TfdaFetchResult) => {
+    const summary = t("regwatch.tfdaFetchResult", { ...result, errors: result.errors.length });
+    const reasons = summarizeFetchErrors(result.errors).map((item) => {
+      const label = item.reason === "blocked" ? t("regwatch.fetchError.blocked", { status: item.status ?? "" })
+        : item.reason === "http" ? t("regwatch.fetchError.http", { status: item.status ?? "" })
+        : item.reason === "not_rss" ? t("regwatch.fetchError.notRss")
+        : item.reason === "timeout" ? t("regwatch.fetchError.timeout")
+        : item.reason === "too_large" ? t("regwatch.fetchError.tooLarge")
+        : item.reason === "item" ? t("regwatch.fetchError.item")
+        : t("regwatch.fetchError.other");
+      return `${label}（${item.raw.slice(0, 120)}）`;
+    });
+    return reasons.length ? `${summary} ${t("regwatch.fetchError.reason", { reasons: reasons.join("；") })}` : summary;
+  };
   const fetchTfda = async () => {
     setFetchingTfda(true); setError("");
     try {
       const result = await api<TfdaFetchResult>("/regwatch/tfda-fetch", { method: "POST" });
-      setToast(t("regwatch.tfdaFetchResult", { ...result, errors: result.errors.length }));
+      setToast(fetchResultText(result));
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("regwatch.tfdaFetchFailed")); }
     finally { setFetchingTfda(false); }
@@ -140,7 +156,7 @@ export function RegwatchPage() {
     setFetchingNhi(true); setError("");
     try {
       const result = await api<TfdaFetchResult>("/regwatch/nhi-fetch", { method: "POST" });
-      setToast(t("regwatch.tfdaFetchResult", { ...result, errors: result.errors.length }));
+      setToast(fetchResultText(result));
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("regwatch.nhiFetchFailed")); }
     finally { setFetchingNhi(false); }
