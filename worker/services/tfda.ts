@@ -3,8 +3,6 @@ import { extractRegwatchEntries, type RegwatchExtractedEntry } from "./regwatch-
 import { taipeiDate } from "./time";
 
 export const TFDA_RSS_URL = "https://www.fda.gov.tw/TC/rssAnnouncement.ashx";
-/** 健保署「法規公告」RSS（藥品給付規定、支付價格、特材等）。 */
-export const NHI_RSS_URL = "https://www.nhi.gov.tw/ch/rss-3258-1.xml";
 export const TFDA_RSS_TIMEOUT_MS = 20_000;
 export const TFDA_RSS_MAX_BYTES = 2_000_000;
 export const TFDA_TEXT_LIMIT = 24_000;
@@ -128,19 +126,7 @@ export function extractTfdaSourceRef(link: string): string | null {
   }
 }
 
-/** 健保署連結長這樣：https://www.nhi.gov.tw/ch/cp-20687-74a57-3258-1.html，取文章編號，加前綴避免和 TFDA 的編號撞在同一個唯一索引。 */
-export function extractNhiSourceRef(link: string): string | null {
-  try {
-    const url = new URL(link);
-    if (!/(^|\.)nhi\.gov\.tw$/.test(url.hostname)) return null;
-    const id = url.pathname.match(/\/cp-(\d+)-[0-9a-z]+-/i)?.[1];
-    return id ? `nhi-${id}` : null;
-  } catch {
-    return null;
-  }
-}
-
-export type RegFeedSource = "tfda_rss" | "nhi_rss";
+export type RegFeedSource = "tfda_rss";
 
 /** 一個自動抓取的公告來源。抓取、去重、AI 整理、存草稿、通知都共用 fetchFeedDrafts。 */
 export interface RegFeed {
@@ -149,13 +135,9 @@ export interface RegFeed {
   label: string;
   url: string;
   sourceRef(link: string): string | null;
-  /** 內文只有「附件如下」這類說明時，主旨才是重點，交給 AI 的文字要連標題一起。 */
-  titleInText: boolean;
 }
 
-export const TFDA_FEED: RegFeed = { source: "tfda_rss", label: "TFDA", url: TFDA_RSS_URL, sourceRef: extractTfdaSourceRef, titleInText: false };
-export const NHI_FEED: RegFeed = { source: "nhi_rss", label: "健保署", url: NHI_RSS_URL, sourceRef: extractNhiSourceRef, titleInText: true };
-export const REG_FEEDS: Record<RegFeedSource, RegFeed> = { tfda_rss: TFDA_FEED, nhi_rss: NHI_FEED };
+export const TFDA_FEED: RegFeed = { source: "tfda_rss", label: "TFDA", url: TFDA_RSS_URL, sourceRef: extractTfdaSourceRef };
 
 export function tfdaPubDateToTaipeiDate(pubDate: string): string | null {
   const timestamp = Date.parse(pubDate);
@@ -243,10 +225,6 @@ export function fetchTfdaDrafts(env: Env, dependencies: TfdaFetchDependencies = 
   return fetchFeedDrafts(env, TFDA_FEED, dependencies);
 }
 
-export function fetchNhiDrafts(env: Env, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
-  return fetchFeedDrafts(env, NHI_FEED, dependencies);
-}
-
 /** 抓一個來源的 RSS，新的公告用 AI 整理後存成待審草稿；同一個來源編號、被駁回過、或同日同標題的都略過。 */
 export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: TfdaFetchDependencies = {}): Promise<TfdaFetchStats> {
   const stats = emptyStats();
@@ -300,8 +278,7 @@ export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: Tfd
         return;
       }
 
-      const body = tfdaHtmlToText(item.descriptionHtml);
-      const plainText = feed.titleInText && !body.includes(item.title) ? `${item.title}\n${body}`.trim() : body;
+      const plainText = tfdaHtmlToText(item.descriptionHtml);
       let extracted: RegwatchExtractedEntry | undefined;
       try {
         extracted = (await (dependencies.extract ?? ((activeEnv, text) => extractRegwatchEntries(

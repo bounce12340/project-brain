@@ -11,7 +11,7 @@ describe("抓取錯誤原因", () => {
     expect(describeFetchError("parse: no RSS items").reason).toBe("not_rss");
     expect(describeFetchError("fetch: The operation was aborted").reason).toBe("timeout");
     expect(describeFetchError("fetch: RSS_TOO_LARGE").reason).toBe("too_large");
-    expect(describeFetchError("item nhi-1: D1 error").reason).toBe("item");
+    expect(describeFetchError("item 31671: D1 error").reason).toBe("item");
     expect(describeFetchError("notification: boom").reason).toBe("other");
   });
 
@@ -25,8 +25,8 @@ describe("抓取錯誤原因", () => {
     const routes = readFileSync(new URL("../worker/routes/v7.ts", import.meta.url), "utf8");
     const notifications = readFileSync(new URL("../src/pages/NotificationsPage.tsx", import.meta.url), "utf8");
     const layout = readFileSync(new URL("../src/components/Layout.tsx", import.meta.url), "utf8");
-    expect(page.match(/setToast\(fetchResultText\(result\)\)/g)).toHaveLength(2);
-    expect(routes.match(/\$\{firstError\(stats\)\}/g)).toHaveLength(2);
+    expect(page.match(/setToast\(fetchResultText\(result\)\)/g)).toHaveLength(1);
+    expect(routes.match(/\$\{firstError\(stats\)\}/g)).toHaveLength(1);
     expect(notifications).toContain('to="/profile#email-notifications"');
     expect(layout).toMatch(/to="\/profile"[^>]*className="[^"]*sm:hidden"/);
   });

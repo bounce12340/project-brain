@@ -4,7 +4,7 @@ import { sendNotificationMail } from "./notification-mail";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
 import { licenseNotificationStage } from "./licenses";
-import { fetchNhiDrafts, fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
+import { fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
 
 interface Recipient { id: string; email: string; email_notifications: number }
 
@@ -97,13 +97,11 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
 
 export interface DailyWorkflowResult {
   tfda: TfdaFetchStats;
-  nhi: TfdaFetchStats;
   reminders: Awaited<ReturnType<typeof runDailyReminders>>;
 }
 
 interface DailyWorkflowDependencies {
   tfdaFetch?: (env: Env) => Promise<TfdaFetchStats>;
-  nhiFetch?: (env: Env) => Promise<TfdaFetchStats>;
   reminders?: (env: Env) => ReturnType<typeof runDailyReminders>;
 }
 
@@ -120,7 +118,6 @@ async function fetchFeedSafely(env: Env, label: string, fetcher: (env: Env) => P
 
 export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDependencies = {}): Promise<DailyWorkflowResult> {
   const tfda = await fetchFeedSafely(env, "TFDA", dependencies.tfdaFetch ?? fetchTfdaDrafts);
-  const nhi = await fetchFeedSafely(env, "健保署", dependencies.nhiFetch ?? fetchNhiDrafts);
   const reminders = await (dependencies.reminders ?? runDailyReminders)(env);
-  return { tfda, nhi, reminders };
+  return { tfda, reminders };
 }
