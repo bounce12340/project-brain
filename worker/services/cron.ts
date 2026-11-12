@@ -89,8 +89,13 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   let sent = 0;
   for (const digest of groupEmailNotifications(emailItems)) {
     const text = [`今日共有 ${digest.items.length} 則提醒：`, "", ...digest.items.map((item) => `- ${item.title}：${item.body}\n  ${env.APP_BASE_URL}${item.link}`), "", `開啟艾爾水晶-專案進度：${env.APP_BASE_URL}`].join("\n");
-    const result = await sendNotificationMail(env, { id: digest.user_id, email: digest.email }, "[艾爾水晶] 今日提醒", text);
-    if (result.sent) sent += 1;
+    // 一個人寄失敗（例如在封鎖名單上）不影響其他人的提醒信。
+    try {
+      const result = await sendNotificationMail(env, { id: digest.user_id, email: digest.email }, "[艾爾水晶] 今日提醒", text);
+      if (result.sent) sent += 1;
+    } catch (error) {
+      console.log(JSON.stringify({ message: "今日提醒信寄送失敗", user_id: digest.user_id, error: error instanceof Error ? error.message : String(error) }));
+    }
   }
   return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length, license_notifications: licenseNotificationCount };
 }

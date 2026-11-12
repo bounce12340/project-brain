@@ -63,7 +63,7 @@ flowchart LR
   W -->|OpenAI 相容| LLM[DeepSeek deepseek-v4-pro<br/>＋ Ollama Cloud glm-5.3]
   W -.->|無 key fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>每日/每週/每月] --> W
-  W -->|提醒·報告·邀請| MAIL[AgentMail<br/>uic_ai@agentmail.to]
+  W -->|提醒·報告·邀請| MAIL[Cloudflare Email Service<br/>notify@projects.uic-ai.com<br/>備援 AgentMail]
 ```
 
 ## 🧰 技術棧
@@ -74,7 +74,7 @@ flowchart LR
 | 後端 | Cloudflare Workers · Hono · Workers Static Assets |
 | 資料 | D1（SQLite，raw SQL migrations）· R2（檔案）· unpdf（PDF 文字層抽取） |
 | AI | OpenAI 相容層（主力依 `LLM_MAIN_PROVIDER`：目前 `deepseek`＝`LLM_*` 的 DeepSeek `deepseek-v4-pro`；`ollama`＝Ollama Cloud `deepseek-v4.1-flash`。顧問 Ollama Cloud `glm-5.3`）＋ Workers AI fallback |
-| 郵件 | AgentMail REST API |
+| 郵件 | Cloudflare Email Service（`send_email` 綁定）；寄不出時改用 AgentMail REST API |
 | 認證 | PBKDF2-SHA256（WebCrypto）· httpOnly session cookie · Email OTP |
 | 測試 | Vitest 1012 tests（權限矩陣、狀態機、i18n key parity、theme 對比度、演算法、匯入冪等） |
 
@@ -152,7 +152,7 @@ Secrets 必須從 `.dev.vars` 讀取並透過 stdin 傳給 Wrangler，不要放�
 | `30 0 * * 1` | 每週一 08:30 | 上週全公司與各組 AI 週報 |
 | `30 0 1 * *` | 每月 1 日 08:30 | 上月全公司與各組 AI 月報 |
 
-LLM 失敗時報告仍保存純數據版；預生成報告一律排除保密專案並於文末註記。AgentMail 未設定時僅略過 Email，站內通知不受影響。
+LLM 失敗時報告仍保存純數據版；預生成報告一律排除保密專案並於文末註記。寄信先用 Cloudflare Email Service（寄件網域需先在 Email Service > Email Sending 完成 Onboard Domain），沒寄成時改用 AgentMail；收件人在 Cloudflare 封鎖名單上時不改寄。兩者都未設定時僅略過 Email，站內通知不受影響。
 
 ## 🔐 帳號與權限
 

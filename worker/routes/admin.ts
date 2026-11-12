@@ -324,6 +324,12 @@ adminRoutes.post("/clear-demo", async (c) => {
 
 adminRoutes.post("/test-email", async (c) => {
   const user = c.get("user");
-  const result = await sendMail(c.env, user.email, "[艾爾水晶] 測試信", `您好 ${user.name}，這是艾爾水晶-專案進度的寄信功能測試。\n\n${c.env.APP_BASE_URL}`);
-  return c.json(result, result.sent ? 200 : 503);
+  try {
+    const result = await sendMail(c.env, user.email, "[艾爾水晶] 測試信", `您好 ${user.name}，這是艾爾水晶-專案進度的寄信功能測試。\n\n${c.env.APP_BASE_URL}`);
+    if (!result.sent) return c.json({ ...result, error: "沒有設定寄信服務" }, 503);
+    return c.json(result);
+  } catch (error) {
+    const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
+    return c.json({ sent: false, code, error: `寄信失敗：${error instanceof Error ? error.message : String(error)}` }, 503);
+  }
 });
