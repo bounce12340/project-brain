@@ -80,7 +80,7 @@ export function AdminPage() {
     const password = window.prompt(t("admin.tempPrompt")); if (password === null) return;
     await action(async () => { const result = await api<{ temporary_password: string }>(`/admin/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ password: password || undefined }) }); window.alert(t("admin.tempPassword", { password: result.temporary_password })); }, t("admin.resetPassword"));
   };
-  const testEmail = () => action(async () => { const result = await api<{ message_id?: string }>("/admin/test-email", { method: "POST" }); setMessage(`${t("admin.testEmail")}: ${result.message_id ?? "accepted"}`); }, t("admin.testEmail"));
+  const testEmail = () => action(async () => { const result = await api<{ message_id?: string; provider?: string; fallback_reason?: string }>("/admin/test-email", { method: "POST" }); setMessage([`${t("admin.testEmail")}: ${result.message_id ?? "accepted"}`, result.provider ? `(${result.provider === "cloudflare" ? "Cloudflare Email" : "AgentMail"}${result.fallback_reason ? ` · Cloudflare: ${result.fallback_reason}` : ""})` : ""].filter(Boolean).join(" ")); }, t("admin.testEmail"));
   const updateRegistration = (id: string, patch: Partial<Registration>) => setRegistrations((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   const toggleRegistration = () => action(() => api("/admin/registration-toggle", { method: "POST", body: JSON.stringify({ enabled: !registrationEnabled }) }), registrationEnabled ? t("common.disable") : t("common.enable"));
   const changeRole = async (target: AdminUser, role: string) => {

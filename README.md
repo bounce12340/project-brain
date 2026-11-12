@@ -63,7 +63,7 @@ flowchart LR
   W -->|OpenAI compatible| LLM[DeepSeek deepseek-v4-pro<br/>+ Ollama Cloud glm-5.3]
   W -.->|no-key fallback| WAI[Workers AI<br/>Llama 3.3]
   CRON[Cron ×3<br/>daily/weekly/monthly] --> W
-  W -->|reminders · reports · invitations| MAIL[AgentMail<br/>uic_ai@agentmail.to]
+  W -->|reminders · reports · invitations| MAIL[Cloudflare Email Service<br/>notify@projects.uic-ai.com<br/>fallback AgentMail]
 ```
 
 ## 🧰 Technology Stack
@@ -74,7 +74,7 @@ flowchart LR
 | Backend | Cloudflare Workers · Hono · Workers Static Assets |
 | Data | D1 (SQLite, raw SQL migrations) · R2 (files) · unpdf (PDF text-layer extraction) |
 | AI | OpenAI-compatible layer (main model set by `LLM_MAIN_PROVIDER`: currently `deepseek` = DeepSeek `deepseek-v4-pro` via `LLM_*`; `ollama` = Ollama Cloud `deepseek-v4.1-flash`. Advisor: Ollama Cloud `glm-5.3`) + Workers AI fallback |
-| Email | AgentMail REST API |
+| Email | Cloudflare Email Service (`send_email` binding); AgentMail REST API as fallback |
 | Authentication | PBKDF2-SHA256 (WebCrypto) · httpOnly session cookie · Email OTP |
 | Testing | Vitest 1012 tests (permission matrix, state machines, i18n key parity, theme contrast, algorithms, import idempotency) |
 
@@ -152,7 +152,7 @@ Secrets must be read from `.dev.vars` and passed to Wrangler through stdin; do n
 | `30 0 * * 1` | Every Monday at 08:30 | AI weekly reports for the whole company and each team for the previous week |
 | `30 0 1 * *` | First day of each month at 08:30 | AI monthly reports for the whole company and each team for the previous month |
 
-If the LLM fails, a data-only version of the report is still saved. Pre-generated reports always exclude private projects and include a note to that effect at the end. If AgentMail is not configured, only Email delivery is skipped; in-app notifications are unaffected.
+If the LLM fails, a data-only version of the report is still saved. Pre-generated reports always exclude private projects and include a note to that effect at the end. Email goes out through Cloudflare Email Service first (the sending domain must be onboarded under Email Service > Email Sending) and falls back to AgentMail if that fails; recipients on Cloudflare's suppression list are not retried. If neither is configured, only Email delivery is skipped; in-app notifications are unaffected.
 
 ## 🔐 Accounts and Permissions
 
