@@ -17,6 +17,7 @@ interface __BaseEnv_Env {
 	MAIL_FROM_ADDRESS: "notify@projects.uic-ai.com";
 	AGENTMAIL_INBOX_ID: "uic_ai@agentmail.to";
 	MAIL_FROM_NAME: "艾爾水晶-專案進度";
+	SUPPORT_EMAIL: "";
 	LLM_API_KEY: string;
 	OLLAMA_API_KEY: string;
 	AGENTMAIL_API_KEY: string;
@@ -32,7 +33,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_BASE_URL" | "LLM_BASE_URL" | "LLM_MODEL" | "LLM_MAIN_PROVIDER" | "OLLAMA_BASE_URL" | "OLLAMA_MODEL" | "OLLAMA_ADVISOR_MODEL" | "MAIL_FROM_ADDRESS" | "AGENTMAIL_INBOX_ID" | "MAIL_FROM_NAME" | "LLM_API_KEY" | "OLLAMA_API_KEY" | "AGENTMAIL_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_BASE_URL" | "LLM_BASE_URL" | "LLM_MODEL" | "LLM_MAIN_PROVIDER" | "OLLAMA_BASE_URL" | "OLLAMA_MODEL" | "OLLAMA_ADVISOR_MODEL" | "MAIL_FROM_ADDRESS" | "AGENTMAIL_INBOX_ID" | "MAIL_FROM_NAME" | "SUPPORT_EMAIL" | "LLM_API_KEY" | "OLLAMA_API_KEY" | "AGENTMAIL_API_KEY">> {}
 }
 
 // Begin runtime types

@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-The interface provides **32 tools**:
+The external AI connector provides **30 tools** (web search is only available to the in-app assistant):
 
 | Workflow | Tools |
 |---|---|
@@ -47,7 +47,7 @@ The interface provides **32 tools**:
 | Kanban columns | `add_stage`, `rename_stage`, `reorder_stages`, `delete_stage` |
 | Meetings and training | `list_meetings`, `create_meeting`, `update_meeting` |
 | Contacts and published regulations | `search_contacts`, `list_regulations`, `create_regulation` |
-| Web search (DeepSeek) | `web_search`, `web_fetch` |
+| Web search (DeepSeek, in-app assistant only) | `web_search`, `web_fetch` |
 
 Tools retain website permissions; write tools require `mcp:write` and record the user and connector in the audit log. Private project content remains restricted, and regulatory drafts are excluded. Dates and meeting times use Asia/Taipei. OAuth requires the `OAUTH_KV` binding; deployment tokens also need Account → Workers KV Storage → Edit.
 

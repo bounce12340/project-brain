@@ -2,7 +2,7 @@ import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { loadActiveUser } from "../services/session-user";
 import { internalApi } from "./internal-api";
 import { handleMcpRequest, ToolError } from "./protocol";
-import { MCP_SERVER_INFO, MCP_TOOLS, type ToolContext } from "./tools";
+import { CONNECTOR_TOOLS, MCP_SERVER_INFO, type ToolContext } from "./tools";
 
 /** 授權時存進 token 的資料。只放 id 與顯示用的名稱；使用者的權限每次呼叫重新查。 */
 export interface McpProps { userId: string; clientName?: string }
@@ -21,7 +21,7 @@ export const serverIcons = (requestUrl: string) => [
  */
 export async function handleMcp(request: Request, env: Env, ctx: OAuthResourceContext<McpProps>): Promise<Response> {
   return handleMcpRequest<ToolContext>(request, {
-    tools: MCP_TOOLS,
+    tools: CONNECTOR_TOOLS,
     info: { ...MCP_SERVER_INFO, icons: serverIcons(request.url) },
     canWrite: ctx.auth.scope.includes(MCP_SCOPES.write),
     async context() {
@@ -30,8 +30,8 @@ export async function handleMcp(request: Request, env: Env, ctx: OAuthResourceCo
       if (user.must_change_password === 1) throw new ToolError("請先登入艾爾水晶變更密碼，再使用 AI 連接器。");
       return { user, baseUrl: env.APP_BASE_URL, api: internalApi(env, ctx, user), db: env.DB, env, clientName: ctx.props.clientName || "AI 工具" };
     },
-    onError(error, tool) {
-      console.error(JSON.stringify({ message: "MCP tool failed", tool, user: ctx.props.userId, error: error instanceof Error ? error.message : String(error) }));
+    onError(error, tool, traceId) {
+      console.error(JSON.stringify({ message: "MCP tool failed", tool, trace_id: traceId, user: ctx.props.userId, error: error instanceof Error ? error.message : String(error) }));
     },
   });
 }

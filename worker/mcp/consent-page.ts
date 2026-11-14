@@ -36,6 +36,23 @@ export function page(title: string, body: string): string {
   return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>${STYLE}</style></head><body><main><div class="brand"><img src="/favicon.svg" alt="" width="24" height="24">艾爾水晶</div>${body}</main></body></html>`;
 }
 
+/** 公開的說明頁（隱私權政策、連接器說明）：版面較寬、可被搜尋引擎收錄。body 由呼叫端負責跳脫。 */
+export function documentPage(title: string, body: string, description: string): string {
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="${escapeHtml(description)}"><title>${escapeHtml(title)}</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>${STYLE}
+body { display: block; }
+main.doc { max-width: 760px; margin: 0 auto; }
+h2 { font-size: 17px; margin: 28px 0 8px; font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; }
+h3 { font-size: 15px; margin: 18px 0 6px; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; }
+li { margin: 2px 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; background: var(--void); padding: 1px 5px; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 16px; }
+th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+th { color: var(--dim); font-weight: 600; }
+.en { color: var(--dim); }
+nav.links { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }</style></head><body><main class="doc"><div class="brand"><img src="/favicon.svg" alt="" width="24" height="24">艾爾水晶</div>${body}</main></body></html>`;
+}
+
 export function consentPage(details: ConsentDescription, handle: string, user: Pick<AuthUser, "name" | "email">): string {
   const name = escapeHtml(details.clientName);
   const origin = details.clientDomain

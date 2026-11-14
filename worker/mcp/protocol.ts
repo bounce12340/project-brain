@@ -35,8 +35,13 @@ export interface McpTool<Ctx> {
   write?: boolean;
   /** 同一組參數重複呼叫結果相同（例如勾選完成、改日期）。 */
   idempotent?: boolean;
-  /** 會永久刪除資料：客戶端據此在呼叫前向使用者確認。 */
+  /** 會永久刪除資料（艾爾水晶 AI 小幫手用紅色確認卡顯示）。 */
   destructive?: boolean;
+  /**
+   * 只新增資料、不改動或刪除既有資料（建立任務、新增進度紀錄…）。
+   * 寫入工具沒標這個就是會覆寫既有資料，對外宣告 destructiveHint: true，Claude 每次呼叫前都會請使用者確認。
+   */
+  additive?: boolean;
   /** 會連到艾爾水晶以外的服務（網路搜尋）。 */
   openWorld?: boolean;
   run(args: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
@@ -56,7 +61,7 @@ interface HandlerOptions<Ctx> {
   canWrite: boolean;
   /** 需要時才建立（查使用者、組內部 API），ping 與 tools/list 不必付這個成本。 */
   context(): Promise<Ctx>;
-  onError?(error: unknown, tool: string): void;
+  onError?(error: unknown, tool: string, traceId: string): void;
 }
 
 type JsonRpcId = string | number;
@@ -139,8 +144,10 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
         return { jsonrpc: "2.0", id, result: toolResult(output) };
       } catch (error) {
         if (error instanceof ToolError) return { jsonrpc: "2.0", id, result: toolError(error.message) };
-        options.onError?.(error, tool.name);
-        return { jsonrpc: "2.0", id, result: toolError("系統處理時發生錯誤，請稍後再試。") };
+        // 沒預期到的錯誤不把內部細節回給 AI，但給一個追蹤碼，管理員可以拿去 log 裡找。
+        const traceId = crypto.randomUUID().slice(0, 8);
+        options.onError?.(error, tool.name, traceId);
+        return { jsonrpc: "2.0", id, result: toolError(unexpectedErrorMessage(tool.name, traceId)) };
       }
     }
     default:
@@ -151,9 +158,22 @@ async function dispatch<Ctx>(message: JsonRpcRequest, options: HandlerOptions<Ct
 function describeTool<Ctx>(tool: McpTool<Ctx>) {
   return {
     name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema,
-    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: tool.destructive === true, idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: tool.openWorld === true },
+    annotations: { title: tool.title, readOnlyHint: !tool.write, destructiveHint: toolIsDestructive(tool), idempotentHint: !tool.write || tool.idempotent === true, openWorldHint: tool.openWorld === true },
   };
 }
+
+/**
+ * MCP 的 destructiveHint：會修改或刪除既有資料的寫入工具都是 true，只新增資料的是 false，
+ * 唯讀工具不適用（一律 false）。Claude 連接器目錄要求修改或刪除資料的工具宣告 true。
+ */
+export function toolIsDestructive<Ctx>(tool: Pick<McpTool<Ctx>, "write" | "destructive" | "additive">): boolean {
+  if (!tool.write) return false;
+  return tool.destructive === true || tool.additive !== true;
+}
+
+export const unexpectedErrorMessage = (tool: string, traceId: string) =>
+  `執行 ${tool} 時發生未預期的錯誤（追蹤碼 ${traceId}），這次的變更不一定有完成。請稍後再試；若一直發生，請把追蹤碼告訴艾爾水晶管理員。` +
+  ` / ${tool} failed with an unexpected server error (trace id ${traceId}); the change may not have been applied. Try again later, or give the trace id to the 艾爾水晶 administrator if it keeps happening.`;
 
 function toolResult(output: unknown) {
   const text = typeof output === "string" ? output : JSON.stringify(output, null, 2);
