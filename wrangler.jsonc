@@ -10,7 +10,7 @@
     "not_found_handling": "single-page-application",
     "binding": "ASSETS",
     // /mcp、/oauth 與 /.well-known 是 AI 連接器（MCP + OAuth）用的，不能被前端 SPA 接走。
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/*", "/email/*", "/.well-known/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/*", "/email/*", "/.well-known/*", "/privacy", "/connector"]
   },
   "d1_databases": [
     {
@@ -40,7 +40,9 @@
     // 沒寄成時改用 AgentMail（AGENTMAIL_API_KEY secret）。
     "MAIL_FROM_ADDRESS": "notify@projects.uic-ai.com",
     "AGENTMAIL_INBOX_ID": "uic_ai@agentmail.to",
-    "MAIL_FROM_NAME": "艾爾水晶-專案進度"
+    "MAIL_FROM_NAME": "艾爾水晶-專案進度",
+    // 公開說明頁（/privacy、/connector）列出的聯絡信箱；空白時請使用者洽公司內的管理員。
+    "SUPPORT_EMAIL": ""
   },
   // 只能用上面的寄件地址寄信。
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["notify@projects.uic-ai.com"] }],

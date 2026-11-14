@@ -108,8 +108,14 @@ describe("工具", () => {
   it("非預期的錯誤不把內部訊息交給 AI，但會記下來", async () => {
     const onError = vi.fn();
     const { body } = await call("explode", {}, { onError });
-    expect(body.result).toEqual({ content: [{ type: "text", text: "系統處理時發生錯誤，請稍後再試。" }], isError: true });
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "D1_ERROR: boom" }), "explode");
+    expect(body.result.isError).toBe(true);
+    const text = body.result.content[0].text as string;
+    expect(text).not.toContain("D1_ERROR");
+    // 錯誤要說得出是哪個工具、帶追蹤碼，log 裡記的追蹤碼與回給 AI 的相同。
+    const traceId = /追蹤碼 ([0-9a-f]{8})/.exec(text)![1];
+    expect(text).toContain("explode");
+    expect(text).toContain(`trace id ${traceId}`);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "D1_ERROR: boom" }), "explode", traceId);
   });
 
   it("不存在的工具是協定錯誤 -32602", async () => {

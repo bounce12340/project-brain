@@ -198,7 +198,7 @@ describe("寫入", () => {
     for (const name of ["delete_task", "delete_milestone", "delete_stage", "delete_subtask"]) {
       const tool = MCP_TOOLS.find((item) => item.name === name)!;
       expect(tool.write && tool.destructive, name).toBe(true);
-      expect(tool.description, name).toMatch(/explicit confirmation/);
+      expect(tool.description, name).toMatch(/cannot be undone/);
     }
     expect(MCP_TOOLS.filter((item) => item.destructive).map((item) => item.name).sort()).toEqual(["delete_milestone", "delete_stage", "delete_subtask", "delete_task"]);
   });
@@ -383,7 +383,7 @@ describe("看板欄位管理", () => {
     expect(await fails("create_task", { project: "p_qa", title: "x", stage: "8 上市後監控" })).toContain("看板上沒有「8 上市後監控」");
     expect(await fails("update_task", { task_id: "t_late", stage: "8 上市後監控" })).toContain("看板上沒有");
     expect(await row<{ n: number }>("SELECT COUNT(*) AS n FROM stages WHERE project_id='p_qa'")).toEqual({ n: 3 });
-    expect(MCP_TOOLS.find((tool) => tool.name === "create_task")!.description).toMatch(/never created automatically/);
+    expect(MCP_TOOLS.find((tool) => tool.name === "create_task")!.description).toMatch(/not created automatically/);
   });
 });
 

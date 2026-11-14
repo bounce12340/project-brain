@@ -36,7 +36,7 @@ codex mcp add project-brain --url https://projects.uic-ai.com/mcp --oauth-client
 codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registration dcr
 ```
 
-目前提供 **32 個工具**：
+外部 AI 連接器提供 **30 個工具**（網路搜尋只給站內 AI 小幫手用）：
 
 | 工作情境 | 工具 |
 |---|---|
@@ -47,7 +47,9 @@ codex mcp login project-brain --scopes mcp:read,mcp:write --oauth-client-registr
 | 看板欄位 | `add_stage`、`rename_stage`、`reorder_stages`、`delete_stage` |
 | 會議與外訓 | `list_meetings`、`create_meeting`、`update_meeting` |
 | 聯絡人與已發布法規 | `search_contacts`、`list_regulations`、`create_regulation` |
-| 網路搜尋（DeepSeek） | `web_search`、`web_fetch` |
+| 網路搜尋（DeepSeek，僅站內 AI 小幫手） | `web_search`、`web_fetch` |
+
+公開說明頁：[連接器說明](https://projects.uic-ai.com/connector)、[隱私權政策](https://projects.uic-ai.com/privacy)。依 Claude 連接器目錄的審查標準設計：每個工具都有 title 與 readOnlyHint／destructiveHint（修改或刪除既有資料的工具標 destructive），描述只說明工具做什麼；送審資料見 [docs/claude-directory-submission.md](docs/claude-directory-submission.md)。
 
 工具沿用網站權限；寫入需 `mcp:write`，並記錄使用者與連接器的稽核紀錄。保密專案內容仍受權限限制，法規查詢不含待審草稿。日期與會議時間採台北時區。OAuth 需要 `OAUTH_KV` binding，部署 token 另需 Account → Workers KV Storage → Edit。
 
