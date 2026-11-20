@@ -57,6 +57,8 @@ async function registrationGroups(db: D1Database, invite: InviteRow | null) {
   return (await db.prepare("SELECT id,name FROM groups WHERE company_id=? ORDER BY name").bind(invite?.company_id ?? HOME_COMPANY_ID).all<{ id: string; name: string }>()).results;
 }
 
+const SEND_CODE_MESSAGE = "驗證碼已寄出，15 分鐘內有效";
+const INVALID_CODE = "驗證碼無效，請重新取得";
 const INVALID_INVITE = "邀請碼無效、已過期或已用完，請向邀請你的人索取新的邀請碼";
 
 registerRoutes.get("/meta", async (c) => {
@@ -78,7 +80,9 @@ registerRoutes.post("/send-code", async (c) => {
   const email = normalizeEmail(body.email ?? "");
   if (!isValidEmail(email)) return c.json({ error: "請輸入有效的 Email" }, 422);
   const existing = await c.env.DB.prepare("SELECT 1 AS found FROM users WHERE email=?").bind(email).first();
-  if (existing) return c.json({ error: "此 Email 已註冊" }, 409);
+  // 已註冊的 Email 回一模一樣的成功訊息但不寄信：不讓人拿這裡查誰有帳號。
+  // 之後 /submit 沒有驗證碼可驗，會以通用的「驗證碼無效」失敗。
+  if (existing) return c.json({ ok: true, message: SEND_CODE_MESSAGE });
   const recent = await c.env.DB.prepare("SELECT 1 AS found FROM email_verifications WHERE email=? AND purpose='register' AND created_at > datetime('now','-60 seconds') ORDER BY created_at DESC LIMIT 1").bind(email).first();
   if (recent) return c.json({ error: "請於 60 秒後再取得驗證碼" }, 429);
 
@@ -95,7 +99,7 @@ registerRoutes.post("/send-code", async (c) => {
     console.error(JSON.stringify({ message: "registration OTP email failed", error: error instanceof Error ? error.message : "unknown" }));
     return c.json({ error: "驗證碼寄送失敗，請稍後再試" }, 503);
   }
-  return c.json({ ok: true, message: "驗證碼已寄出，15 分鐘內有效" });
+  return c.json({ ok: true, message: SEND_CODE_MESSAGE });
 });
 
 registerRoutes.post("/submit", async (c) => {
@@ -113,8 +117,10 @@ registerRoutes.post("/submit", async (c) => {
   ]);
   // 組別只能選邀請（或原本的公司）允許的那些，不能用改過的 group_id 跳到別家公司。
   const group = groups.find((item) => item.id === body.group_id?.trim()) ?? null;
-  const validation = validateRegistrationInput(body, { enabled, emailExists: Boolean(existing), groupExists: Boolean(group) });
+  const validation = validateRegistrationInput(body, { enabled, emailExists: false, groupExists: Boolean(group) });
   if (!validation.ok) return c.json({ error: validation.error }, validation.status);
+  // 已註冊的 Email 不會有驗證碼（send-code 不寄），用跟「驗證碼無效」一樣的訊息擋下，不洩漏帳號存在。
+  if (existing) return c.json({ error: INVALID_CODE }, 422);
 
   const verification = await c.env.DB.prepare(`
     SELECT id,code_hash,expires_at,attempts,verified FROM email_verifications
@@ -154,7 +160,7 @@ registerRoutes.post("/submit", async (c) => {
     await c.env.DB.batch(statements);
   } catch (error) {
     await releaseInvite();
-    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "此 Email 已註冊" }, 409);
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: INVALID_CODE }, 422);
     throw error;
   }
   if (directAdmin) {

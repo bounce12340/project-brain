@@ -5,6 +5,8 @@ import { hashPassword, randomToken, verifyPassword } from "../services/crypto";
 import { optionalString, requiredString } from "../services/http";
 import { sendMail } from "../services/mailer";
 import { canManageRegistrations } from "../services/registration";
+import { clearLoginThrottleForAccount } from "../services/login-throttle";
+import { revokeUserAccess } from "../services/revoke-access";
 import { groupInCompany, HOME_COMPANY_ID, userInCompany } from "../services/tenant";
 import {
   isActiveApprovedAdmin,
@@ -238,6 +240,9 @@ adminRoutes.patch("/users/:id", async (c) => {
     throw error;
   }
   if (removesAdmin && result.meta.changes === 0) return c.json({ error: LAST_ADMIN_ERROR }, 422);
+  // 停用或換 Email 後，舊 session 與 AI 連接器授權不能繼續有效。
+  const nextEmail = optionalString(body, "email")?.toLowerCase() ?? current.email;
+  if ((current.is_active === 1 && nextIsActive === 0) || nextEmail !== current.email) await revokeUserAccess(c.env, c.req.param("id"));
   await writeAudit(c.env.DB, c.get("user"), "update", "user", c.req.param("id"), "更新帳號資料");
   return c.json({ ok: true });
 });
@@ -259,6 +264,7 @@ adminRoutes.delete("/users/:id", async (c) => {
   const result = await c.env.DB.prepare(`UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (?=0 OR (${ACTIVE_ADMINS_IN_COMPANY})>1)`)
     .bind(c.req.param("id"), removesAdmin, companyId).run();
   if (removesAdmin && result.meta.changes === 0) return c.json({ error: LAST_ADMIN_ERROR }, 422);
+  await revokeUserAccess(c.env, c.req.param("id"));
   await writeAudit(c.env.DB, c.get("user"), "deactivate", "user", c.req.param("id"), "停用帳號");
   return c.json({ ok: true });
 });
@@ -273,6 +279,9 @@ adminRoutes.post("/users/:id/reset-password", async (c) => {
     c.env.DB.prepare("UPDATE users SET password_hash=?,must_change_password=1,failed_count=0,locked_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(await hashPassword(temporaryPassword), c.req.param("id")),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(c.req.param("id")),
   ]);
+  await revokeUserAccess(c.env, c.req.param("id"));
+  const target = await c.env.DB.prepare("SELECT email FROM users WHERE id=?").bind(c.req.param("id")).first<{ email: string }>();
+  if (target) await clearLoginThrottleForAccount(c.env.DB, target.email);
   await writeAudit(c.env.DB, c.get("user"), "reset_password", "user", c.req.param("id"), "重設臨時密碼");
   return c.json({ temporary_password: temporaryPassword });
 });
