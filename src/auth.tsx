@@ -19,12 +19,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error("AuthProvider missing"); return value; }
 
-export function Protected({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
+export function Protected({ children, admin = false, system = false }: { children: ReactNode; admin?: boolean; system?: boolean }) {
   const { user, loading } = useAuth(); const location = useLocation();
   const t = useT();
   if (loading) return <div className="grid min-h-screen place-items-center text-star-dim">{t("common.loading")}</div>;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (user.must_change_password && location.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;
+  if (system && user.is_system_admin !== 1) return <Navigate to="/" replace />;
   return children;
 }

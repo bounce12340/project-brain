@@ -5,6 +5,7 @@ import { hashPassword, randomToken, verifyPassword } from "../services/crypto";
 import { optionalString, requiredString } from "../services/http";
 import { sendMail } from "../services/mailer";
 import { canManageRegistrations } from "../services/registration";
+import { groupInCompany, HOME_COMPANY_ID, userInCompany } from "../services/tenant";
 import {
   isActiveApprovedAdmin,
   nextCredentialFailure,
@@ -23,10 +24,22 @@ adminRoutes.use("*", async (c, next) => {
   return next();
 });
 
+/**
+ * 管理員只管得到自己公司的帳號、組別與註冊申請。帳號經由組別屬於公司，
+ * 所以「同公司」一律用 groups.company_id 判斷。
+ */
+const ACTIVE_ADMINS_IN_COMPANY = "SELECT COUNT(*) FROM users au JOIN groups ag ON ag.id=au.group_id WHERE au.role='admin' AND au.is_active=1 AND au.approval_status='approved' AND ag.company_id=?";
+const LAST_ADMIN_ERROR = "系統至少需要一名管理員";
+
+const countActiveAdmins = async (db: D1Database, companyId: string) => await db.prepare(`SELECT (${ACTIVE_ADMINS_IN_COMPANY}) AS value`).bind(companyId).first<number>("value") ?? 0;
+
+/** 只有原本的公司才有的全系統設定（公開註冊開關、示範資料）。 */
+const homeCompanyOnly = (companyId: string) => companyId === HOME_COMPANY_ID;
+
 adminRoutes.get("/users", async (c) => {
   const [result, activeAdminCount] = await Promise.all([
-    c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.approval_status,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id ORDER BY CASE u.approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,u.is_active DESC,u.name").all(),
-    c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value"),
+    c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.group_id,u.must_change_password,u.email_notifications,u.is_active,u.is_demo,u.approval_status,u.created_at,g.name AS group_name FROM users u JOIN groups g ON g.id=u.group_id WHERE g.company_id=? ORDER BY CASE u.approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,u.is_active DESC,u.name").bind(c.get("user").company_id).all(),
+    countActiveAdmins(c.env.DB, c.get("user").company_id),
   ]);
   return c.json({ users: result.results, active_admin_count: activeAdminCount ?? 0 });
 });
@@ -35,9 +48,9 @@ adminRoutes.get("/transfer/candidates", async (c) => {
   const result = await c.env.DB.prepare(`
     SELECT u.id,u.name,u.email,u.role,g.name AS group_name
     FROM users u JOIN groups g ON g.id=u.group_id
-    WHERE u.is_active=1 AND u.approval_status='approved' AND u.role='member'
+    WHERE u.is_active=1 AND u.approval_status='approved' AND u.role='member' AND g.company_id=?
     ORDER BY u.name,u.email
-  `).all();
+  `).bind(c.get("user").company_id).all();
   return c.json({ candidates: result.results });
 });
 
@@ -60,8 +73,8 @@ adminRoutes.post("/transfer", async (c) => {
     return c.json({ error: "目前密碼不正確" }, 403);
   }
 
-  const successor = await c.env.DB.prepare("SELECT id,email,name,role,is_active,approval_status FROM users WHERE id=?")
-    .bind(successorId).first<{ id: string; email: string; name: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
+  const successor = await c.env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.is_active,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?")
+    .bind(successorId, currentUser.company_id).first<{ id: string; email: string; name: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
   const eligibilityError = successorEligibilityError(successor as TransferCandidateState | null, actor.id);
   if (eligibilityError || !successor) return c.json({ error: eligibilityError ?? "接班人不存在或不符合資格" }, 422);
 
@@ -102,9 +115,9 @@ adminRoutes.get("/registrations", async (c) => {
     c.env.DB.prepare(`
       SELECT u.id,u.name,u.email,u.role,u.group_id,u.created_at,g.name AS group_name
       FROM users u JOIN groups g ON g.id=u.group_id
-      WHERE u.approval_status='pending'
+      WHERE u.approval_status='pending' AND g.company_id=?
       ORDER BY u.created_at
-    `).all(),
+    `).bind(c.get("user").company_id).all(),
     c.env.DB.prepare("SELECT value FROM app_settings WHERE key='registration_enabled'").first<string>("value"),
   ]);
   return c.json({ registrations: rows.results, enabled: enabled === "1" });
@@ -112,15 +125,14 @@ adminRoutes.get("/registrations", async (c) => {
 
 adminRoutes.post("/registrations/:userId/approve", async (c) => {
   const body: { role?: string; group_id?: string } = await c.req.json().catch(() => ({}));
-  const registration = await c.env.DB.prepare("SELECT id,name,email,role,group_id,approval_status FROM users WHERE id=?")
-    .bind(c.req.param("userId")).first<{ id: string; name: string; email: string; role: Role; group_id: string; approval_status: string }>();
+  const registration = await c.env.DB.prepare("SELECT u.id,u.name,u.email,u.role,u.group_id,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?")
+    .bind(c.req.param("userId"), c.get("user").company_id).first<{ id: string; name: string; email: string; role: Role; group_id: string; approval_status: string }>();
   if (!registration) return c.json({ error: "找不到註冊申請" }, 404);
   if (registration.approval_status !== "pending") return c.json({ error: "此申請已處理" }, 422);
   const role = (body.role ?? registration.role) as Role;
   const groupId = body.group_id ?? registration.group_id;
   if (!(["member", "intern"] as string[]).includes(role)) return c.json({ error: "核准角色只能是正職成員或實習生" }, 422);
-  const group = await c.env.DB.prepare("SELECT id FROM groups WHERE id=?").bind(groupId).first();
-  if (!group) return c.json({ error: "所選組別不存在" }, 422);
+  if (!(await groupInCompany(c.env.DB, groupId, c.get("user").company_id))) return c.json({ error: "所選組別不存在" }, 422);
   await c.env.DB.batch([
     c.env.DB.prepare("UPDATE users SET approval_status='approved',role=?,group_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND approval_status='pending'").bind(role, groupId, registration.id),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(registration.id),
@@ -136,8 +148,8 @@ adminRoutes.post("/registrations/:userId/approve", async (c) => {
 });
 
 adminRoutes.post("/registrations/:userId/reject", async (c) => {
-  const registration = await c.env.DB.prepare("SELECT id,name,email,approval_status FROM users WHERE id=?")
-    .bind(c.req.param("userId")).first<{ id: string; name: string; email: string; approval_status: string }>();
+  const registration = await c.env.DB.prepare("SELECT u.id,u.name,u.email,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?")
+    .bind(c.req.param("userId"), c.get("user").company_id).first<{ id: string; name: string; email: string; approval_status: string }>();
   if (!registration) return c.json({ error: "找不到註冊申請" }, 404);
   if (registration.approval_status !== "pending") return c.json({ error: "此申請已處理" }, 422);
   await c.env.DB.batch([
@@ -155,6 +167,8 @@ adminRoutes.post("/registrations/:userId/reject", async (c) => {
 });
 
 adminRoutes.post("/registration-toggle", async (c) => {
+  // 沒有邀請碼的公開註冊會進到原本的公司，只有那家公司的管理員能開關。
+  if (!homeCompanyOnly(c.get("user").company_id)) return c.json({ error: "公開註冊只屬於原本的公司；請用邀請碼讓同仁加入" }, 403);
   const body: { enabled?: unknown } = await c.req.json().catch(() => ({}));
   if (typeof body.enabled !== "boolean") return c.json({ error: "enabled 必須是布林值" }, 422);
   await c.env.DB.prepare("INSERT INTO app_settings (key,value) VALUES ('registration_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
@@ -171,6 +185,7 @@ adminRoutes.post("/users", async (c) => {
   const role = requiredString(body, "role") as Role | null;
   const password = requiredString(body, "password");
   if (!name || !email || !groupId || !role || !["admin", "member", "intern"].includes(role) || !password || password.length < 8) return c.json({ error: "帳號資料不完整，密碼至少 8 碼" }, 422);
+  if (!(await groupInCompany(c.env.DB, groupId, c.get("user").company_id))) return c.json({ error: "所選組別不存在" }, 422);
   const id = createId("usr");
   try {
     await c.env.DB.prepare("INSERT INTO users (id,email,name,password_hash,role,group_id,must_change_password) VALUES (?,?,?,?,?,?,1)").bind(id, email, name, await hashPassword(password), role, groupId).run();
@@ -184,38 +199,43 @@ adminRoutes.post("/users", async (c) => {
 
 adminRoutes.patch("/users/:id", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT name,email,role,group_id,is_active,email_notifications,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ name: string; email: string; role: Role; group_id: string; is_active: number; email_notifications: number; approval_status: "pending" | "approved" | "rejected" }>();
+  const companyId = c.get("user").company_id;
+  const current = await c.env.DB.prepare("SELECT u.name,u.email,u.role,u.group_id,u.is_active,u.email_notifications,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?").bind(c.req.param("id"), companyId).first<{ name: string; email: string; role: Role; group_id: string; is_active: number; email_notifications: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!current) return c.json({ error: "找不到使用者" }, 404);
   const nextRole = optionalString(body, "role") ?? current.role;
   if (!["admin", "member", "intern"].includes(nextRole)) return c.json({ error: "角色不正確" }, 422);
   const nextIsActive = "is_active" in body ? (body.is_active ? 1 : 0) : current.is_active;
-  const activeAdminCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value") ?? 0;
-  if (shouldBlockAdminMutation(current, nextRole as Role, nextIsActive, activeAdminCount)) return c.json({ error: "系統至少需要一名管理員" }, 422);
+  const nextGroupId = optionalString(body, "group_id") ?? current.group_id;
+  // 換組只能換到同公司的組，否則等於把帳號搬到別家公司。
+  if (nextGroupId !== current.group_id && !(await groupInCompany(c.env.DB, nextGroupId, companyId))) return c.json({ error: "所選組別不存在" }, 422);
+  const activeAdminCount = await countActiveAdmins(c.env.DB, companyId);
+  if (shouldBlockAdminMutation(current, nextRole as Role, nextIsActive, activeAdminCount)) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   const removesAdmin = removesActiveApprovedAdmin(current, nextRole as Role, nextIsActive) ? 1 : 0;
   const result = await c.env.DB.prepare(`
     UPDATE users SET name=?,email=?,role=?,group_id=?,is_active=?,email_notifications=?,updated_at=CURRENT_TIMESTAMP
-    WHERE id=? AND (?=0 OR (SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved')>1)
-  `).bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, nextRole, optionalString(body, "group_id") ?? current.group_id, nextIsActive, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id"), removesAdmin).run();
-  if (removesAdmin && result.meta.changes === 0) return c.json({ error: "系統至少需要一名管理員" }, 422);
+    WHERE id=? AND (?=0 OR (${ACTIVE_ADMINS_IN_COMPANY})>1)
+  `).bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, nextRole, nextGroupId, nextIsActive, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id"), removesAdmin, companyId).run();
+  if (removesAdmin && result.meta.changes === 0) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   await writeAudit(c.env.DB, c.get("user"), "update", "user", c.req.param("id"), "更新帳號資料");
   return c.json({ ok: true });
 });
 
 adminRoutes.delete("/users/:id", async (c) => {
   if (c.req.param("id") === c.get("user").id) return c.json({ error: "不可停用目前登入帳號" }, 422);
-  const target = await c.env.DB.prepare("SELECT email,role,is_active,approval_status FROM users WHERE id=?").bind(c.req.param("id")).first<{ email: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
+  const companyId = c.get("user").company_id;
+  const target = await c.env.DB.prepare("SELECT u.email,u.role,u.is_active,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?").bind(c.req.param("id"), companyId).first<{ email: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!target) return c.json({ error: "找不到使用者" }, 404);
   if (target.approval_status === "pending" || target.approval_status === "rejected") {
     await c.env.DB.prepare("DELETE FROM users WHERE id=?").bind(c.req.param("id")).run();
     await writeAudit(c.env.DB, c.get("user"), "delete", "user", c.req.param("id"), `刪除未核准帳號 ${target.email}`);
     return c.json({ ok: true, deleted: true });
   }
-  const activeAdminCount = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").first<number>("value") ?? 0;
-  if (shouldBlockAdminMutation(target, target.role, 0, activeAdminCount)) return c.json({ error: "系統至少需要一名管理員" }, 422);
+  const activeAdminCount = await countActiveAdmins(c.env.DB, companyId);
+  if (shouldBlockAdminMutation(target, target.role, 0, activeAdminCount)) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   const removesAdmin = isActiveApprovedAdmin(target) ? 1 : 0;
-  const result = await c.env.DB.prepare("UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (?=0 OR (SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved')>1)")
-    .bind(c.req.param("id"), removesAdmin).run();
-  if (removesAdmin && result.meta.changes === 0) return c.json({ error: "系統至少需要一名管理員" }, 422);
+  const result = await c.env.DB.prepare(`UPDATE users SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (?=0 OR (${ACTIVE_ADMINS_IN_COMPANY})>1)`)
+    .bind(c.req.param("id"), removesAdmin, companyId).run();
+  if (removesAdmin && result.meta.changes === 0) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   await writeAudit(c.env.DB, c.get("user"), "deactivate", "user", c.req.param("id"), "停用帳號");
   return c.json({ ok: true });
 });
@@ -224,6 +244,7 @@ adminRoutes.post("/users/:id/reset-password", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const temporaryPassword = requiredString(body, "password") ?? `Brain-${randomToken(6)}`;
   if (temporaryPassword.length < 8) return c.json({ error: "臨時密碼至少 8 碼" }, 422);
+  if (!(await userInCompany(c.env.DB, c.req.param("id"), c.get("user").company_id))) return c.json({ error: "找不到使用者" }, 404);
   await c.env.DB.batch([
     c.env.DB.prepare("UPDATE users SET password_hash=?,must_change_password=1,failed_count=0,locked_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(await hashPassword(temporaryPassword), c.req.param("id")),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(c.req.param("id")),
@@ -232,7 +253,7 @@ adminRoutes.post("/users/:id/reset-password", async (c) => {
   return c.json({ temporary_password: temporaryPassword });
 });
 
-adminRoutes.get("/groups", async (c) => c.json({ groups: (await c.env.DB.prepare("SELECT * FROM groups ORDER BY name").all()).results }));
+adminRoutes.get("/groups", async (c) => c.json({ groups: (await c.env.DB.prepare("SELECT id,name,type FROM groups WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all()).results }));
 
 adminRoutes.post("/groups", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
@@ -240,14 +261,19 @@ adminRoutes.post("/groups", async (c) => {
   const type = requiredString(body, "type");
   if (!name || !type || !["clinical", "bd", "general", "qa"].includes(type)) return c.json({ error: "組別資料不正確" }, 422);
   const id = createId("grp");
-  await c.env.DB.prepare("INSERT INTO groups (id,name,type) VALUES (?,?,?)").bind(id, name, type).run();
+  try {
+    await c.env.DB.prepare("INSERT INTO groups (id,name,type,company_id) VALUES (?,?,?,?)").bind(id, name, type, c.get("user").company_id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "已經有同名的組別" }, 422);
+    throw error;
+  }
   await writeAudit(c.env.DB, c.get("user"), "create", "group", id, `建立組別「${name}」`);
   return c.json({ id }, 201);
 });
 
 adminRoutes.patch("/groups/:id", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT name,type FROM groups WHERE id=?").bind(c.req.param("id")).first<{ name: string; type: string }>();
+  const current = await c.env.DB.prepare("SELECT name,type FROM groups WHERE id=? AND company_id=?").bind(c.req.param("id"), c.get("user").company_id).first<{ name: string; type: string }>();
   if (!current) return c.json({ error: "找不到組別" }, 404);
   await c.env.DB.prepare("UPDATE groups SET name=?,type=? WHERE id=?").bind(optionalString(body, "name") ?? current.name, optionalString(body, "type") ?? current.type, c.req.param("id")).run();
   await writeAudit(c.env.DB, c.get("user"), "update", "group", c.req.param("id"), "更新組別");
@@ -255,6 +281,7 @@ adminRoutes.patch("/groups/:id", async (c) => {
 });
 
 adminRoutes.delete("/groups/:id", async (c) => {
+  if (!(await groupInCompany(c.env.DB, c.req.param("id"), c.get("user").company_id))) return c.json({ error: "找不到組別" }, 404);
   try {
     await c.env.DB.prepare("DELETE FROM groups WHERE id=?").bind(c.req.param("id")).run();
   } catch {
@@ -296,14 +323,18 @@ adminRoutes.delete("/templates/:id", async (c) => {
 adminRoutes.get("/audit-log", async (c) => {
   const page = Math.max(1, Number(c.req.query("page")) || 1);
   const pageSize = 30;
+  // 只看自己公司的人做的事；系統排程（沒有操作者）的紀錄屬於原本的公司。
+  const companyId = c.get("user").company_id;
+  const scope = "FROM audit_log a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN groups g ON g.id=u.group_id WHERE (g.company_id=? OR (a.user_id IS NULL AND ?=?))";
   const [rows, total] = await Promise.all([
-    c.env.DB.prepare("SELECT a.*,u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.created_at DESC LIMIT ? OFFSET ?").bind(pageSize, (page - 1) * pageSize).all(),
-    c.env.DB.prepare("SELECT COUNT(*) AS value FROM audit_log").first<number>("value"),
+    c.env.DB.prepare(`SELECT a.*,u.name AS user_name ${scope} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`).bind(companyId, companyId, HOME_COMPANY_ID, pageSize, (page - 1) * pageSize).all(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS value ${scope}`).bind(companyId, companyId, HOME_COMPANY_ID).first<number>("value"),
   ]);
   return c.json({ audit_log: rows.results, page, total: total ?? 0, total_pages: Math.ceil((total ?? 0) / pageSize) });
 });
 
 adminRoutes.post("/clear-demo", async (c) => {
+  if (!homeCompanyOnly(c.get("user").company_id)) return c.json({ error: "示範資料只屬於原本的公司" }, 403);
   const demoProjects = await c.env.DB.prepare("SELECT id FROM projects WHERE is_demo=1").all<{ id: string }>();
   const demoUsers = await c.env.DB.prepare("SELECT id FROM users WHERE is_demo=1").all<{ id: string }>();
   const cleanup = await c.env.DB.batch([

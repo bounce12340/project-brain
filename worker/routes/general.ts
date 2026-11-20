@@ -72,9 +72,10 @@ function addDaysForDashboard(date: string, days: number): string {
 
 generalRoutes.get("/metadata", async (c) => {
   const [groups, templates, users] = await Promise.all([
-    c.env.DB.prepare("SELECT * FROM groups ORDER BY name").all(),
+    // 組別與成員只列自己公司的。
+    c.env.DB.prepare("SELECT id,name,type FROM groups WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all(),
     c.env.DB.prepare("SELECT * FROM stage_templates ORDER BY name").all(),
-    c.env.DB.prepare("SELECT id,name,email,role,group_id FROM users WHERE is_active=1 ORDER BY name").all(),
+    c.env.DB.prepare("SELECT u.id,u.name,u.email,u.role,u.group_id FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND g.company_id=? ORDER BY u.name").bind(c.get("user").company_id).all(),
   ]);
   return c.json({ groups: groups.results, templates: templates.results, users: users.results });
 });

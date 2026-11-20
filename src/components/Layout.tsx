@@ -25,6 +25,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {NAV_GROUPS.map((group) => <NavMenu key={group.key} group={group} active={activeGroup === group.key} />)}
           <NavLink data-tour="notification-nav" to="/notifications" className={({ isActive }) => `relative ${topLink(isActive)} ${unread > 0 ? "has-unread" : ""}`}>{notificationsLabel}</NavLink>
           {user?.role === "admin" && <NavLink to="/admin" className={({ isActive }) => topLink(isActive)}>{t("nav.admin")}</NavLink>}
+          {user?.is_system_admin === 1 && <NavLink to="/system" className={({ isActive }) => topLink(isActive)}>{t("nav.system")}</NavLink>}
         </div>
         <div className="ml-auto flex items-center gap-1.5 text-sm sm:gap-2"><button className="grid h-8 min-w-8 place-items-center rounded-control border border-gold-dim bg-nexus px-2 font-semibold text-star-dim" aria-label={t("nav.language")} onClick={toggleLang}>{lang === "zh" ? t("lang.en") : t("lang.zh")}</button><button className="grid h-8 w-8 place-items-center rounded-control border border-gold-dim bg-nexus text-star-dim" aria-label={t(theme === "dark" ? "theme.light" : "theme.dark")} onClick={toggleTheme}>{theme === "dark" ? "☀" : "🌙"}</button><NavLink data-tour="help-nav" to="/help" className="grid h-8 w-8 place-items-center rounded-control border border-gold-dim bg-nexus font-bold text-star-dim" aria-label={t("nav.help")}>？</NavLink><NavLink to="/profile" title={t("nav.profileHint")} aria-label={t("nav.profileHint")} className="grid h-8 w-8 place-items-center rounded-control border border-gold-dim bg-nexus text-star-dim sm:hidden"><span aria-hidden="true">👤</span></NavLink><NavLink to="/profile" title={t("nav.profileHint")} className="hidden text-right sm:block"><span className="block font-medium text-star">{user?.name}</span><span className="text-xs text-star-dim">{user?.group_name} · {t("nav.profile")}</span></NavLink><button className="btn-secondary !px-3 !py-1.5" onClick={() => void logout()}>{t("nav.logout")}</button></div>
       </div>
@@ -35,6 +36,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {NAV_GROUPS.map((group) => <NavMenu key={group.key} group={group} active={activeGroup === group.key} compact />)}
         <NavLink to="/notifications" className={({ isActive }) => `relative ${mobileLink(isActive)} ${unread > 0 ? "has-unread" : ""}`}>{notificationsLabel}</NavLink>
         {user?.role === "admin" && <NavLink to="/admin" className={({ isActive }) => mobileLink(isActive)}>{t("nav.admin")}</NavLink>}
+        {user?.is_system_admin === 1 && <NavLink to="/system" className={({ isActive }) => mobileLink(isActive)}>{t("nav.system")}</NavLink>}
       </div>
     </nav>
     <main className="mx-auto max-w-7xl px-4 py-7">{children}</main><OnboardingTour /><AiSidebar />

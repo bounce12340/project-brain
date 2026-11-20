@@ -8,13 +8,27 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
  * 全在 SQL 裡，要知道某個專案會不會收到提醒，只能真的跑一次。
  * 結構用 migrations/ 全部依序套用，與正式環境同一份定義。
  */
+/**
+ * D1 把每個 migration 包在一個交易裡執行，PRAGMA defer_foreign_keys 才會延到交易結束才檢查外鍵；這裡照做。
+ */
+export function applyMigration(raw: DatabaseSync, file: string, sql: string): void {
+  raw.exec("BEGIN");
+  try {
+    raw.exec(sql);
+    raw.exec("COMMIT");
+  } catch (error) {
+    raw.exec("ROLLBACK");
+    throw new Error(`migration ${file} failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export function createTestD1(): { db: D1Database; raw: DatabaseSync } {
   const raw = new DatabaseSync(":memory:");
   // D1 預設開啟外鍵檢查（含 ON DELETE CASCADE），SQLite 預設關閉，不打開的話行為會不一樣。
   raw.exec("PRAGMA foreign_keys = ON");
   const dir = new URL("../../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter((name) => name.endsWith(".sql")).sort()) {
-    raw.exec(readFileSync(new URL(file, dir), "utf8"));
+    applyMigration(raw, file, readFileSync(new URL(file, dir), "utf8"));
   }
   return { db: shim(raw), raw };
 }

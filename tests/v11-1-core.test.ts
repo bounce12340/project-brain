@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 const manager: AuthUser = {
   id: "usr_manager", email: "manager@example.com", name: "Manager", role: "member", group_id: "grp_general",
   group_name: "RA/PV", group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1,
-  approval_status: "approved",
+  approval_status: "approved", company_id: "co_uic", company_name: "UIC", is_system_admin: 0,
 };
 
 class TestD1 {

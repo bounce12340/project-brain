@@ -8,6 +8,7 @@ import { parseMentionedUserIds } from "../services/mentions";
 import { canEditProgress, canManageAutomation, canViewProject } from "../services/permissions";
 import { groupTimelineProjects } from "../services/timeline";
 import { isValidRuleCombination, type ActionType, type TriggerType } from "../services/automation";
+import { activeUserInCompany } from "../services/tenant";
 import { accessFrom, projectRows } from "./projects";
 
 export const v2Routes = new Hono<AppContext>();
@@ -16,22 +17,22 @@ async function taskProjectId(db: D1Database, taskId: string): Promise<string | n
   return await db.prepare("SELECT project_id FROM tasks WHERE id=?").bind(taskId).first<string>("project_id");
 }
 
-async function projectUsers(db: D1Database, projectId: string): Promise<AuthUser[]> {
+async function projectUsers(db: D1Database, projectId: string, companyId: string): Promise<AuthUser[]> {
   const access = await getProjectAccess(db, projectId);
   if (!access) return [];
   const users = await db.prepare(`SELECT u.id,u.email,u.name,u.role,u.group_id,g.name AS group_name,g.type AS group_type,
-    u.must_change_password,u.email_notifications,u.onboarding_done
-    FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 ORDER BY u.name`).all<AuthUser>();
+    u.must_change_password,u.email_notifications,u.onboarding_done,g.company_id
+    FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND g.company_id=? ORDER BY u.name`).bind(companyId).all<AuthUser>();
   return users.results.filter((user) => canViewProject(user, access));
 }
 
-v2Routes.get("/groups", async (c) => c.json({ groups: (await c.env.DB.prepare("SELECT * FROM groups ORDER BY name").all()).results }));
+v2Routes.get("/groups", async (c) => c.json({ groups: (await c.env.DB.prepare("SELECT id,name,type FROM groups WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all()).results }));
 
 v2Routes.get("/projects/:id/mentionables", async (c) => {
   const access = await getProjectAccess(c.env.DB, c.req.param("id"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
-  return c.json({ users: (await projectUsers(c.env.DB, access.id)).map(({ id, name }) => ({ id, name })) });
+  return c.json({ users: (await projectUsers(c.env.DB, access.id, c.get("user").company_id)).map(({ id, name }) => ({ id, name })) });
 });
 
 v2Routes.get("/tasks/:id/dependencies", async (c) => {
@@ -90,7 +91,7 @@ v2Routes.post("/tasks/:id/comments", async (c) => {
   const content = requiredString(body, "content");
   if (!content) return c.json({ error: "請輸入留言" }, 422);
   const task = await c.env.DB.prepare("SELECT title FROM tasks WHERE id=?").bind(taskId).first<{ title: string }>();
-  const mentionables = await projectUsers(c.env.DB, projectId);
+  const mentionables = await projectUsers(c.env.DB, projectId, c.get("user").company_id);
   const mentioned = parseMentionedUserIds(content, mentionables).filter((id) => id !== user.id);
   const statements = [c.env.DB.prepare("INSERT INTO task_comments (id,task_id,author_id,content) VALUES (?,?,?,?)").bind(createId("cmt"), taskId, user.id, content)];
   for (const mentionedId of mentioned) statements.push(c.env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)")
@@ -185,7 +186,7 @@ v2Routes.post("/projects/:id/rules", async (c) => {
   if (trigger === "task_moved_to_stage" && !(await c.env.DB.prepare("SELECT id FROM stages WHERE id=? AND project_id=?").bind(triggerParam, projectId).first())) return c.json({ error: "請選擇有效階段" }, 422);
   if (trigger === "progress_reached" && (!triggerParam || Number(triggerParam) < 1 || Number(triggerParam) > 100)) return c.json({ error: "進度門檻須為 1 至 100" }, 422);
   const actionUser = optionalString(body, "action_param_user");
-  if (["notify_user", "assign_task_to", "create_todo_for"].includes(action) && (!actionUser || !(await c.env.DB.prepare("SELECT id FROM users WHERE id=? AND is_active=1").bind(actionUser).first()))) return c.json({ error: "請選擇有效成員" }, 422);
+  if (["notify_user", "assign_task_to", "create_todo_for"].includes(action) && (!actionUser || !(await activeUserInCompany(c.env.DB, actionUser, user.company_id)))) return c.json({ error: "請選擇有效成員" }, 422);
   const ruleId = createId("rule");
   await c.env.DB.prepare("INSERT INTO automation_rules (id,project_id,name,trigger_type,trigger_param,action_type,action_param_user,action_param_text,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
     .bind(ruleId, projectId, name, trigger, triggerParam, action, actionUser, optionalString(body, "action_param_text"), user.id).run();

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { applyMigration } from "./helpers/d1-sqlite";
 
 /**
  * migration 0028 重建 reg_entries（當時為了健保署 RSS 放寬 source；健保署網站擋自動抓取，功能已取下，結構保留）。
@@ -13,14 +14,14 @@ describe("migration 0028：reg_entries 重建", () => {
     const dir = new URL("../migrations/", import.meta.url);
     const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
     const before = files.filter((name) => name < "0028");
-    for (const file of before) raw.exec(readFileSync(new URL(file, dir), "utf8"));
+    for (const file of before) applyMigration(raw, file, readFileSync(new URL(file, dir), "utf8"));
     raw.exec(`INSERT INTO files (id,filename,size,content_type,storage_key,uploaded_by) VALUES ('f1','a.pdf',1,'application/pdf','k','usr_admin');
       INSERT INTO reg_entries (id,entry_date,product_line,title,status,source,source_ref,created_by,file_id) VALUES
         ('r1','2026-10-29','藥品','手動公告','published','manual',NULL,'usr_admin','f1'),
         ('r2','2026-10-30','藥品','TFDA 草稿','draft','tfda_rss','31671',NULL,NULL);
       INSERT INTO reg_entry_files (entry_id,file_id,position) VALUES ('r1','f1',0);`);
     expect(() => raw.exec("INSERT INTO reg_entries (id,entry_date,product_line,title,status,source) VALUES ('x','2026-11-01','藥品','x','draft','nhi_rss')")).toThrow();
-    for (const file of files.filter((name) => name >= "0028")) raw.exec(readFileSync(new URL(file, dir), "utf8"));
+    for (const file of files.filter((name) => name >= "0028")) applyMigration(raw, file, readFileSync(new URL(file, dir), "utf8"));
     expect(raw.prepare("SELECT id,source,source_ref,file_id,created_by FROM reg_entries ORDER BY id").all()).toEqual([
       { id: "r1", source: "manual", source_ref: null, file_id: "f1", created_by: "usr_admin" },
       { id: "r2", source: "tfda_rss", source_ref: "31671", file_id: null, created_by: null },

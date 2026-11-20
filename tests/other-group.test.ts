@@ -38,7 +38,7 @@ describe("內建「其他」組", () => {
 
   it("管理員已經自己建過叫「其他」的組時，不重複建立", async () => {
     await db.prepare("DELETE FROM groups WHERE id='grp_other'").run();
-    await db.prepare("INSERT INTO groups (id,name,type) VALUES ('grp_manual',' 其他 ','general')").run();
+    await db.prepare("INSERT INTO groups (id,name,type,company_id) VALUES ('grp_manual',' 其他 ','general','co_uic')").run();
     const sql = readFileSync(new URL("../migrations/0024_other_group.sql", import.meta.url), "utf8").split("\n").filter((line) => !line.startsWith("--")).join("\n");
     await db.prepare(sql).run();
     expect(await db.prepare("SELECT COUNT(*) AS n FROM groups WHERE TRIM(name)='其他'").first()).toEqual({ n: 1 });

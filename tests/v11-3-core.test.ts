@@ -18,7 +18,7 @@ const user: AuthUser = {
   must_change_password: 0,
   email_notifications: 1,
   onboarding_done: 1,
-  approval_status: "approved",
+  approval_status: "approved", company_id: "co_uic", company_name: "UIC", is_system_admin: 0,
 };
 
 class TestD1 {
