@@ -15,7 +15,7 @@ const placeholders = (count: number) => Array.from({ length: count }, () => "?")
 
 workspaceRoutes.get("/my-tasks", async (c) => {
   const user = c.get("user");
-  const projects = (await projectRows(c.env.DB)).filter((row) => (row.status === "active" || row.status === "paused") && canViewProject(user, accessFrom(row)));
+  const projects = (await projectRows(c.env.DB, user.company_id)).filter((row) => (row.status === "active" || row.status === "paused") && canViewProject(user, accessFrom(row)));
   if (!projects.length) return c.json({ items: [], today: taipeiDate() });
   const ids = projects.map((row) => row.id);
   const names = new Map(projects.map((row) => [row.id, row.name]));
@@ -38,7 +38,7 @@ workspaceRoutes.get("/my-tasks", async (c) => {
 
 workspaceRoutes.get("/portfolio", async (c) => {
   const user = c.get("user");
-  const rows = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row)));
+  const rows = (await projectRows(c.env.DB, user.company_id)).filter((row) => canViewProject(user, accessFrom(row)));
   if (!rows.length) return c.json({ projects: [], today: taipeiDate() });
   const ids = rows.map((row) => row.id);
   const today = taipeiDate();

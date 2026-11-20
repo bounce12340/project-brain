@@ -9,6 +9,7 @@ import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 import { isIsoDate } from "../services/importer";
+import { activeUserInCompany } from "../services/tenant";
 
 export const v6Routes = new Hono<AppContext>();
 
@@ -36,7 +37,7 @@ function csvCell(value: unknown): string {
 
 v6Routes.get("/projects/:id/licenses", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   if (!(await isQaProject(c.env.DB, projectId))) return c.json({ error: "僅 QA 專案提供效期登記簿" }, 422);
@@ -46,7 +47,7 @@ v6Routes.get("/projects/:id/licenses", async (c) => {
 
 v6Routes.post("/projects/:id/licenses", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   if (!(await isQaProject(c.env.DB, projectId))) return c.json({ error: "僅 QA 專案可建立效期紀錄" }, 422);
@@ -67,8 +68,9 @@ v6Routes.post("/projects/:id/licenses", async (c) => {
 v6Routes.patch("/licenses/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM licenses WHERE id=?").bind(c.req.param("id")).first<Record<string, string | null>>();
   if (!current) return c.json({ error: "找不到效期紀錄" }, 404);
-  const access = await getProjectAccess(c.env.DB, String(current.project_id));
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, String(current.project_id), c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const status = optionalString(body, "status") ?? String(current.status);
   if (!licenseStatuses.has(status)) return c.json({ error: "效期狀態不正確" }, 422);
@@ -84,8 +86,9 @@ v6Routes.patch("/licenses/:id", async (c) => {
 v6Routes.delete("/licenses/:id", async (c) => {
   const row = await c.env.DB.prepare("SELECT project_id FROM licenses WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!row) return c.json({ error: "找不到效期紀錄" }, 404);
-  const access = await getProjectAccess(c.env.DB, row.project_id);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM licenses WHERE id=?").bind(c.req.param("id")).run();
   await touchProject(c.env.DB, row.project_id);
   return c.json({ ok: true });
@@ -93,8 +96,9 @@ v6Routes.delete("/licenses/:id", async (c) => {
 
 v6Routes.get("/projects/:id/ccrs/export", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const rows = await c.env.DB.prepare("SELECT ccr_no,title,target_type,classification,status,reason,impact_assessment,requested_at,approved_at,closed_at,note FROM ccr_records WHERE project_id=? ORDER BY ccr_no").bind(projectId).all<Record<string, unknown>>();
   const headers = ["CCR編號", "標題", "標的類型", "分級", "狀態", "原因", "影響評估", "申請時間", "核准時間", "結案時間", "備註"];
   const keys = ["ccr_no", "title", "target_type", "classification", "status", "reason", "impact_assessment", "requested_at", "approved_at", "closed_at", "note"];
@@ -104,7 +108,7 @@ v6Routes.get("/projects/:id/ccrs/export", async (c) => {
 
 v6Routes.get("/projects/:id/ccrs", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   if (!(await isQaProject(c.env.DB, projectId))) return c.json({ error: "僅 QA 專案提供 CCR" }, 422);
@@ -123,7 +127,7 @@ v6Routes.get("/projects/:id/ccrs", async (c) => {
 
 v6Routes.post("/projects/:id/ccrs", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   const user = c.get("user");
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
@@ -152,8 +156,9 @@ v6Routes.post("/projects/:id/ccrs", async (c) => {
 v6Routes.patch("/ccrs/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM ccr_records WHERE id=?").bind(c.req.param("id")).first<Record<string, string | null>>();
   if (!current) return c.json({ error: "找不到 CCR" }, 404);
-  const access = await getProjectAccess(c.env.DB, String(current.project_id));
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, String(current.project_id), c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const targetType = optionalString(body, "target_type") ?? String(current.target_type);
   const classification = optionalString(body, "classification") ?? String(current.classification);
@@ -167,9 +172,10 @@ v6Routes.patch("/ccrs/:id", async (c) => {
 v6Routes.post("/ccrs/:id/transition", async (c) => {
   const row = await c.env.DB.prepare("SELECT id,project_id,title,status,requested_by FROM ccr_records WHERE id=?").bind(c.req.param("id")).first<{ id: string; project_id: string; title: string; status: CcrStatus; requested_by: string }>();
   if (!row) return c.json({ error: "找不到 CCR" }, 404);
-  const access = await getProjectAccess(c.env.DB, row.project_id);
+  const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
   const user = c.get("user");
-  if (!access || !canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const nextStatus = requiredString(body, "status") as CcrStatus | null;
   if (!nextStatus || !ccrStatuses.includes(nextStatus) || !canTransitionCcr(row.status, nextStatus, user.role === "admin")) return c.json({ error: "不允許的 CCR 狀態流轉" }, 422);
@@ -190,8 +196,9 @@ v6Routes.post("/ccrs/:id/transition", async (c) => {
 v6Routes.post("/ccrs/:id/events", async (c) => {
   const row = await c.env.DB.prepare("SELECT project_id FROM ccr_records WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!row) return c.json({ error: "找不到 CCR" }, 404);
-  const access = await getProjectAccess(c.env.DB, row.project_id);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const description = requiredString(body, "description");
   if (!description) return c.json({ error: "請輸入備註" }, 422);
@@ -202,7 +209,7 @@ v6Routes.post("/ccrs/:id/events", async (c) => {
 
 v6Routes.get("/projects/:id/okr", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const quarter = c.req.query("quarter") ?? currentTaipeiQuarter();
@@ -216,8 +223,9 @@ v6Routes.get("/projects/:id/okr", async (c) => {
 
 v6Routes.put("/projects/:id/quarter-goals/:quarter", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const quarter = c.req.param("quarter");
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const objective = requiredString(body, "objective");
@@ -230,17 +238,20 @@ v6Routes.put("/projects/:id/quarter-goals/:quarter", async (c) => {
 
 v6Routes.post("/projects/:id/key-results", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const title = requiredString(body, "title");
   const quarter = requiredString(body, "quarter") ?? currentTaipeiQuarter();
   const status = requiredString(body, "status") ?? "未開始";
   if (!title || !quarterPattern.test(quarter) || !krStatuses.has(status)) return c.json({ error: "KR 資料不正確" }, 422);
+  const ownerId = optionalString(body, "owner_id");
+  if (ownerId && !(await activeUserInCompany(c.env.DB, ownerId, c.get("user").company_id))) return c.json({ error: "找不到負責人" }, 422);
   const position = await c.env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS value FROM key_results WHERE project_id=? AND quarter=?").bind(projectId, quarter).first<number>("value");
   const id = createId("kr");
   await c.env.DB.prepare("INSERT INTO key_results (id,project_id,title,owner_id,quarter,status,note,position) VALUES (?,?,?,?,?,?,?,?)")
-    .bind(id, projectId, title, optionalString(body, "owner_id"), quarter, status, optionalString(body, "note") ?? "", position ?? 0).run();
+    .bind(id, projectId, title, ownerId, quarter, status, optionalString(body, "note") ?? "", position ?? 0).run();
   await touchProject(c.env.DB, projectId);
   await recomputeAutoProgress(c.env.DB, projectId, c.get("user").id);
   return c.json({ id }, 201);
@@ -250,12 +261,17 @@ v6Routes.patch("/key-results/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM key_results WHERE id=?").bind(c.req.param("id")).first<Record<string, string | number | null>>();
   if (!current) return c.json({ error: "找不到 KR" }, 404);
   const projectId = String(current.project_id);
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const status = optionalString(body, "status") ?? String(current.status);
   const quarter = optionalString(body, "quarter") ?? String(current.quarter);
   if (!krStatuses.has(status) || !quarterPattern.test(quarter)) return c.json({ error: "KR 狀態或季度不正確" }, 422);
+  if ("owner_id" in body) {
+    const nextOwner = optionalString(body, "owner_id");
+    if (nextOwner && nextOwner !== current.owner_id && !(await activeUserInCompany(c.env.DB, nextOwner, c.get("user").company_id))) return c.json({ error: "找不到負責人" }, 422);
+  }
   await c.env.DB.prepare("UPDATE key_results SET title=?,owner_id=?,quarter=?,status=?,note=?,position=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .bind(optionalString(body, "title") ?? current.title, "owner_id" in body ? optionalString(body, "owner_id") : current.owner_id, quarter, status, "note" in body ? optionalString(body, "note") ?? "" : current.note, "position" in body ? Number(body.position) : current.position, c.req.param("id")).run();
   await touchProject(c.env.DB, projectId);
@@ -267,8 +283,9 @@ v6Routes.patch("/key-results/:id", async (c) => {
 v6Routes.delete("/key-results/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT project_id FROM key_results WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!current) return c.json({ error: "找不到 KR" }, 404);
-  const access = await getProjectAccess(c.env.DB, current.project_id);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, current.project_id, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM key_results WHERE id=?").bind(c.req.param("id")).run();
   await touchProject(c.env.DB, current.project_id);
   await recomputeAutoProgress(c.env.DB, current.project_id, c.get("user").id);
@@ -277,8 +294,9 @@ v6Routes.delete("/key-results/:id", async (c) => {
 
 v6Routes.post("/projects/:id/key-results/reorder", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: { ids?: unknown } = await c.req.json().catch(() => ({}));
   if (!Array.isArray(body.ids) || !body.ids.every((id) => typeof id === "string")) return c.json({ error: "排序資料不正確" }, 422);
   const existing = await c.env.DB.prepare(`SELECT id FROM key_results WHERE project_id=? AND id IN (${body.ids.map(() => "?").join(",") || "NULL"})`).bind(projectId, ...body.ids).all<{ id: string }>();

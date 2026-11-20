@@ -291,32 +291,51 @@ adminRoutes.delete("/groups/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-adminRoutes.get("/templates", async (c) => c.json({ templates: (await c.env.DB.prepare("SELECT * FROM stage_templates ORDER BY name").all()).results }));
+/** 階段範本每家公司各自一份；管理員只管得到自己公司的。 */
+adminRoutes.get("/templates", async (c) => c.json({ templates: (await c.env.DB.prepare("SELECT * FROM stage_templates WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all()).results }));
 
 adminRoutes.post("/templates", async (c) => {
+  const user = c.get("user");
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const name = requiredString(body, "name");
   const stages = body.stages;
   if (!name || !Array.isArray(stages) || !stages.length || !stages.every((item) => typeof item === "string" && item.trim())) return c.json({ error: "模板名稱與階段不正確" }, 422);
+  const groupId = optionalString(body, "group_id");
+  if (groupId && !(await groupInCompany(c.env.DB, groupId, user.company_id))) return c.json({ error: "找不到組別" }, 422);
   const id = createId("tpl");
-  await c.env.DB.prepare("INSERT INTO stage_templates (id,name,group_id,stages_json) VALUES (?,?,?,?)").bind(id, name, optionalString(body, "group_id"), JSON.stringify(stages)).run();
-  await writeAudit(c.env.DB, c.get("user"), "create", "template", id, `建立模板「${name}」`);
+  try {
+    await c.env.DB.prepare("INSERT INTO stage_templates (id,name,group_id,stages_json,company_id) VALUES (?,?,?,?,?)").bind(id, name, groupId, JSON.stringify(stages), user.company_id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "已經有同名的模板" }, 422);
+    throw error;
+  }
+  await writeAudit(c.env.DB, user, "create", "template", id, `建立模板「${name}」`);
   return c.json({ id }, 201);
 });
 
 adminRoutes.patch("/templates/:id", async (c) => {
+  const user = c.get("user");
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const current = await c.env.DB.prepare("SELECT name,group_id,stages_json FROM stage_templates WHERE id=?").bind(c.req.param("id")).first<{ name: string; group_id: string | null; stages_json: string }>();
+  const current = await c.env.DB.prepare("SELECT name,group_id,stages_json FROM stage_templates WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).first<{ name: string; group_id: string | null; stages_json: string }>();
   if (!current) return c.json({ error: "找不到模板" }, 404);
+  const nextGroup = "group_id" in body ? optionalString(body, "group_id") : current.group_id;
+  if (nextGroup && nextGroup !== current.group_id && !(await groupInCompany(c.env.DB, nextGroup, user.company_id))) return c.json({ error: "找不到組別" }, 422);
   const stages = Array.isArray(body.stages) && body.stages.every((item) => typeof item === "string" && item.trim()) ? body.stages : JSON.parse(current.stages_json);
-  await c.env.DB.prepare("UPDATE stage_templates SET name=?,group_id=?,stages_json=? WHERE id=?").bind(optionalString(body, "name") ?? current.name, "group_id" in body ? optionalString(body, "group_id") : current.group_id, JSON.stringify(stages), c.req.param("id")).run();
-  await writeAudit(c.env.DB, c.get("user"), "update", "template", c.req.param("id"), "更新階段模板");
+  try {
+    await c.env.DB.prepare("UPDATE stage_templates SET name=?,group_id=?,stages_json=? WHERE id=? AND company_id=?").bind(optionalString(body, "name") ?? current.name, nextGroup, JSON.stringify(stages), c.req.param("id"), user.company_id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "已經有同名的模板" }, 422);
+    throw error;
+  }
+  await writeAudit(c.env.DB, user, "update", "template", c.req.param("id"), "更新階段模板");
   return c.json({ ok: true });
 });
 
 adminRoutes.delete("/templates/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM stage_templates WHERE id=?").bind(c.req.param("id")).run();
-  await writeAudit(c.env.DB, c.get("user"), "delete", "template", c.req.param("id"), "刪除階段模板");
+  const user = c.get("user");
+  const result = await c.env.DB.prepare("DELETE FROM stage_templates WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).run();
+  if (!(result.meta.changes ?? 0)) return c.json({ error: "找不到模板" }, 404);
+  await writeAudit(c.env.DB, user, "delete", "template", c.req.param("id"), "刪除階段模板");
   return c.json({ ok: true });
 });
 

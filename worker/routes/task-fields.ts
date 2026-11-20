@@ -14,14 +14,15 @@ async function fieldWithAccess(c: { env: Env; get(key: "user"): AppContext["Vari
   const field = await c.env.DB.prepare("SELECT id,project_id,name,type,options_json,position FROM task_fields WHERE id=?").bind(fieldId)
     .first<{ id: string; project_id: string; name: string; type: FieldType; options_json: string; position: number }>();
   if (!field) return { error: "找不到欄位", status: 404 as const };
-  const access = await getProjectAccess(c.env.DB, field.project_id);
-  if (!access || !canEditProgress(c.get("user"), access)) return { error: "沒有編輯權限", status: 403 as const };
+  const access = await getProjectAccess(c.env.DB, field.project_id, c.get("user"));
+  if (!access) return { error: "找不到欄位", status: 404 as const };
+  if (!canEditProgress(c.get("user"), access)) return { error: "沒有編輯權限", status: 403 as const };
   return { field };
 }
 
 taskFieldsRoutes.post("/projects/:id/task-fields", async (c) => {
   const projectId = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, projectId);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
@@ -86,8 +87,9 @@ taskFieldsRoutes.put("/tasks/:id/fields", async (c) => {
   const taskId = c.req.param("id");
   const projectId = await c.env.DB.prepare("SELECT project_id FROM tasks WHERE id=?").bind(taskId).first<string>("project_id");
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
-  const access = await getProjectAccess(c.env.DB, projectId);
-  if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
+  const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
+  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: unknown = await c.req.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "欄位格式不正確" }, 422);
   const fields = new Map((await projectFields(c.env.DB, projectId)).map((field) => [field.id, field]));
