@@ -19,7 +19,7 @@ export function ForgotPasswordPage() {
     catch (cause) { setError(cause instanceof Error ? cause.message : t("auth.forgotFailed")); }
     finally { setBusy(false); }
   };
-  return <main className="auth-stage grid min-h-screen place-items-center px-4 py-10"><form onSubmit={submit} className="panel auth-panel w-full max-w-md !p-8">
+  return <main className="auth-stage grid min-h-screen place-items-center px-4 py-10"><form onSubmit={submit} className="panel auth-panel w-full max-w-md !p-5 sm:!p-8">
     <AuthCrystal />
     <h1 className="mb-2 text-2xl font-black text-gold-bright">{t("auth.forgotTitle")}</h1>
     <p className="mb-6 text-sm leading-6 text-star-dim">{t("auth.forgotIntro")}</p>

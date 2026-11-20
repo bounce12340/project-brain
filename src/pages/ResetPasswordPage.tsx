@@ -44,7 +44,7 @@ export function ResetPasswordPage() {
       <p className="mb-6 text-xs leading-5 text-star-dim">{t("auth.resetHint")}</p>
       <button className="btn w-full" disabled={busy}>{t(busy ? "common.processing" : "auth.setNewPassword")}</button>
     </>;
-  return <main className="auth-stage grid min-h-screen place-items-center px-4 py-10"><form onSubmit={submit} className="panel auth-panel w-full max-w-md !p-8">
+  return <main className="auth-stage grid min-h-screen place-items-center px-4 py-10"><form onSubmit={submit} className="panel auth-panel w-full max-w-md !p-5 sm:!p-8">
     <AuthCrystal />
     <h1 className="mb-6 text-2xl font-black text-gold-bright">{t("auth.resetTitle")}</h1>
     {body}
