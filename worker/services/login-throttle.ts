@@ -6,7 +6,9 @@ import { sha256 } from "./crypto";
  * 為什麼不是「帳號」單一維度：知道 Email 的人只要故意輸錯 5 次就能讓本人一直被鎖，
  * 所以主要的鎖改綁 (帳號, IP)：攻擊者只鎖得到自己那個 IP。
  * - pair：同一帳號＋同一 IP 5 次失敗 → 鎖 15 分鐘。
- * - ip：同一 IP 跨所有帳號 1 小時 30 次失敗 → 鎖 1 小時（擋撞庫）。
+ * - ip：同一 IP 跨所有帳號 1 小時 100 次失敗 → 鎖 1 小時（擋撞庫）。
+ *   取捨：全公司共用同一個對外 IP，所以 IP 鎖只擋「密碼驗證失敗」的嘗試，密碼正確的人照常登入；
+ *   代價是撞庫者猜中時不會被這道鎖擋住，但 (帳號, IP) 與帳號鎖仍會限制對單一帳號的猜測次數。
  * - account：同一帳號跨所有 IP 一天 100 次失敗 → 鎖 1 小時。
  *   這是取捨：分散式攻擊仍可能讓本人暫時登不進去，但門檻高到單一攻擊者幾乎做不到，
  *   換來的是分散式猜密碼也有上限。
@@ -15,7 +17,7 @@ import { sha256 } from "./crypto";
 type Kind = "pair" | "ip" | "account";
 const RULES: Record<Kind, { limit: number; windowMs: number; lockMs: number }> = {
   pair: { limit: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 },
-  ip: { limit: 30, windowMs: 60 * 60_000, lockMs: 60 * 60_000 },
+  ip: { limit: 100, windowMs: 60 * 60_000, lockMs: 60 * 60_000 },
   account: { limit: 100, windowMs: 24 * 60 * 60_000, lockMs: 60 * 60_000 },
 };
 
@@ -28,12 +30,12 @@ async function keysFor(email: string, ip: string): Promise<Keys> {
   return { accountHash, pair: await sha256(`pair|${email}|${ip}`), ip: await sha256(`ip|${ip}`), account: await sha256(`account|${email}`) };
 }
 
-/** 任一組目前被鎖就回 true。 */
-export async function isLoginThrottled(db: D1Database, email: string, ip: string): Promise<boolean> {
+/** 目前被鎖的是哪幾組：pair／account 連密碼正確也擋，ip 只擋密碼錯的嘗試（由呼叫端決定）。 */
+export async function lockedLoginScopes(db: D1Database, email: string, ip: string): Promise<{ strict: boolean; ip: boolean }> {
   const keys = await keysFor(email, ip);
-  const { results } = await db.prepare("SELECT locked_until FROM login_throttle WHERE key_hash IN (?,?,?) AND locked_until > ?")
-    .bind(keys.pair, keys.ip, keys.account, new Date().toISOString()).all();
-  return results.length > 0;
+  const { results } = await db.prepare("SELECT kind FROM login_throttle WHERE key_hash IN (?,?,?) AND locked_until > ?")
+    .bind(keys.pair, keys.ip, keys.account, new Date().toISOString()).all<{ kind: Kind }>();
+  return { strict: results.some((row) => row.kind !== "ip"), ip: results.some((row) => row.kind === "ip") };
 }
 
 /** 記一次失敗（三組都記，帳號不存在也記）。 */

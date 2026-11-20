@@ -3,7 +3,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppContext, AuthUser } from "../types";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../services/crypto";
 import { approvalLoginError, type ApprovalStatus } from "../services/registration";
-import { clearLoginPair, isLoginThrottled, LOGIN_THROTTLED_MESSAGE, recordLoginFailure } from "../services/login-throttle";
+import { clearLoginPair, lockedLoginScopes, LOGIN_THROTTLED_MESSAGE, recordLoginFailure } from "../services/login-throttle";
 import { clientIp } from "../services/rate-limit";
 import { revokeUserAccess } from "../services/revoke-access";
 import { companyLoginError, type CompanyStatus } from "../services/tenant";
@@ -19,14 +19,20 @@ authRoutes.post("/login", async (c) => {
   const email = body.email?.trim().toLowerCase();
   if (!email || !body.password) return c.json({ error: "請輸入 Email 與密碼" }, 422);
   const ip = clientIp(c.req.raw);
-  // 先看節流再查帳號：被鎖時回應與帳號是否存在無關（都是同一句 429）。
-  if (await isLoginThrottled(c.env.DB, email, ip)) return c.json({ error: LOGIN_THROTTLED_MESSAGE }, 429);
+  // 為什麼 429 與 401「帳號或密碼錯誤」不能拼出帳號是否存在：
+  // 節流計數只看「輸入的 Email 與來源 IP」，帳號不存在、已停用、公司停用的失敗都照樣累計，
+  // 所以同樣的輸入序列對存在與不存在的帳號會得到同樣的 401／429 序列。
+  // (帳號, IP) 與帳號鎖連密碼正確也擋；IP 鎖（全公司共用 IP，門檻 100）只擋密碼驗證失敗的嘗試，
+  // 因此要先驗密碼再決定。
+  const locked = await lockedLoginScopes(c.env.DB, email, ip);
+  if (locked.strict) return c.json({ error: LOGIN_THROTTLED_MESSAGE }, 429);
   const account = await c.env.DB.prepare(`
     SELECT u.*, g.name AS group_name, g.type AS group_type, g.company_id, co.name AS company_name, co.status AS company_status
     FROM users u JOIN groups g ON g.id = u.group_id JOIN companies co ON co.id = g.company_id WHERE u.email = ?
   `).bind(email).first<AuthUser & { password_hash: string; is_active: number; failed_count: number; locked_until: string | null; approval_status: ApprovalStatus; email_token: string | null; company_status: CompanyStatus }>();
   const passwordOk = await verifyPassword(body.password, account && account.is_active === 1 ? account.password_hash : await getDummyHash());
   if (!account || account.is_active !== 1 || !passwordOk) {
+    if (locked.ip) return c.json({ error: LOGIN_THROTTLED_MESSAGE }, 429);
     await recordLoginFailure(c.env.DB, email, ip);
     return c.json({ error: "帳號或密碼錯誤" }, 401);
   }

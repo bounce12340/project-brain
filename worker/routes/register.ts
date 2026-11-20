@@ -80,19 +80,23 @@ registerRoutes.post("/send-code", async (c) => {
   const email = normalizeEmail(body.email ?? "");
   if (!isValidEmail(email)) return c.json({ error: "請輸入有效的 Email" }, 422);
   const existing = await c.env.DB.prepare("SELECT 1 AS found FROM users WHERE email=?").bind(email).first();
-  // 已註冊的 Email 回一模一樣的成功訊息但不寄信：不讓人拿這裡查誰有帳號。
-  // 之後 /submit 沒有驗證碼可驗，會以通用的「驗證碼無效」失敗。
-  if (existing) return c.json({ ok: true, message: SEND_CODE_MESSAGE });
-  const recent = await c.env.DB.prepare("SELECT 1 AS found FROM email_verifications WHERE email=? AND purpose='register' AND created_at > datetime('now','-60 seconds') ORDER BY created_at DESC LIMIT 1").bind(email).first();
+  // 已註冊的 Email 走一樣的流程：同樣的 60 秒冷卻、同樣寄一封信（改成「此 Email 已有帳號」的通知）、同樣的回應，
+  // 否則連打兩次（新 Email 第二次會 429）就能分辨誰有帳號。冷卻紀錄用另一個 purpose，
+  // 不會被 /submit 當成驗證碼（它只讀 purpose='register'）。
+  const purpose = existing ? "register_existing" : "register";
+  const recent = await c.env.DB.prepare("SELECT 1 AS found FROM email_verifications WHERE email=? AND purpose=? AND created_at > datetime('now','-60 seconds') ORDER BY created_at DESC LIMIT 1").bind(email, purpose).first();
   if (recent) return c.json({ error: "請於 60 秒後再取得驗證碼" }, 429);
 
   const code = generateOtp();
   const id = createId("verify");
   const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
-  await c.env.DB.prepare("INSERT INTO email_verifications (id,email,code_hash,expires_at) VALUES (?,?,?,?)")
-    .bind(id, email, await hashOtp(code), expiresAt).run();
+  await c.env.DB.prepare("INSERT INTO email_verifications (id,email,code_hash,purpose,expires_at) VALUES (?,?,?,?,?)")
+    .bind(id, email, await hashOtp(code), purpose, expiresAt).run();
   try {
-    const mail = await sendMail(c.env, email, "[艾爾水晶] 註冊驗證碼", `您的註冊驗證碼是：${code}\n\n驗證碼 15 分鐘內有效，請勿轉交他人。`);
+    const text = existing
+      ? `有人用這個 Email 在艾爾水晶申請註冊，但這個 Email 已經有帳號了。\n\n如果是你本人，請直接登入：${new URL(c.env.APP_BASE_URL).origin}/login\n忘記密碼可以在登入頁使用「忘記密碼」重設。\n\n如果不是你本人，請忽略這封信，你的帳號不會有任何變動。`
+      : `您的註冊驗證碼是：${code}\n\n驗證碼 15 分鐘內有效，請勿轉交他人。`;
+    const mail = await sendMail(c.env, email, existing ? "[艾爾水晶] 此 Email 已有帳號" : "[艾爾水晶] 註冊驗證碼", text);
     if (!mail.sent) throw new Error("寄信服務未設定");
   } catch (error) {
     await c.env.DB.prepare("DELETE FROM email_verifications WHERE id=?").bind(id).run();

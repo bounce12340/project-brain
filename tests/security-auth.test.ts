@@ -57,12 +57,15 @@ describe("登入節流", () => {
     for (let i = 0; i < 4; i += 1) expect((await login("victim@example.com", "wrong", "198.51.100.9")).status).toBe(401);
   });
 
-  it("同一個 IP 跨帳號 1 小時 30 次失敗 → 429（擋撞庫）", async () => {
-    for (let i = 0; i < 30; i += 1) expect((await login(`user${i}@example.com`, "wrong", "192.0.2.77")).status).toBe(401);
-    const blocked = await login("victim@example.com", "correct-password", "192.0.2.77");
+  it("同一個 IP 跨帳號 1 小時 100 次失敗 → 密碼錯的 429，但密碼正確的人（共用辦公室 IP）照常登入", async () => {
+    for (let i = 0; i < 99; i += 1) expect((await login(`user${i}@example.com`, "wrong", "192.0.2.77")).status).toBe(401);
+    expect((await login("user99@example.com", "wrong", "192.0.2.77")).status).toBe(401);
+    const blocked = await login("user100@example.com", "wrong", "192.0.2.77");
     expect(blocked.status).toBe(429);
     expect(((await blocked.json()) as { error: string }).error).toContain("請稍後再試");
-    expect((await login("victim@example.com", "correct-password", "192.0.2.78")).status).toBe(200);
+    expect((await login("victim@example.com", "correct-password", "192.0.2.77")).status).toBe(200);
+    expect((await login("victim@example.com", "wrong", "192.0.2.77")).status).toBe(429);
+    expect((await login("victim@example.com", "wrong", "192.0.2.78")).status).toBe(401);
   });
 
   it("同一帳號跨 IP 一天 100 次失敗 → 暫時鎖定（高門檻安全網）", async () => {
@@ -84,10 +87,26 @@ describe("登入節流", () => {
     expect(fake).toEqual(real);
   });
 
-  it("停用帳號與不存在的帳號一樣回 401，且都有做密碼驗證", async () => {
-    const inactive = await login("gone@example.com", "correct-password");
-    expect(inactive.status).toBe(401);
-    expect(((await inactive.json()) as { error: string }).error).toBe("帳號或密碼錯誤");
+  it("停用帳號與不存在的帳號一樣回 401，且走同一條節流路徑（5 次後同樣 429，連密碼正確也擋）", async () => {
+    const run = async (email: string, ip: string) => {
+      const out: Array<[number, string]> = [];
+      for (let i = 0; i < 6; i += 1) { const r = await login(email, i < 5 ? "wrong" : "correct-password", ip); out.push([r.status, ((await r.json()) as { error: string }).error]); }
+      return out;
+    };
+    const inactive = await run("gone@example.com", "198.51.100.1");
+    const ghost = await run("ghost@example.com", "198.51.100.2");
+    expect(inactive).toEqual(ghost);
+    expect(inactive[0]).toEqual([401, "帳號或密碼錯誤"]);
+    expect(inactive[5][0]).toBe(429);
+  });
+
+  it("公司停用的帳號：密碼錯誤同樣累計並鎖定，與一般帳號一致", async () => {
+    await env.DB.prepare("INSERT INTO companies (id,name,status) VALUES ('co_off','停用公司','suspended')").run();
+    await env.DB.prepare("INSERT INTO groups (id,name,type,company_id) VALUES ('grp_off','停用組','general','co_off')").run();
+    await env.DB.prepare("UPDATE users SET group_id='grp_off' WHERE id='victim'").run();
+    const seq: number[] = [];
+    for (let i = 0; i < 6; i += 1) seq.push((await login("victim@example.com", "wrong", "198.51.100.5")).status);
+    expect(seq).toEqual([401, 401, 401, 401, 401, 429]);
     expect(await count("SELECT COUNT(*) AS n FROM login_throttle WHERE kind='pair'")).toBe(1);
   });
 });
@@ -164,15 +183,27 @@ describe("改密碼收回其他存取", () => {
 });
 
 describe("註冊不洩漏帳號", () => {
-  it("send-code：已註冊與未註冊的 Email 回應一樣，已註冊的不寄信、不建驗證碼", async () => {
-    const sentMails: unknown[] = [];
+  it("send-code：已註冊與未註冊的 Email 連打兩次，回應序列完全一樣（含 60 秒冷卻）；已註冊的收到通知信而非驗證碼", async () => {
+    const sentMails: Array<{ to: string; subject: string; text: string }> = [];
     vi.stubGlobal("fetch", async (_u: unknown, init?: RequestInit) => { sentMails.push(JSON.parse(String(init?.body))); return new Response("{}", { status: 200 }); });
-    const fresh = await post("/api/register/send-code", { email: "new-person@example.com" });
-    const existing = await post("/api/register/send-code", { email: "victim@example.com" });
-    expect(existing.status).toBe(fresh.status);
-    expect(await existing.json()).toEqual(await fresh.json());
-    expect(sentMails).toHaveLength(1);
-    expect(await count("SELECT COUNT(*) AS n FROM email_verifications WHERE email='victim@example.com'")).toBe(0);
+    const seq = async (email: string) => { const out = []; for (let i = 0; i < 2; i += 1) { const r = await post("/api/register/send-code", { email }); out.push([r.status, await r.json()]); } return out; };
+    const fresh = await seq("new-person@example.com");
+    const existing = await seq("victim@example.com");
+    expect(existing).toEqual(fresh);
+    expect(fresh[1][0]).toBe(429);
+    expect(sentMails).toHaveLength(2);
+    expect(sentMails[1]).toMatchObject({ to: "victim@example.com", subject: "[艾爾水晶] 此 Email 已有帳號" });
+    expect(sentMails[1].text).not.toMatch(/\d{6}/);
+    // 冷卻紀錄不是註冊用的驗證碼。
+    expect(await count("SELECT COUNT(*) AS n FROM email_verifications WHERE email='victim@example.com' AND purpose='register'")).toBe(0);
+  });
+
+  it("send-code：寄信失敗時，已註冊與未註冊的 Email 都回同樣的 503", async () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 500 }));
+    const a = await post("/api/register/send-code", { email: "new-person@example.com" });
+    const b = await post("/api/register/send-code", { email: "victim@example.com" });
+    expect([b.status, await b.json()]).toEqual([a.status, await a.json()]);
+    expect(a.status).toBe(503);
   });
 
   it("submit：已註冊的 Email 以通用訊息失敗，不建立帳號", async () => {
