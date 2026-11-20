@@ -6,6 +6,7 @@ import { r2FileStore } from "../services/filestore";
 import { isIsoDate } from "../services/importer";
 import { canManageRegwatch, parseRegwatchDraftBatchInput, processRegwatchDraftBatch } from "../services/regwatch";
 import { fetchTfdaDrafts } from "../services/tfda";
+import { chargeOrQuotaResponse } from "../services/ai-tenant";
 import {
   REGWATCH_PRODUCT_LINES,
   combineRegwatchFileTexts,
@@ -124,6 +125,9 @@ v7Routes.post("/regwatch/tfda-fetch", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取 TFDA" }, 403);
   // 立即抓取只替自己的公司建草稿；每日排程才替所有使用中的公司各建一份。
+  // 抓取時會用語言模型整理公告，算進公司的 AI 用量。
+  const quota = await chargeOrQuotaResponse(c.env, user.company_id);
+  if (quota) return c.json({ error: quota }, 429);
   const stats = await fetchTfdaDrafts(c.env, { companyIds: [user.company_id] });
   await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}${firstError(stats)}`);
   return c.json(stats);
@@ -186,6 +190,8 @@ v7Routes.post("/regwatch/ai-extract", async (c) => {
   const text = input.text.trim();
   if (!text) return c.json({ error: "請貼上公告文字或上傳檔案" }, 422);
   try { ensureRegwatchTextLimit(text); } catch { return c.json({ error: "文字內容不可超過 120,000 字元" }, 422); }
+  const quota = await chargeOrQuotaResponse(c.env, user.company_id);
+  if (quota) return c.json({ error: quota }, 429);
   try {
     const extracted = await extractRegwatchEntries(c.env, text, input.mode);
     if (!extracted.length) return c.json({ error: "AI 服務暫時無法使用，可改用手動新增" }, 502);

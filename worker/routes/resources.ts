@@ -42,7 +42,7 @@ resourcesRoutes.patch("/stages/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "stages", stageId);
   if (!projectId) return c.json({ error: "找不到階段" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到階段" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const current = await c.env.DB.prepare("SELECT name,color,position FROM stages WHERE id=?").bind(stageId).first<{ name: string; color: string; position: number }>();
@@ -56,7 +56,7 @@ resourcesRoutes.delete("/stages/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "stages", stageId);
   if (!projectId) return c.json({ error: "找不到階段" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到階段" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const count = await c.env.DB.prepare("SELECT COUNT(*) AS value FROM tasks WHERE stage_id=?").bind(stageId).first<number>("value");
   if (count) return c.json({ error: "請先搬走此階段的工作卡片" }, 422);
@@ -94,7 +94,7 @@ resourcesRoutes.patch("/tasks/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "tasks", id);
   if (!projectId) return c.json({ error: "找不到工作" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到工作" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const current = await c.env.DB.prepare("SELECT * FROM tasks WHERE id=?").bind(id).first<{ title: string; description: string; stage_id: string; assignee_id: string | null; start_date: string | null; due_date: string | null; position: number; done: number }>();
@@ -150,7 +150,7 @@ resourcesRoutes.delete("/tasks/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "tasks", id);
   if (!projectId) return c.json({ error: "找不到工作" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到工作" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM tasks WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
@@ -190,7 +190,7 @@ resourcesRoutes.patch("/milestones/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "milestones", id);
   if (!projectId) return c.json({ error: "找不到里程碑" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到里程碑" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const current = await c.env.DB.prepare("SELECT * FROM milestones WHERE id=?").bind(id).first<{ title: string; due_date: string | null; end_date: string | null; done: number; position: number; kind: "milestone" | "event" }>();
@@ -217,7 +217,7 @@ resourcesRoutes.delete("/milestones/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "milestones", id);
   if (!projectId) return c.json({ error: "找不到里程碑" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到里程碑" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM milestones WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
@@ -267,7 +267,7 @@ resourcesRoutes.patch("/progress-updates/:id", async (c) => {
   const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot,created_at,health FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null; created_at: string; health: string | null }>();
   if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, update.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到進度紀錄" }, 404);
   if (!canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   if (!("content" in body) && !("created_at" in body) && !("health" in body)) return c.json({ error: "請輸入進度內容" }, 422);
@@ -305,7 +305,7 @@ resourcesRoutes.delete("/progress-updates/:id", async (c) => {
   const update = await c.env.DB.prepare("SELECT id,project_id,author_id,content,progress_snapshot FROM progress_updates WHERE id=?").bind(id).first<{ id: string; project_id: string; author_id: string; content: string; progress_snapshot: number | null }>();
   if (!update) return c.json({ error: "找不到進度紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, update.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到進度紀錄" }, 404);
   if (!canEditProgressUpdate(user, access, update.author_id)) return c.json({ error: "沒有刪除權限" }, 403);
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
@@ -350,7 +350,7 @@ resourcesRoutes.delete("/clinical/enrollments/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "clinical_enrollments", id);
   if (!projectId) return c.json({ error: "找不到收案紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到收案紀錄" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM clinical_enrollments WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
@@ -379,7 +379,7 @@ resourcesRoutes.patch("/bd/cases/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "bd_cases", id);
   if (!projectId) return c.json({ error: "找不到案件" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到案件" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const current = await c.env.DB.prepare("SELECT * FROM bd_cases WHERE id=?").bind(id).first<Record<string, string | null>>();
@@ -395,7 +395,7 @@ resourcesRoutes.delete("/bd/cases/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "bd_cases", id);
   if (!projectId) return c.json({ error: "找不到案件" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到案件" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM bd_cases WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
@@ -408,7 +408,7 @@ resourcesRoutes.post("/bd/cases/:id/events", async (c) => {
   if (!projectId) return c.json({ error: "找不到案件" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   const user = c.get("user");
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到案件" }, 404);
   if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const date = requiredString(body, "event_date");
@@ -426,7 +426,7 @@ resourcesRoutes.delete("/bd/events/:id", async (c) => {
   const projectId = await eventProjectId(c.env.DB, id);
   if (!projectId) return c.json({ error: "找不到案件歷程" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到案件歷程" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM bd_case_events WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);
@@ -459,7 +459,7 @@ resourcesRoutes.delete("/bd/fees/:id", async (c) => {
   const projectId = await parentProjectId(c.env.DB, "bd_fees", id);
   if (!projectId) return c.json({ error: "找不到費用" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到費用" }, 404);
   if (!canViewFees(c.get("user"), access)) return c.json({ error: "沒有費用權限" }, 403);
   await c.env.DB.prepare("DELETE FROM bd_fees WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, projectId);

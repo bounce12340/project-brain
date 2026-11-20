@@ -40,7 +40,7 @@ v2Routes.get("/tasks/:id/dependencies", async (c) => {
   const projectId = await taskProjectId(c.env.DB, c.req.param("id"));
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const result = await c.env.DB.prepare("SELECT td.*,t.title AS depends_on_title FROM task_dependencies td JOIN tasks t ON t.id=td.depends_on_task_id WHERE td.task_id=?").bind(c.req.param("id")).all();
   return c.json({ dependencies: result.results });
@@ -51,7 +51,7 @@ v2Routes.post("/tasks/:id/dependencies", async (c) => {
   const projectId = await taskProjectId(c.env.DB, taskId);
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const dependsOn = requiredString(body, "depends_on_task_id");
@@ -68,7 +68,7 @@ v2Routes.delete("/tasks/:id/dependencies/:dependsOnId", async (c) => {
   const projectId = await taskProjectId(c.env.DB, taskId);
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM task_dependencies WHERE task_id=? AND depends_on_task_id=?").bind(taskId, c.req.param("dependsOnId")).run();
   await touchProject(c.env.DB, projectId);
@@ -79,7 +79,7 @@ v2Routes.get("/tasks/:id/comments", async (c) => {
   const projectId = await taskProjectId(c.env.DB, c.req.param("id"));
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const result = await c.env.DB.prepare("SELECT tc.*,u.name AS author_name FROM task_comments tc JOIN users u ON u.id=tc.author_id WHERE tc.task_id=? ORDER BY tc.created_at").bind(c.req.param("id")).all();
   return c.json({ comments: result.results });
@@ -91,7 +91,7 @@ v2Routes.post("/tasks/:id/comments", async (c) => {
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
   const user = c.get("user");
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const content = requiredString(body, "content");
@@ -208,7 +208,7 @@ v2Routes.patch("/rules/:id", async (c) => {
   const rule = await c.env.DB.prepare("SELECT * FROM automation_rules WHERE id=?").bind(c.req.param("id")).first<{ id: string; project_id: string; enabled: number; name: string }>();
   if (!rule) return c.json({ error: "找不到規則" }, 404);
   const access = await getProjectAccess(c.env.DB, rule.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到規則" }, 404);
   if (!canManageAutomation(c.get("user"), access)) return c.json({ error: "沒有規則管理權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const enabled = "enabled" in body ? (body.enabled ? 1 : 0) : rule.enabled;
@@ -220,7 +220,7 @@ v2Routes.delete("/rules/:id", async (c) => {
   const rule = await c.env.DB.prepare("SELECT * FROM automation_rules WHERE id=?").bind(c.req.param("id")).first<{ id: string; project_id: string; name: string }>();
   if (!rule) return c.json({ error: "找不到規則" }, 404);
   const access = await getProjectAccess(c.env.DB, rule.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到規則" }, 404);
   if (!canManageAutomation(c.get("user"), access)) return c.json({ error: "沒有規則管理權限" }, 403);
   await c.env.DB.prepare("DELETE FROM automation_rules WHERE id=?").bind(rule.id).run();
   await writeAudit(c.env.DB, c.get("user"), "rule_delete", "automation_rule", rule.id, `刪除規則「${rule.name}」`);

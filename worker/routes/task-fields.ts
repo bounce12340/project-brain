@@ -88,7 +88,7 @@ taskFieldsRoutes.put("/tasks/:id/fields", async (c) => {
   const projectId = await c.env.DB.prepare("SELECT project_id FROM tasks WHERE id=?").bind(taskId).first<string>("project_id");
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: unknown = await c.req.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "欄位格式不正確" }, 422);

@@ -42,3 +42,14 @@ export async function chargeAiCall(env: Env, companyId: string): Promise<void> {
     ON CONFLICT(company_id,day) DO UPDATE SET calls=calls+1 WHERE calls<? RETURNING calls`).bind(companyId, taipeiDate(), cap).first<{ calls: number }>();
   if (!row) throw new AiQuotaError(`貴公司今天的 AI 使用次數已達上限（${cap} 次），請明天再試，或聯絡系統管理員調整上限。`);
 }
+
+/** 路由用：記一次 AI 呼叫；超過上限回給使用者看的訊息（呼叫端回 429），沒超過回 null。 */
+export async function chargeOrQuotaResponse(env: Env, companyId: string): Promise<string | null> {
+  try {
+    await chargeAiCall(env, companyId);
+    return null;
+  } catch (error) {
+    if (error instanceof AiQuotaError) return error.message;
+    throw error;
+  }
+}

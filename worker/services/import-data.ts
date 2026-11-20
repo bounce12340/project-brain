@@ -125,9 +125,10 @@ async function createCcrFromImport(db: D1Database, projectId: string, item: Json
   const id = createId("ccr");
   const now = new Date().toISOString();
   await db.batch([
-    db.prepare(`INSERT INTO ccr_records (id,project_id,ccr_no,title,target_type,description,reason,classification,impact_assessment,status,requested_by,approved_by,approved_at,closed_at,note)
-      SELECT ?,?,'CCR-' || ? || '-' || printf('%03d',COALESCE(MAX(CASE WHEN ccr_no LIKE ? THEN CAST(substr(ccr_no,10) AS INTEGER) END),0)+1),?,?,?,?,?,?,?,?,?,?,?,? FROM ccr_records`)
-      .bind(id, projectId, year, `CCR-${year}-%`, title, targetType, text(item.description) ?? "匯入資料", text(item.reason) ?? "匯入", classification, text(item.impact_assessment), status, actorId, ["已核准", "執行中", "效期確認", "已結案"].includes(status) ? actorId : null, ["已核准", "執行中", "效期確認", "已結案"].includes(status) ? now : null, status === "已結案" ? now : null, prefixed(notePrefix, text(item.note))),
+    db.prepare(`INSERT INTO ccr_records (id,company_id,project_id,ccr_no,title,target_type,description,reason,classification,impact_assessment,status,requested_by,approved_by,approved_at,closed_at,note)
+      SELECT ?,(SELECT company_id FROM projects WHERE id=?),?,'CCR-' || ? || '-' || printf('%03d',COALESCE(MAX(CASE WHEN ccr_no LIKE ? THEN CAST(substr(ccr_no,10) AS INTEGER) END),0)+1),?,?,?,?,?,?,?,?,?,?,?,? FROM ccr_records
+      WHERE company_id=(SELECT company_id FROM projects WHERE id=?)`)
+      .bind(id, projectId, projectId, year, `CCR-${year}-%`, title, targetType, text(item.description) ?? "匯入資料", text(item.reason) ?? "匯入", classification, text(item.impact_assessment), status, actorId, ["已核准", "執行中", "效期確認", "已結案"].includes(status) ? actorId : null, ["已核准", "執行中", "效期確認", "已結案"].includes(status) ? now : null, status === "已結案" ? now : null, prefixed(notePrefix, text(item.note)), projectId),
     db.prepare("INSERT INTO ccr_events (id,ccr_id,event_type,from_status,to_status,description,created_by) VALUES (?,?,'狀態變更',NULL,?,'批次匯入直接落點',?)").bind(createId("ccre"), id, status, actorId),
   ]);
 }
@@ -197,11 +198,7 @@ async function planProjects(
     let existing: ExistingProject | null = null;
     if (externalKey) {
       existing = await db.prepare(`SELECT ${EXISTING_COLUMNS} ${EXISTING_FROM} WHERE p.external_key=? AND g.company_id=?`).bind(externalKey, companyId).first<ExistingProject>();
-      // 專案代碼全系統不重複。已被別家公司用掉的，不能對應、也不透露是誰的，請對方換一個。
-      if (!existing && await db.prepare("SELECT 1 AS found FROM projects WHERE external_key=?").bind(externalKey).first()) {
-        issues.push(`專案代碼「${externalKey}」已被使用，請換一個代碼`);
-        continue;
-      }
+      // 專案代碼在各公司各自唯一（migration 0034），只在自己公司裡對應；別家公司用了同一個代碼不影響這裡。
     } else if (name) {
       // 沒有專案代碼時用名稱對既有專案。只在看得到的專案裡找——看不到的不能被「猜中」。
       // 全形半形與空白不影響比對：「QA:GDP/GMP」對得到「QA：GDP/GMP」。

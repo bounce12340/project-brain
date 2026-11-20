@@ -205,11 +205,12 @@ describe("批次匯入", () => {
   });
 
   it("專案代碼與名稱不會對到別家公司的專案", async () => {
-    // 代碼已被 UIC 專案使用：不能更新它，也不透露是誰的。
+    // 代碼各公司各自唯一：UIC 用過的代碼，B 也能用，建的是 B 自己的新專案，UIC 的專案不動。
     const keyed = await post("b_admin", "/api/import", { payload: { projects: [{ external_key: "KEY-UIC", name: "改名", group: "RA/PV組" }] } });
-    expect(keyed.status).toBe(422);
-    expect(keyed.body.issues.join("\n")).not.toContain("UIC 專案");
+    expect(keyed.status).toBe(200);
+    expect(keyed.body.result.projects).toEqual({ created: 1, updated: 0 });
     expect(await one("SELECT name FROM projects WHERE id='prj_uic'")).toEqual({ name: "UIC 專案" });
+    expect(await one("SELECT g.company_id FROM projects p JOIN groups g ON g.id=p.group_id WHERE p.external_key='KEY-UIC' AND p.name='改名'")).toEqual({ company_id: "co_b" });
     // 同名：B 的匯入是新建，不會更新 UIC 的專案。
     const named = await post("b_member", "/api/import/validate", { payload: { projects: [{ name: "UIC 專案", group: "RA/PV組" }] } });
     expect(named.status).toBe(200);

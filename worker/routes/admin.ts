@@ -33,6 +33,19 @@ const LAST_ADMIN_ERROR = "系統至少需要一名管理員";
 
 const countActiveAdmins = async (db: D1Database, companyId: string) => await db.prepare(`SELECT (${ACTIVE_ADMINS_IN_COMPANY}) AS value`).bind(companyId).first<number>("value") ?? 0;
 
+/**
+ * 系統管理員的帳號只有系統管理員能動。否則同公司的一般管理員可以重設它的密碼或改它的 Email，
+ * 登入後就拿到所有公司的系統管理權。
+ */
+async function guardSystemAdmin(db: D1Database, actor: { id: string; is_system_admin: number }, targetId: string): Promise<boolean> {
+  if (actor.is_system_admin === 1) return true;
+  const target = await db.prepare("SELECT is_system_admin FROM users WHERE id=?").bind(targetId).first<number>("is_system_admin");
+  return target !== 1;
+}
+const SYSTEM_ADMIN_PROTECTED = "系統管理員的帳號只能由系統管理員修改";
+/** Email 已被使用時的訊息：不說是被哪家公司、哪個人用掉。 */
+const EMAIL_UNAVAILABLE = "這個 Email 無法使用，請換一個";
+
 /** 只有原本的公司才有的全系統設定（公開註冊開關、示範資料）。 */
 const homeCompanyOnly = (companyId: string) => companyId === HOME_COMPANY_ID;
 
@@ -120,7 +133,9 @@ adminRoutes.get("/registrations", async (c) => {
     `).bind(c.get("user").company_id).all(),
     c.env.DB.prepare("SELECT value FROM app_settings WHERE key='registration_enabled'").first<string>("value"),
   ]);
-  return c.json({ registrations: rows.results, enabled: enabled === "1" });
+  // 公開註冊開關只屬於原本的公司；其他公司的管理員看不到它的狀態，畫面上也不顯示開關。
+  const ownsSwitch = homeCompanyOnly(c.get("user").company_id);
+  return c.json({ registrations: rows.results, enabled: ownsSwitch && enabled === "1", public_registration: ownsSwitch });
 });
 
 adminRoutes.post("/registrations/:userId/approve", async (c) => {
@@ -190,7 +205,7 @@ adminRoutes.post("/users", async (c) => {
   try {
     await c.env.DB.prepare("INSERT INTO users (id,email,name,password_hash,role,group_id,must_change_password) VALUES (?,?,?,?,?,?,1)").bind(id, email, name, await hashPassword(password), role, groupId).run();
   } catch (error) {
-    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "Email 已存在" }, 422);
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: EMAIL_UNAVAILABLE }, 422);
     throw error;
   }
   await writeAudit(c.env.DB, c.get("user"), "create", "user", id, `建立帳號 ${email}`);
@@ -202,6 +217,7 @@ adminRoutes.patch("/users/:id", async (c) => {
   const companyId = c.get("user").company_id;
   const current = await c.env.DB.prepare("SELECT u.name,u.email,u.role,u.group_id,u.is_active,u.email_notifications,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?").bind(c.req.param("id"), companyId).first<{ name: string; email: string; role: Role; group_id: string; is_active: number; email_notifications: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!current) return c.json({ error: "找不到使用者" }, 404);
+  if (!(await guardSystemAdmin(c.env.DB, c.get("user"), c.req.param("id")))) return c.json({ error: SYSTEM_ADMIN_PROTECTED }, 403);
   const nextRole = optionalString(body, "role") ?? current.role;
   if (!["admin", "member", "intern"].includes(nextRole)) return c.json({ error: "角色不正確" }, 422);
   const nextIsActive = "is_active" in body ? (body.is_active ? 1 : 0) : current.is_active;
@@ -211,10 +227,16 @@ adminRoutes.patch("/users/:id", async (c) => {
   const activeAdminCount = await countActiveAdmins(c.env.DB, companyId);
   if (shouldBlockAdminMutation(current, nextRole as Role, nextIsActive, activeAdminCount)) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   const removesAdmin = removesActiveApprovedAdmin(current, nextRole as Role, nextIsActive) ? 1 : 0;
-  const result = await c.env.DB.prepare(`
-    UPDATE users SET name=?,email=?,role=?,group_id=?,is_active=?,email_notifications=?,updated_at=CURRENT_TIMESTAMP
-    WHERE id=? AND (?=0 OR (${ACTIVE_ADMINS_IN_COMPANY})>1)
-  `).bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, nextRole, nextGroupId, nextIsActive, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id"), removesAdmin, companyId).run();
+  let result: D1Result;
+  try {
+    result = await c.env.DB.prepare(`
+      UPDATE users SET name=?,email=?,role=?,group_id=?,is_active=?,email_notifications=?,updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND (?=0 OR (${ACTIVE_ADMINS_IN_COMPANY})>1)
+    `).bind(optionalString(body, "name") ?? current.name, optionalString(body, "email")?.toLowerCase() ?? current.email, nextRole, nextGroupId, nextIsActive, "email_notifications" in body ? (body.email_notifications ? 1 : 0) : current.email_notifications, c.req.param("id"), removesAdmin, companyId).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: EMAIL_UNAVAILABLE }, 422);
+    throw error;
+  }
   if (removesAdmin && result.meta.changes === 0) return c.json({ error: LAST_ADMIN_ERROR }, 422);
   await writeAudit(c.env.DB, c.get("user"), "update", "user", c.req.param("id"), "更新帳號資料");
   return c.json({ ok: true });
@@ -225,6 +247,7 @@ adminRoutes.delete("/users/:id", async (c) => {
   const companyId = c.get("user").company_id;
   const target = await c.env.DB.prepare("SELECT u.email,u.role,u.is_active,u.approval_status FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND g.company_id=?").bind(c.req.param("id"), companyId).first<{ email: string; role: Role; is_active: number; approval_status: "pending" | "approved" | "rejected" }>();
   if (!target) return c.json({ error: "找不到使用者" }, 404);
+  if (!(await guardSystemAdmin(c.env.DB, c.get("user"), c.req.param("id")))) return c.json({ error: SYSTEM_ADMIN_PROTECTED }, 403);
   if (target.approval_status === "pending" || target.approval_status === "rejected") {
     await c.env.DB.prepare("DELETE FROM users WHERE id=?").bind(c.req.param("id")).run();
     await writeAudit(c.env.DB, c.get("user"), "delete", "user", c.req.param("id"), `刪除未核准帳號 ${target.email}`);
@@ -245,6 +268,7 @@ adminRoutes.post("/users/:id/reset-password", async (c) => {
   const temporaryPassword = requiredString(body, "password") ?? `Brain-${randomToken(6)}`;
   if (temporaryPassword.length < 8) return c.json({ error: "臨時密碼至少 8 碼" }, 422);
   if (!(await userInCompany(c.env.DB, c.req.param("id"), c.get("user").company_id))) return c.json({ error: "找不到使用者" }, 404);
+  if (!(await guardSystemAdmin(c.env.DB, c.get("user"), c.req.param("id")))) return c.json({ error: SYSTEM_ADMIN_PROTECTED }, 403);
   await c.env.DB.batch([
     c.env.DB.prepare("UPDATE users SET password_hash=?,must_change_password=1,failed_count=0,locked_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(await hashPassword(temporaryPassword), c.req.param("id")),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(c.req.param("id")),

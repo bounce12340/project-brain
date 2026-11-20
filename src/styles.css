@@ -69,6 +69,11 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
     @apply rounded-control border border-nexus-line bg-nexus-raised px-3 py-2 text-sm text-star outline-none placeholder:text-star-dim focus:border-psi focus:ring-2 focus:ring-psi-glow;
   }
+  /* iOS Safari 在輸入框字級小於 16px 時，點進去會自動放大整個頁面，放大後畫面就超出螢幕、要左右拖。
+     手機寬度一律用 16px，桌機維持原本的 14px。 */
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: 16px; }
+  }
   input[type="range"] { @apply accent-psi; }
   input[type="checkbox"], input[type="radio"] { @apply accent-psi; }
   button { @apply transition disabled:cursor-not-allowed disabled:opacity-50; }
