@@ -9,7 +9,6 @@ import { recomputeAutoProgress } from "./auto-progress";
 import { closestProjectName, normalizeProjectName } from "../../src/project-names";
 import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
 import { defaultVisibility } from "../../src/project-groups";
-import { HOME_COMPANY_ID } from "./tenant";
 import { companyOfActor } from "./workspace-scope";
 
 type JsonObject = Record<string, unknown>;
@@ -166,10 +165,10 @@ async function planProjects(
   let visibleProjects: Array<{ id: string; name: string }> | null = null;
   const visible = async () => {
     if (visibleProjects) return visibleProjects;
-    const rows = await db.prepare("SELECT p.id,p.name,p.owner_id,p.group_id,p.visibility,GROUP_CONCAT(pm.user_id) AS member_ids_csv FROM projects p JOIN groups g ON g.id=p.group_id AND g.company_id=? LEFT JOIN project_members pm ON pm.project_id=p.id GROUP BY p.id")
-      .bind(companyId).all<{ id: string; name: string; owner_id: string; group_id: string; visibility: ProjectAccess["visibility"]; member_ids_csv: string | null }>();
+    const rows = await db.prepare("SELECT p.id,p.name,p.owner_id,p.group_id,p.visibility,g.company_id,GROUP_CONCAT(pm.user_id) AS member_ids_csv FROM projects p JOIN groups g ON g.id=p.group_id AND g.company_id=? LEFT JOIN project_members pm ON pm.project_id=p.id GROUP BY p.id")
+      .bind(companyId).all<{ id: string; name: string; owner_id: string; group_id: string; visibility: ProjectAccess["visibility"]; company_id: string; member_ids_csv: string | null }>();
     visibleProjects = rows.results
-      .filter((row) => canViewProject(actor, { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] }))
+      .filter((row) => canViewProject({ ...actor, company_id: companyId }, { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, company_id: row.company_id, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] }))
       .map(({ id, name }) => ({ id, name }));
     return visibleProjects;
   };
@@ -272,7 +271,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
   const [userRows, groupRows, templateRows] = await Promise.all([
     db.prepare("SELECT u.id,u.email FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND u.approval_status='approved' AND g.company_id=?").bind(companyId).all<{ id: string; email: string }>(),
     db.prepare("SELECT id,name,type FROM groups WHERE company_id=?").bind(companyId).all<{ id: string; name: string; type: string }>(),
-    db.prepare("SELECT name,group_id,stages_json FROM stage_templates WHERE group_id IS NULL OR group_id IN (SELECT id FROM groups WHERE company_id=?) ORDER BY group_id IS NULL,name").bind(companyId).all<{ name: string; group_id: string | null; stages_json: string }>(),
+    db.prepare("SELECT name,group_id,stages_json FROM stage_templates WHERE company_id=? ORDER BY group_id IS NULL,name").bind(companyId).all<{ name: string; group_id: string | null; stages_json: string }>(),
   ]);
   const usersByEmail = new Map(userRows.results.map((row) => [row.email.toLowerCase(), row.id]));
   const groups = new Map<string, { id: string; name: string; type: string }>();
@@ -289,8 +288,6 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
 
   const issues: string[] = [];
   if (mode === "member" && regEntries.length) issues.push("法規動態僅限管理員匯入");
-  // 法規動態目前是全站共用的一張表，還沒分公司；先只開放給原公司，避免寫進別家公司看得到的地方。
-  if (regEntries.length && companyId !== HOME_COMPANY_ID) issues.push("法規動態尚未開放匯入");
   const planned = await planProjects(db, actor, companyId, mode, projects, groups, issues, stats.warnings);
   if (issues.length) throw new ImportValidationError(issues[0], issues);
 
@@ -504,10 +501,11 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     const productLine = text(entry.product_line);
     if (!title || !productLine || !["announcement", "meeting"].includes(entryType) || !["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"].includes(productLine)) throw new ImportValidationError(`reg_entries[${entryIndex}] 資料不正確`);
     const entryKey = `${entryDate}\u0000${title}`;
-    if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=?").bind(entryDate, title).first()) { stats.reg_entries.skipped += 1; continue; }
+    // 法規動態屬於匯入者的公司：重複只在同一家公司內判斷。
+    if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=? AND company_id=?").bind(entryDate, title, companyId).first()) { stats.reg_entries.skipped += 1; continue; }
     writtenEntries.add(entryKey);
-    await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
-      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id));
+    await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,company_id) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id, companyId));
     stats.reg_entries.created += 1;
   }
   await flush();

@@ -2,10 +2,10 @@ import type { AuthUser, ProjectAccess } from "../types";
 
 /**
  * 多公司：使用者只碰得到自己公司的專案，管理員也一樣（admin 看到的是「自己公司的全部專案」）。
- * 每個權限檢查都先過這一關。專案沒帶公司（尚未改完的舊呼叫端）時不比對。
+ * 每個權限檢查都先過這一關。公司不明的一律拒絕（fail closed），不會因為呼叫端漏帶而放行。
  */
 export function sameCompany(user: Pick<AuthUser, "company_id">, project: Pick<ProjectAccess, "company_id">): boolean {
-  return project.company_id === undefined || project.company_id === user.company_id;
+  return Boolean(project.company_id) && project.company_id === user.company_id;
 }
 
 function isMember(user: AuthUser, project: ProjectAccess): boolean {

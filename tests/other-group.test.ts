@@ -67,8 +67,8 @@ describe("內建「其他」組", () => {
 });
 
 describe("專案成員不分組別都能看、能改", () => {
-  const person = (id: string, group: string, role: AuthUser["role"] = "member") => ({ id, role, group_id: group }) as AuthUser;
-  const project = (visibility: ProjectAccess["visibility"], members: string[] = []): ProjectAccess => ({ id: "p", owner_id: "owner", group_id: "grp_other", visibility, member_ids: members });
+  const person = (id: string, group: string, role: AuthUser["role"] = "member") => ({ id, role, group_id: group, company_id: "co_uic" }) as AuthUser;
+  const project = (visibility: ProjectAccess["visibility"], members: string[] = []): ProjectAccess => ({ id: "p", owner_id: "owner", group_id: "grp_other", visibility, company_id: "co_uic", member_ids: members });
 
   it("「其他」組專案即使可見性是同組或私人，加進來的成員（BD 組、臨床組、實習生）都看得到、改得了", () => {
     for (const visibility of ["group", "private", "all"] as const) {

@@ -33,7 +33,7 @@ reportsRoutes.get("/summary", async (c) => {
   const user = c.get("user");
   const companyGroups = new Set((await c.env.DB.prepare("SELECT id FROM groups WHERE company_id=?").bind(user.company_id).all<{ id: string }>()).results.map((row) => row.id));
   // 只算自己公司的專案（組別屬於自己公司）；其餘的可見性判斷照舊。
-  const visibleRows = (await projectRows(c.env.DB)).filter((row) => companyGroups.has(row.group_id) && canViewProject(user, accessFrom(row)) && (!group || row.group_id === group));
+  const visibleRows = (await projectRows(c.env.DB, user.company_id)).filter((row) => companyGroups.has(row.group_id) && canViewProject(user, accessFrom(row)) && (!group || row.group_id === group));
   const ids = visibleRows.map((row) => row.id);
   if (!ids.length) return c.json({ projects: [], totals: { completed_tasks: 0, enrollments: 0, bd_events: 0 }, fees: [] });
   const marks = placeholders(ids.length);
@@ -292,7 +292,7 @@ aiRoutes.post("/assistant", async (c) => {
   const user = c.get("user");
   // 只把自己公司的專案餵給 AI：不依賴 projectRows 是否已依公司過濾。
   const ownGroups = await companyGroupIds(c.env.DB, user.company_id);
-  const visible = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row))).filter((row) => ownGroups.has(row.group_id));
+  const visible = (await projectRows(c.env.DB, user.company_id)).filter((row) => canViewProject(user, accessFrom(row))).filter((row) => ownGroups.has(row.group_id));
   const projects: AssistantProjectSummary[] = visible.slice(0, MAX_CONTEXT_PROJECTS).map((row) => ({
     name: row.name, group: row.group_name, product: row.product ?? "", site: row.site ?? "",
     status: row.status, progress: row.progress, target_date: row.target_date, last_activity: row.last_activity_at,

@@ -1,5 +1,3 @@
-import type { AuthUser } from "../types";
-import { HOME_COMPANY_ID } from "./tenant";
 import { taipeiDate } from "./time";
 
 /**
@@ -9,34 +7,13 @@ import { taipeiDate } from "./time";
  * 帳號屬於哪家公司看 users.group_id → groups.company_id。
  */
 
-/** 專案是否屬於這家公司。不存在與屬於別家公司回一樣的結果，不洩漏專案是否存在。 */
-export async function projectInCompany(db: D1Database, projectId: string, companyId: string): Promise<boolean> {
-  return Boolean(await db.prepare("SELECT 1 AS found FROM projects p JOIN groups g ON g.id=p.group_id WHERE p.id=? AND g.company_id=?").bind(projectId, companyId).first());
-}
+/** 專案是否屬於這家公司（與工作區共用同一個檢查）。不存在與屬於別家公司回一樣的結果。 */
+export { projectInCompany } from "./workspace-scope";
 
 /** 這家公司的組別 id（專案的 group_id 在裡面才算這家公司的專案）。 */
 export async function companyGroupIds(db: D1Database, companyId: string): Promise<Set<string>> {
   const rows = (await db.prepare("SELECT id FROM groups WHERE company_id=?").bind(companyId).all<{ id: string }>()).results;
   return new Set(rows.map((row) => row.id));
-}
-
-/** 帳號 id → 公司 id，用來判斷「這筆是不是我們公司的人建立的」。 */
-async function userCompanies(db: D1Database): Promise<Map<string, string>> {
-  const rows = (await db.prepare("SELECT u.id,g.company_id FROM users u JOIN groups g ON g.id=u.group_id").all<{ id: string; company_id: string }>()).results;
-  return new Map(rows.map((row) => [row.id, row.company_id]));
-}
-
-/**
- * 只留下同公司的資料列（依建立者判斷）。建立者是別家公司的人就排除；
- * 沒有建立者（系統匯入、帳號已刪除）的資料目前都屬於原本的公司，其他公司看不到。
- * 這是路由自己依公司過濾之外的第二道防線。
- */
-export async function onlyOwnCompany<T extends { created_by?: unknown }>(db: D1Database, user: Pick<AuthUser, "company_id">, rows: T[]): Promise<T[]> {
-  const companies = await userCompanies(db);
-  return rows.filter((row) => {
-    const owner = typeof row.created_by === "string" ? companies.get(row.created_by) : undefined;
-    return owner ? owner === user.company_id : user.company_id === HOME_COMPANY_ID;
-  });
 }
 
 /** 同公司、啟用中的帳號 id。 */

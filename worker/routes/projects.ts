@@ -95,13 +95,9 @@ const PROJECT_ROW_SELECT = `
   LEFT JOIN project_members pm ON pm.project_id = p.id
 `;
 
-/** 傳入 companyId 就只列這家公司的專案（專案組別所屬公司）；各路由都該傳。 */
-export async function projectRows(db: D1Database, companyId?: string): Promise<ProjectRow[]> {
-  if (companyId !== undefined) {
-    const scoped = await db.prepare(`${PROJECT_ROW_SELECT} WHERE g.company_id = ? GROUP BY p.id ORDER BY p.updated_at DESC`).bind(companyId).all<ProjectRow>();
-    return scoped.results;
-  }
-  const result = await db.prepare(`${PROJECT_ROW_SELECT} GROUP BY p.id ORDER BY p.updated_at DESC`).all<ProjectRow>();
+/** 只列這家公司的專案（專案組別所屬公司）。一定要傳公司，沒有「全部公司」的版本。 */
+export async function projectRows(db: D1Database, companyId: string): Promise<ProjectRow[]> {
+  const result = await db.prepare(`${PROJECT_ROW_SELECT} WHERE g.company_id = ? GROUP BY p.id ORDER BY p.updated_at DESC`).bind(companyId).all<ProjectRow>();
   return result.results;
 }
 

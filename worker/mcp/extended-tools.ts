@@ -1,5 +1,5 @@
 import { isIsoDate } from "../services/importer";
-import { companyGroupIds, onlyOwnCompany } from "../services/ai-tenant";
+import { companyGroupIds } from "../services/ai-tenant";
 import { COURSE_CATEGORIES, MEETING_TEXT_FIELDS } from "../routes/meetings";
 import { ToolError, type McpTool, type JsonSchema } from "./protocol";
 import type { ToolContext } from "./tools";
@@ -105,8 +105,8 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         const query = new URLSearchParams();
         if (args.project !== undefined) query.set("project_id", (await helpers.resolveProject(ctx, args.project)).id);
         if (args.kind) query.set("kind", String(args.kind));
-        const { meetings: listed } = await ctx.api.get<{ meetings: Row[] }>(`/api/meetings?${query}`);
-        const meetings = await onlyOwnCompany(ctx.db, ctx.user, listed); // 路由之外的第二道公司過濾
+        // /api/meetings 本身只回自己公司的紀錄。
+        const { meetings } = await ctx.api.get<{ meetings: Row[] }>(`/api/meetings?${query}`);
         const keyword = text(args.keyword).toLocaleLowerCase();
         const rows = meetings.filter((m) => (!args.from || String(m.starts_at).slice(0, 10) >= String(args.from)) && (!args.to || String(m.starts_at).slice(0, 10) <= String(args.to)) && (!keyword || [m.title, m.summary, m.attendees, m.organizer].some((v) => String(v ?? "").toLocaleLowerCase().includes(keyword))));
         return { ...page(rows, args, "meetings"), timezone: "Asia/Taipei", note: "網站 API 最多取最近 2000 筆；from/to 篩選開始日。" };
@@ -141,8 +141,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         if (!Object.keys(fields).length && reference === undefined) throw new ToolError("沒有要修改的欄位");
         const body: Record<string, unknown> = { ...fields };
         if (reference !== undefined) body.project_id = text(reference) ? (await helpers.resolveProject(ctx, reference)).id : null;
-        const { meetings: listed } = await ctx.api.get<{ meetings: Row[] }>("/api/meetings");
-        const meetings = await onlyOwnCompany(ctx.db, ctx.user, listed);
+        const { meetings } = await ctx.api.get<{ meetings: Row[] }>("/api/meetings");
         const current = meetings.find((row) => row.id === id);
         if (!current) throw new ToolError(`找不到會議或外訓紀錄 ${id}（或你沒有權限看）`);
         await ctx.api.send("PATCH", `/api/meetings/${encodeURIComponent(id)}`, body);
@@ -159,8 +158,8 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       async run(args, ctx) {
         const query = text(args.query).toLocaleLowerCase();
         if (!query) throw new ToolError("請輸入搜尋關鍵字");
-        const { contacts: listed } = await ctx.api.get<{ contacts: Row[] }>("/api/contacts");
-        const contacts = await onlyOwnCompany(ctx.db, ctx.user, listed); // 路由之外的第二道公司過濾
+        // /api/contacts 本身只回自己公司的聯絡人。
+        const { contacts } = await ctx.api.get<{ contacts: Row[] }>("/api/contacts");
         return { ...page(contacts.filter((c) => [c.organization, c.name, c.department, c.email, c.notes].some((v) => String(v ?? "").toLocaleLowerCase().includes(query))), args, "contacts"), note: "網站 API 最多取 5000 筆聯絡人。" };
       },
     },
@@ -172,8 +171,8 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         const query = new URLSearchParams({ view: "published" });
         for (const key of ["keyword", "year", "page"]) if (args[key] !== undefined) query.set(key, String(args[key]));
         const result = await ctx.api.get<{ entries: Row[]; page: number; total: number; total_pages: number }>(`/api/regwatch?${query}`);
-        const entries = await onlyOwnCompany(ctx.db, ctx.user, result.entries); // 路由之外的第二道公司過濾（依建立者）
-        return { entries, page: result.page, total: result.total, total_pages: result.total_pages };
+        // /api/regwatch 本身只回自己公司的法規動態（含系統抓取、沒有建立者的 TFDA 條目）。
+        return { entries: result.entries, page: result.page, total: result.total, total_pages: result.total_pages };
       },
     },
     {

@@ -31,7 +31,8 @@ generalRoutes.get("/dashboard", async (c) => {
   // 先前是逐一 await，等於每載入一次首頁就多付 4 趟 D1 往返的延遲。
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const feeIds = ids.length ? visible.filter((row) => canViewFees(user, accessFrom(row))).map((row) => row.id) : [];
-  const qaIds = ids.length && (user.role === "admin" || user.group_id === "grp_qa")
+  // 證照提醒給管理員與 QA：UIC 是 grp_qa，其他公司是自己類型為 qa 的組別。
+  const qaIds = ids.length && (user.role === "admin" || user.group_id === "grp_qa" || user.group_type === "qa")
     ? visible.filter((row) => row.group_type === "qa").map((row) => row.id) : [];
   const inList = placeholders(ids.length);
   const [overdueResult, updateResult, enrollmentResult, feeResult, krCounts, licenseResult, todoCount, weekUpdates] = await Promise.all([

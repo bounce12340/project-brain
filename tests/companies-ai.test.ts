@@ -54,8 +54,8 @@ beforeEach(async () => {
   await db.prepare("INSERT INTO stages (id,project_id,name,color,position) VALUES ('s_uic','p_uic','待辦','#888',0),('s_b','p_b','待辦','#888',0)").run();
   await db.prepare("INSERT INTO tasks (id,project_id,stage_id,title,position,assignee_id) VALUES ('t_uic','p_uic','s_uic','UIC 任務',0,'uic_owner'),('t_b','p_b','s_b','B 公司任務',0,'b_member')").run();
   await db.prepare("INSERT INTO milestones (id,project_id,title,due_date,kind) VALUES ('m_b','p_b','B 里程碑','2026-12-01','milestone')").run();
-  await db.prepare("INSERT INTO contacts (id,organization,name,email,created_by) VALUES ('c_uic','UIC 往來廠商','王小明','wang@uic.test','uic_owner'),('c_b','B 往來廠商','李小華','li@b.test','b_admin')").run();
-  await db.prepare("INSERT INTO meetings (id,kind,title,starts_at,created_by) VALUES ('mt_uic','meeting','UIC 週會','2026-12-01T10:00','uic_owner'),('mt_b','meeting','B 公司董事會','2026-12-02T10:00','b_admin')").run();
+  await db.prepare("INSERT INTO contacts (id,organization,name,email,created_by,company_id) VALUES ('c_uic','UIC 往來廠商','王小明','wang@uic.test','uic_owner','co_uic'),('c_b','B 往來廠商','李小華','li@b.test','b_admin','co_b')").run();
+  await db.prepare("INSERT INTO meetings (id,kind,title,starts_at,created_by,company_id) VALUES ('mt_uic','meeting','UIC 週會','2026-12-01T10:00','uic_owner','co_uic'),('mt_b','meeting','B 公司董事會','2026-12-02T10:00','b_admin','co_b')").run();
   await db.prepare("INSERT INTO reg_entries (id,entry_date,product_line,title,status,created_by) VALUES ('r_uic','2026-11-01','藥品','UIC 的法規動態','published','uic_owner'),('r_b','2026-11-02','藥品','B 公司的法規動態','published','b_admin')").run();
 });
 afterEach(() => { vi.unstubAllGlobals(); });

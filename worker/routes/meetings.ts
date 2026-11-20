@@ -33,7 +33,7 @@ interface MeetingRow {
 }
 interface ListedRow extends MeetingRow {
   created_by_name: string | null; updated_by_name: string | null; project_name: string | null;
-  p_owner_id: string | null; p_group_id: string | null; p_visibility: ProjectAccess["visibility"] | null; p_member_ids_csv: string | null;
+  p_owner_id: string | null; p_group_id: string | null; p_visibility: ProjectAccess["visibility"] | null; p_member_ids_csv: string | null; p_company_id: string | null;
 }
 
 /** 「YYYY-MM-DDTHH:MM」而且是真的日期時間（2 月 30 日、25 點都不行）。 */
@@ -94,8 +94,8 @@ function cleanFields(body: Record<string, unknown>, partial: boolean): Cleaned {
 }
 
 function accessOf(row: ListedRow): ProjectAccess | null {
-  if (!row.project_id || !row.p_owner_id || !row.p_group_id || !row.p_visibility) return null;
-  return { id: row.project_id, owner_id: row.p_owner_id, group_id: row.p_group_id, visibility: row.p_visibility, member_ids: row.p_member_ids_csv?.split(",").filter(Boolean) ?? [] };
+  if (!row.project_id || !row.p_owner_id || !row.p_group_id || !row.p_visibility || !row.p_company_id) return null;
+  return { id: row.project_id, owner_id: row.p_owner_id, group_id: row.p_group_id, visibility: row.p_visibility, company_id: row.p_company_id, member_ids: row.p_member_ids_csv?.split(",").filter(Boolean) ?? [] };
 }
 
 /** 掛在專案底下的只給看得到該專案的人；專案被刪掉（project_id 變 null）的就是一般紀錄。 */
@@ -105,14 +105,14 @@ function visibleTo(user: AuthUser, row: ListedRow): boolean {
 }
 
 function present(user: AuthUser, row: ListedRow) {
-  const { p_owner_id: _owner, p_group_id: _group, p_visibility: _visibility, p_member_ids_csv: _members, ...rest } = row;
+  const { p_owner_id: _owner, p_group_id: _group, p_visibility: _visibility, p_member_ids_csv: _members, p_company_id: _company, ...rest } = row;
   return { ...rest, can_edit: user.role === "admin" || row.created_by === user.id };
 }
 
 const SELECT = `SELECT m.*, cu.name AS created_by_name, uu.name AS updated_by_name, p.name AS project_name,
-    p.owner_id AS p_owner_id, p.group_id AS p_group_id, p.visibility AS p_visibility,
+    p.owner_id AS p_owner_id, p.group_id AS p_group_id, p.visibility AS p_visibility, pg.company_id AS p_company_id,
     (SELECT GROUP_CONCAT(pm.user_id) FROM project_members pm WHERE pm.project_id = p.id) AS p_member_ids_csv
-  FROM meetings m LEFT JOIN users cu ON cu.id=m.created_by LEFT JOIN users uu ON uu.id=m.updated_by LEFT JOIN projects p ON p.id=m.project_id`;
+  FROM meetings m LEFT JOIN users cu ON cu.id=m.created_by LEFT JOIN users uu ON uu.id=m.updated_by LEFT JOIN projects p ON p.id=m.project_id LEFT JOIN groups pg ON pg.id=p.group_id`;
 
 async function checkProject(db: D1Database, user: AuthUser, projectId: string | null | undefined): Promise<string | null> {
   if (!projectId) return null;

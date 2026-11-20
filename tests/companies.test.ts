@@ -66,9 +66,9 @@ describe("migration 0029", () => {
     await expect(env.DB.prepare("INSERT INTO groups (id,name,type,company_id) VALUES ('gy','BD組','bd','co_uic')").run()).rejects.toThrow(/UNIQUE/);
   });
 
-  it("隔離還沒全部完成：只完成第 1 階段", () => {
-    expect(ISOLATION_STAGES.accounts).toBe(true);
-    expect(tenantIsolationComplete()).toBe(false);
+  it("五個隔離階段都已完成，可以開通其他公司", () => {
+    expect(Object.values(ISOLATION_STAGES).every(Boolean)).toBe(true);
+    expect(tenantIsolationComplete()).toBe(true);
   });
 });
 
@@ -79,17 +79,18 @@ describe("系統管理後台", () => {
     const ok = await request("/api/system/companies", { session: await login("usr_admin") });
     expect(ok.status).toBe(200);
     expect(ok.body.companies[0]).toMatchObject({ id: "co_uic", home: true, status: "active" });
-    expect(ok.body.isolation.complete).toBe(false);
+    expect(ok.body.isolation.complete).toBe(true);
   });
 
-  it("建立公司：建置中、附一個預設組別；同名不能重複；隔離完成前不能開通，原本的公司不能停用", async () => {
+  it("建立公司：建置中、附一個預設組別；同名不能重複；可以開通；原本的公司不能停用", async () => {
     const session = await login("usr_admin");
     const created = await post("/api/system/companies", { name: "Archi Corp" }, session);
     expect(created.status).toBe(201);
     expect(created.body.company).toMatchObject({ name: "Archi Corp", status: "setup", groups: 1, users: 0 });
     expect((await post("/api/system/companies", { name: "archi corp" }, session)).status).toBe(422);
     const activate = await patch(`/api/system/companies/${created.body.company.id}`, { status: "active" }, session);
-    expect(activate.status).toBe(409);
+    expect(activate.status).toBe(200);
+    expect(activate.body.company.status).toBe("active");
     expect((await patch("/api/system/companies/co_uic", { status: "suspended" }, session)).status).toBe(422);
   });
 

@@ -220,12 +220,14 @@ describe("批次匯入", () => {
     expect(own.body.result.projects).toEqual({ created: 0, updated: 1 });
   });
 
-  it("法規動態尚未開放給其他公司匯入，UIC 照舊", async () => {
+  it("匯入的法規動態屬於匯入者的公司；同一則在兩家公司各自一筆，重複只在自己公司內判斷", async () => {
     const entry = { entry_date: "2026-01-01", title: "公告", product_line: "藥品" };
-    const blocked = await post("b_admin", "/api/import", { payload: { reg_entries: [entry] } });
-    expect(blocked.status).toBe(422);
-    expect(await one("SELECT COUNT(*) AS n FROM reg_entries WHERE title='公告'")).toEqual({ n: 0 });
+    expect((await post("b_admin", "/api/import", { payload: { reg_entries: [entry] } })).status).toBe(200);
     expect((await post("uic_admin", "/api/import", { payload: { reg_entries: [entry] } })).status).toBe(200);
+    const rows = await env.DB.prepare("SELECT company_id FROM reg_entries WHERE title='公告' ORDER BY company_id").all<{ company_id: string }>();
+    expect(rows.results.map((row) => row.company_id)).toEqual(["co_b", "co_uic"]);
+    const again = await post("b_admin", "/api/import", { payload: { reg_entries: [entry] } });
+    expect(again.body.result.reg_entries).toMatchObject({ created: 0, skipped: 1 });
   });
 
   it("匯入申請：只通知、只列給自己公司的管理員；別家公司的管理員看不到也不能審核", async () => {

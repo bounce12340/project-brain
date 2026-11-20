@@ -5,7 +5,7 @@ import type { AuthUser, ProjectAccess, Role, Visibility } from "../worker/types"
 const user = (id: string, role: Role, group = "g1"): AuthUser => ({
   id, role, group_id: group, email: `${id}@test`, name: id, group_name: group, group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1, approval_status: "approved", company_id: "co_uic", company_name: "UIC", is_system_admin: 0,
 });
-const project = (visibility: Visibility, members: string[] = []): ProjectAccess => ({ id: "p1", owner_id: "owner", group_id: "g1", visibility, member_ids: members });
+const project = (visibility: Visibility, members: string[] = []): ProjectAccess => ({ id: "p1", owner_id: "owner", group_id: "g1", visibility, company_id: "co_uic", member_ids: members });
 
 describe("canViewProject 權限矩陣", () => {
   const cases: Array<[string, AuthUser, ProjectAccess, boolean]> = [
@@ -34,7 +34,7 @@ describe("擁有者一律看得到自己的專案", () => {
   // 且專案成員名單是空的。修正前 owner 判斷只寫在 private 分支，group 分支先 return，
   // 導致他們開自己的專案得到 403「沒有檢視權限」。
   const bdProject = (visibility: Visibility): ProjectAccess =>
-    ({ id: "p_bd", owner_id: "michael", group_id: "g_bd", visibility, member_ids: [] });
+    ({ id: "p_bd", owner_id: "michael", group_id: "g_bd", visibility, company_id: "co_uic", member_ids: [] });
   const michael = user("michael", "member", "g_rapv");
 
   it.each(["all", "group", "private"] as const)("跨組 owner 可看 visibility=%s 的專案", (visibility) => {

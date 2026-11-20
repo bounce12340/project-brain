@@ -29,6 +29,7 @@ const project: ProjectAccess = {
   owner_id: "owner",
   group_id: "group-demo",
   visibility: "private",
+  company_id: "co_uic",
   member_ids: ["author", "other", "intern-author", "intern-other"],
 };
 
