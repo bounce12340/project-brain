@@ -7,6 +7,7 @@ import { isIsoDate } from "../services/importer";
 import { canManageRegwatch, parseRegwatchDraftBatchInput, processRegwatchDraftBatch } from "../services/regwatch";
 import { fetchTfdaDrafts } from "../services/tfda";
 import { chargeOrQuotaResponse } from "../services/ai-tenant";
+import { safeHttpUrl } from "../services/http";
 import {
   REGWATCH_PRODUCT_LINES,
   combineRegwatchFileTexts,
@@ -44,7 +45,7 @@ async function readExtractInput(request: Request): Promise<ExtractInput> {
     const files = [...form.getAll("files"), ...form.getAll("file")]
       .filter((value): value is File => value instanceof File && value.size > 0);
     const pastedText = typeof form.get("text") === "string" ? String(form.get("text")) : "";
-    const sourceLink = typeof form.get("source_link") === "string" && String(form.get("source_link")).trim() ? String(form.get("source_link")).trim() : null;
+    const sourceLink = safeHttpUrl(form.get("source_link"));
     const mode = normalizeRegwatchExtractMode(form.get("mode"));
     if (files.length && pastedText.trim()) throw new Error("MULTIPLE_INPUTS");
     if (!files.length) return { text: pastedText, sourceLink, files: [], mode };
@@ -70,7 +71,7 @@ async function readExtractInput(request: Request): Promise<ExtractInput> {
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   return {
     text: typeof body.text === "string" ? body.text : "",
-    sourceLink: typeof body.source_link === "string" && body.source_link.trim() ? body.source_link.trim() : null,
+    sourceLink: safeHttpUrl(body.source_link),
     files: [],
     mode: normalizeRegwatchExtractMode(body.mode),
   };
@@ -212,7 +213,7 @@ function validateBatchEntry(value: unknown): RegwatchExtractedEntry | null {
   const title = typeof item.title === "string" ? item.title.trim() : "";
   const category = typeof item.category === "string" ? item.category.trim() : "";
   const keyPoints = typeof item.key_points === "string" ? item.key_points.trim() : "";
-  const link = typeof item.link === "string" && item.link.trim() ? item.link.trim() : undefined;
+  const link = safeHttpUrl(item.link) ?? undefined;
   if (!isIsoDate(date) || !type || !line || !title || title.length > 100 || category.length > 10) return null;
   return { entry_date: date, entry_type: type, product_line: line, category, title, key_points: keyPoints, link };
 }

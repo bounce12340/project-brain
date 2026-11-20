@@ -1,3 +1,4 @@
+import { safeHttpUrl } from "./http";
 import type { AuthUser, ProjectAccess } from "../types";
 import { createId, getProjectAccess } from "./db";
 import { isIsoDate, resolveImportUser, type ImportUserResolution } from "./importer";
@@ -502,7 +503,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=? AND company_id=?").bind(entryDate, title, companyId).first()) { stats.reg_entries.skipped += 1; continue; }
     writtenEntries.add(entryKey);
     await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,company_id) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id, companyId));
+      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), safeHttpUrl(entry.link), actor.id, companyId));
     stats.reg_entries.created += 1;
   }
   await flush();

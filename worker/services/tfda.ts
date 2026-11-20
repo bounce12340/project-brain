@@ -1,3 +1,4 @@
+import { safeHttpUrl } from "./http";
 import { createId } from "./db";
 import { extractRegwatchEntries, type RegwatchExtractedEntry } from "./regwatch-ai";
 import { taipeiDate } from "./time";
@@ -83,7 +84,7 @@ function rssField(itemXml: string, name: string): string {
 export function parseTfdaRss(xml: string): TfdaRssItem[] {
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map((match) => ({
     title: rssField(match[1], "title").trim(),
-    link: rssField(match[1], "link").trim(),
+    link: safeHttpUrl(rssField(match[1], "link")) ?? "",
     pubDate: rssField(match[1], "pubDate").trim(),
     descriptionHtml: rssField(match[1], "description").trim(),
   })).filter((item) => item.title || item.link || item.pubDate || item.descriptionHtml);

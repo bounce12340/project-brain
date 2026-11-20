@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
-import { optionalString, requiredString } from "../services/http";
+import { INVALID_LINK, optionalString, requiredString, safeHttpUrl } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
 import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
 import { canManageRegwatch, deleteRegwatchEntry, mergeRegwatchAttachments, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
@@ -367,12 +367,14 @@ v6Routes.post("/regwatch", async (c) => {
   const line = requiredString(body, "product_line");
   const title = requiredString(body, "title");
   if (!date || !isIsoDate(date) || !entryTypes.has(type) || !line || !productLines.has(line) || !title) return c.json({ error: "法規動態資料不完整" }, 422);
+  const link = optionalString(body, "link");
+  if (link && !safeHttpUrl(link)) return c.json({ error: INVALID_LINK }, 422);
   // status=draft：先進「待審核」，核准後才對全員發布（AI 連接器新增的一律走這條）。
   const status = body.status === "draft" ? "draft" : "published";
   const id = createId("reg");
   try {
     await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,company_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id, status, user.company_id).run();
+      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), link, user.id, status, user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
@@ -391,9 +393,11 @@ v6Routes.patch("/regwatch/:id", async (c) => {
   const line = optionalString(body, "product_line") ?? String(current.product_line);
   const entryDate = optionalString(body, "entry_date") ?? String(current.entry_date);
   if (!isIsoDate(entryDate) || !entryTypes.has(type) || !productLines.has(line)) return c.json({ error: "日期、類型或產品線不正確" }, 422);
+  const nextLink = "link" in body ? optionalString(body, "link") : current.link;
+  if ("link" in body && nextLink && !safeHttpUrl(nextLink)) return c.json({ error: INVALID_LINK }, 422);
   try {
     await c.env.DB.prepare("UPDATE reg_entries SET entry_date=?,entry_type=?,product_line=?,category=?,title=?,key_points=?,link=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?")
-      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, "link" in body ? optionalString(body, "link") : current.link, c.req.param("id"), user.company_id).run();
+      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, nextLink, c.req.param("id"), user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;

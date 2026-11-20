@@ -1,4 +1,6 @@
 import { HOME_COMPANY_ID } from "./tenant";
+import type { AuthUser, ProjectAccess } from "../types";
+import { canViewProject } from "./permissions";
 
 /**
  * 共用工作區（聯絡人、會議、待辦、匯入）的公司範圍檢查。
@@ -20,4 +22,13 @@ export async function companyOfActor(db: D1Database, actor: { company_id?: strin
 export async function userInProjectCompany(db: D1Database, userId: string, projectId: string): Promise<boolean> {
   return Boolean(await db.prepare(`SELECT 1 AS found FROM users u JOIN groups gu ON gu.id=u.group_id
     JOIN projects p ON p.id=? JOIN groups gp ON gp.id=p.group_id WHERE u.id=? AND gu.company_id=gp.company_id`).bind(projectId, userId).first());
+}
+
+/**
+ * 另一個帳號（啟用中）看不看得到這個專案：自動化規則要通知、指派、建待辦給某人時用，
+ * 免得把私人專案的名稱與內容推給打不開它的人。
+ */
+export async function activeUserCanViewProject(db: D1Database, userId: string, access: ProjectAccess): Promise<boolean> {
+  const target = await db.prepare("SELECT u.id,u.role,u.group_id,g.company_id FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND u.is_active=1").bind(userId).first<Pick<AuthUser, "id" | "role" | "group_id" | "company_id">>();
+  return Boolean(target) && canViewProject(target as AuthUser, access);
 }
