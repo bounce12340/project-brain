@@ -417,4 +417,18 @@ describe("網路搜尋工具（web_search／web_fetch）", () => {
     await expect(tool("web_fetch").run({ url: "https://intranet.example" }, withEnv(deepseek))).rejects.toBeInstanceOf(ToolError);
     await expect(tool("web_fetch").run({ url: "https://intranet.example" }, withEnv(deepseek))).rejects.toThrow("安全策略");
   });
+
+  it("計入公司每日 AI 上限：每次 web_search／web_fetch 扣一次；超過回 ToolError 且不連外", async () => {
+    const fetchSpy = vi.fn(async (url: string) => url.endsWith("/search") ? Response.json({ results: [] }) : Response.json({ title: "頁", content: "x" }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const capped = withEnv({ ...deepseek, AI_DAILY_CALL_CAP: "2" });
+    await tool("web_search").run({ query: "TFDA" }, capped);
+    await tool("web_fetch").run({ url: "https://www.fda.gov.tw/x" }, capped);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    await expect(tool("web_search").run({ query: "TFDA" }, capped)).rejects.toThrow("今天的 AI 使用次數已達上限");
+    await expect(tool("web_fetch").run({ url: "https://www.fda.gov.tw/x" }, capped)).rejects.toBeInstanceOf(ToolError);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const used = await db.prepare("SELECT calls FROM ai_usage WHERE company_id='co_uic'").first<{ calls: number }>();
+    expect(used?.calls).toBe(2);
+  });
 });

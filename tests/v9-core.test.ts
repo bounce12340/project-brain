@@ -46,9 +46,9 @@ describe("v9 theme", () => {
   });
   it("defines both token palettes and a pre-render FOUC guard", () => {
     const css = readFileSync(resolve("src/styles.css"), "utf8");
-    const html = readFileSync(resolve("index.html"), "utf8");
+    const html = readFileSync(resolve("index.html"), "utf8"); const guard = readFileSync(resolve("public/theme-init.js"), "utf8"); // 行內 script 為了 CSP 搬到 public/theme-init.js
     expect(css).toContain(':root[data-theme="dark"]'); expect(css).toContain(':root[data-theme="light"]');
-    expect(html).toContain('localStorage.getItem("AIUR_THEME")'); expect(html).toContain('data-theme="light"'); expect(html).toContain('t==="dark"?"dark":"light"');
+    expect(html).toContain("/theme-init.js"); expect(html).toContain('data-theme="light"'); expect(guard).toContain('localStorage.getItem("AIUR_THEME")'); expect(guard).toContain('t==="dark"?"dark":"light"');
   });
   it("meets light-palette contrast targets for text and interactive colors", () => {
     // 送審卷宗的淺色 token（styles.css 的 :root）

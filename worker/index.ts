@@ -12,6 +12,7 @@ import { runDailyWorkflow } from "./services/cron";
 import { regenerateMonthlyReports, regenerateWeeklyReports } from "./services/reports";
 import { scheduledJobForCron } from "./services/schedule";
 import { refreshStaleProjectRisks } from "./services/project-risk";
+import { withSecurityHeaders } from "./services/security-headers";
 
 const app = new Hono<AppContext>();
 
@@ -20,6 +21,11 @@ app.onError((error, c) => {
   return c.json({ error: "伺服器發生錯誤" }, 500);
 });
 
+// 所有 Hono 路由的回應都補上安全標頭；OAuthProvider 自己產生的回應（/mcp、/oauth/token…）由下方 fetch 包裝處理。
+app.use("*", async (c, next) => {
+  await next();
+  c.res = withSecurityHeaders(c.res); // Response.redirect 等回應的標頭是唯讀的，複製後再補
+});
 app.use("/api/*", originGuard);
 app.use("/api/*", sessionAuth);
 mountApiRoutes(app);
@@ -63,7 +69,7 @@ function oauthProvider(env: Env): OAuthProvider<Env> {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const response = await oauthProvider(env).fetch(request, env, ctx);
-    return request.method === "GET" && new URL(request.url).pathname === AUTHORIZATION_SERVER_METADATA_PATH ? withoutIssuerIdentification(response) : response;
+    return withSecurityHeaders(await (request.method === "GET" && new URL(request.url).pathname === AUTHORIZATION_SERVER_METADATA_PATH ? withoutIssuerIdentification(response) : response));
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const job = scheduledJobForCron(controller.cron);

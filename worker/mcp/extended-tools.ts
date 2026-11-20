@@ -1,5 +1,5 @@
 import { isIsoDate } from "../services/importer";
-import { companyGroupIds } from "../services/ai-tenant";
+import { AiQuotaError, chargeAiCall, companyGroupIds } from "../services/ai-tenant";
 import { COURSE_CATEGORIES, MEETING_TEXT_FIELDS } from "../routes/meetings";
 import { ToolError, type McpTool, type JsonSchema } from "./protocol";
 import type { ToolContext } from "./tools";
@@ -209,6 +209,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         const query = text(args.query);
         if (!query) throw new ToolError("請輸入搜尋關鍵字");
         const env = webEnv(ctx);
+        await chargeWebCall(ctx, env);
         try {
           return { results: await webSearch(env, { query, count: args.count as number | undefined }) };
         } catch (error) {
@@ -222,6 +223,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       inputSchema: schema({ url: { ...string(2_000), minLength: 1, pattern: "^https?://" } }, ["url"]),
       async run(args, ctx) {
         const env = webEnv(ctx);
+        await chargeWebCall(ctx, env);
         try {
           return await webFetch(env, text(args.url));
         } catch (error) {
@@ -230,6 +232,19 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       },
     },
   ];
+}
+
+/**
+ * 網路搜尋／讀取網頁每次都會呼叫 DeepSeek（公司付費），和站內 AI 一樣算進該公司每日 AI 上限，
+ * 否則連接器的使用者能繞過上限無限呼叫。要在連外之前扣；超過上限回工具的一般錯誤（ToolError）。
+ * env 的 DB 以 ctx.db 為準，與工具其他查詢同一個資料庫。
+ */
+async function chargeWebCall(ctx: ToolContext, env: Env): Promise<void> {
+  try {
+    await chargeAiCall({ ...env, DB: ctx.db } as Env, ctx.user.company_id);
+  } catch (error) {
+    throw error instanceof AiQuotaError ? new ToolError(error.message) : error;
+  }
 }
 
 function webEnv(ctx: ToolContext): Env {

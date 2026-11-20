@@ -31,8 +31,12 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function csvCell(value: unknown): string {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+// CSV 公式注入：試算表會把以 = + - @ 開頭（或 Tab、CR 開頭，可繞過前導判斷）的儲存格當公式執行，
+// 使用者可控的文字（標題、備註）匯出後被開啟就可能外洩資料。開頭加單引號讓它被當成純文字。
+export function csvCell(value: unknown): string {
+  let text = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 v6Routes.get("/projects/:id/licenses", async (c) => {
