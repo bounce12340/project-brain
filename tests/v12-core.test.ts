@@ -127,6 +127,10 @@ function routeDb(): D1Database {
           if (query.includes("g.company_id FROM projects p JOIN groups g")) {
             return { id: "project-demo", owner_id: "owner", group_id: "group-project", visibility: "all", company_id: "co_uic" };
           }
+          if (query.includes("FROM projects p JOIN groups g")) return { found: 1 }; // 專案屬於登入者的公司
+          if (query.includes("INSERT INTO ai_usage")) {
+            return { calls: 1 };
+          }
           return null;
         },
         async all() {

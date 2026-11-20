@@ -2,6 +2,7 @@ import type { AuthUser } from "../types";
 import { internalApi } from "../mcp/internal-api";
 import { ToolError, validate } from "../mcp/protocol";
 import { ASSISTANT_CLIENT_NAME, MCP_TOOLS, resolveProject, type ToolContext } from "../mcp/tools";
+import { AiQuotaError, chargeAiCall } from "./ai-tenant";
 import { aiLanguageInstruction, type AiLang } from "./ai-language";
 import { llmChat, llmChatWithTools, llmEndpoint, type AgentMessage, type AgentTool } from "./llm";
 import { taipeiDate } from "./time";
@@ -139,15 +140,15 @@ export async function describeAction(ctx: ToolContext, toolName: string, args: R
     let value: string;
     if (key === "project") value = (await resolveProject(ctx, raw)).name;
     else if (key === "task_id") {
-      const task = await ctx.db.prepare("SELECT project_id,title FROM tasks WHERE id=?").bind(String(raw)).first<{ project_id: string; title: string }>();
+      const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE t.id=? AND g.company_id=?").bind(String(raw), ctx.user.company_id).first<{ project_id: string; title: string }>();
       if (!task) throw new ToolError(`找不到任務 ${String(raw)}`);
       value = `${task.title}（${await project(task.project_id)}）`;
     } else if (key === "milestone_id") {
-      const milestone = await ctx.db.prepare("SELECT project_id,title FROM milestones WHERE id=?").bind(String(raw)).first<{ project_id: string; title: string }>();
+      const milestone = await ctx.db.prepare("SELECT m.project_id,m.title FROM milestones m JOIN projects p ON p.id=m.project_id JOIN groups g ON g.id=p.group_id WHERE m.id=? AND g.company_id=?").bind(String(raw), ctx.user.company_id).first<{ project_id: string; title: string }>();
       if (!milestone) throw new ToolError(`找不到里程碑 ${String(raw)}`);
       value = `${milestone.title}（${await project(milestone.project_id)}）`;
     } else if (key === "subtask_id") {
-      const subtask = await ctx.db.prepare("SELECT s.title,t.title AS task_title,t.project_id FROM subtasks s JOIN tasks t ON t.id=s.task_id WHERE s.id=?").bind(String(raw)).first<{ title: string; task_title: string; project_id: string }>();
+      const subtask = await ctx.db.prepare("SELECT s.title,t.title AS task_title,t.project_id FROM subtasks s JOIN tasks t ON t.id=s.task_id JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE s.id=? AND g.company_id=?").bind(String(raw), ctx.user.company_id).first<{ title: string; task_title: string; project_id: string }>();
       if (!subtask) throw new ToolError(`找不到子任務 ${String(raw)}`);
       value = `${subtask.title}（${subtask.task_title}／${await project(subtask.project_id)}）`;
     } else if (key === "todo_id") {
@@ -204,6 +205,13 @@ async function runLoop(env: Env, ctx: ToolContext, messages: AgentMessage[], opt
     return { reply, actions, lookups, ...(advisor ? { advisor } : {}), ...(sources.length ? { sources } : {}) };
   };
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    // 第一輪已在 /api/ai 入口計一次；之後每一輪都是新的語言模型呼叫，同樣算進公司的每日用量。
+    if (round > 0) {
+      try { await chargeAiCall(env, ctx.user.company_id); } catch (error) {
+        if (error instanceof AiQuotaError) return turn(error.message);
+        throw error;
+      }
+    }
     const { content, toolCalls } = await llmChatWithTools(env, messages, options.tools);
     last = content || last;
     if (!toolCalls.length) return turn(content);
@@ -217,6 +225,7 @@ async function runLoop(env: Env, ctx: ToolContext, messages: AgentMessage[], opt
         if (advisorCalls >= MAX_ADVISOR_CALLS) { answer(`這一輪已經請教顧問 ${MAX_ADVISOR_CALLS} 次，請根據現有意見回答。`); continue; }
         advisorCalls += 1;
         try {
+          await chargeAiCall(env, ctx.user.company_id);
           const opinion = await askAdvisor(env, args!, options.lang);
           advisor = llmEndpoint(env, "advisor")?.model;
           lookups.push("請教顧問");

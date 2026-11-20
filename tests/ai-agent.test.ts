@@ -15,7 +15,7 @@ import { createTestD1 } from "./helpers/d1-sqlite";
 
 let db: D1Database;
 const person = (id: string, group: string, name = id) =>
-  ({ id, email: `${id}@example.com`, name, role: "member", group_id: group, group_name: group, group_type: "general", company_id: "co_uic", company_name: "UIC", is_system_admin: 0, must_change_password: 0 }) as AuthUser;
+  ({ id, email: `${id}@example.com`, name, role: "member", group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC", is_system_admin: 0 }) as AuthUser;
 const owner = person("owner", "grp_general", "陳冠宇");
 const outsider = person("bd", "grp_bd", "BD 同事");
 const env = () => ({ DB: db, APP_BASE_URL: "http://127.0.0.1:8787", LLM_API_KEY: "test", LLM_BASE_URL: "https://llm.test", LLM_MODEL: "m" }) as unknown as Env;

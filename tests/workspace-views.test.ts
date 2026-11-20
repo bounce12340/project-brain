@@ -77,7 +77,7 @@ describe("專案總覽的排序與燈號分類", () => {
 
 describe("/api/my-tasks 與 /api/portfolio", () => {
   let db: D1Database;
-  const person = (id: string, group: string) => ({ id, email: `${id}@example.com`, name: id, role: "member", group_id: group, group_name: group, group_type: "general", company_id: "co_uic", company_name: "UIC", is_system_admin: 0, must_change_password: 0 }) as AuthUser;
+  const person = (id: string, group: string) => ({ id, email: `${id}@example.com`, name: id, role: "member", group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC", is_system_admin: 0 }) as AuthUser;
   const me = person("me", "grp_general");
   const other = person("other", "grp_bd");
   const as = (user: AuthUser) => internalApi({ DB: db, APP_BASE_URL: "http://127.0.0.1:8787" } as unknown as Env, undefined, user);

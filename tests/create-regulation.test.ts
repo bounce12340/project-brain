@@ -7,7 +7,7 @@ import { createTestD1 } from "./helpers/d1-sqlite";
 /** create_regulation：AI 連接器新增法規動態，一律存成待審草稿，核准後才發布。 */
 
 let db: D1Database;
-const person = (id: string, group: string) => ({ id, email: `${id}@example.com`, name: id, role: "member", group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC" }) as AuthUser;
+const person = (id: string, group: string) => ({ id, email: `${id}@example.com`, name: id, role: "member", group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC", is_system_admin: 0 }) as AuthUser;
 const ra = person("ra", "grp_general"); // RA/PV 組
 const bd = person("bd", "grp_bd");
 const ctx = (user: AuthUser): ToolContext => ({ user, db, baseUrl: "https://projects.example", clientName: "Claude", api: internalApi({ DB: db, APP_BASE_URL: "https://projects.example" } as unknown as Env, undefined, user) });
