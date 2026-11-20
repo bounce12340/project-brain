@@ -34,7 +34,7 @@ describe("V8 report periods and privacy", () => {
   it("allows same-group members and interns to read safe reports only", () => {
     const groupReport = { scope: "grp_bd", include_private: 0 };
     expect(canReadReport(member, groupReport)).toBe(true);
-    expect(canReadReport(intern, groupReport)).toBe(true);
+    expect(canReadReport(intern, groupReport)).toBe(false); // 實習生只看得到被邀進去的專案，不能讀組別報告
     expect(canReadReport({ ...member, group_id: "grp_clinical" }, groupReport)).toBe(false);
     expect(canReadReport(member, { ...groupReport, include_private: 1 })).toBe(false);
     expect(canReadReport(admin, { scope: "all", include_private: 1 })).toBe(true);

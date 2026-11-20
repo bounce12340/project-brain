@@ -3,7 +3,7 @@ import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { INVALID_LINK, optionalString, requiredString, safeHttpUrl } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
-import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
+import { canApproveCcr, canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
 import { canManageRegwatch, deleteRegwatchEntry, mergeRegwatchAttachments, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
@@ -122,7 +122,7 @@ v6Routes.get("/projects/:id/ccrs", async (c) => {
   if (keyword) { filters.push("(c.ccr_no LIKE ? OR c.title LIKE ? OR c.description LIKE ?)"); values.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`); }
   const rows = await c.env.DB.prepare(`SELECT c.*,u.name AS requested_by_name,a.name AS approved_by_name FROM ccr_records c JOIN users u ON u.id=c.requested_by LEFT JOIN users a ON a.id=c.approved_by WHERE ${filters.join(" AND ")} ORDER BY c.created_at DESC`).bind(...values).all();
   const events = await c.env.DB.prepare("SELECT e.*,u.name AS created_by_name FROM ccr_events e JOIN ccr_records c ON c.id=e.ccr_id JOIN users u ON u.id=e.created_by WHERE c.project_id=? ORDER BY e.created_at").bind(projectId).all();
-  return c.json({ ccrs: rows.results, events: events.results, can_edit: canEditProgress(c.get("user"), access), can_reopen: c.get("user").role === "admin" });
+  return c.json({ ccrs: rows.results, events: events.results, can_edit: canEditProgress(c.get("user"), access), can_reopen: c.get("user").role === "admin", can_approve: canApproveCcr(c.get("user")), me: c.get("user").id });
 });
 
 v6Routes.post("/projects/:id/ccrs", async (c) => {
@@ -179,6 +179,9 @@ v6Routes.post("/ccrs/:id/transition", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const nextStatus = requiredString(body, "status") as CcrStatus | null;
   if (!nextStatus || !ccrStatuses.includes(nextStatus) || !canTransitionCcr(row.status, nextStatus, user.role === "admin")) return c.json({ error: "不允許的 CCR 狀態流轉" }, 422);
+  if ((nextStatus === "已核准" || nextStatus === "駁回") && !canApproveCcr(user)) return c.json({ error: "只有管理員或 QA 組成員可以核准或駁回 CCR" }, 403);
+  // 不能自己核准自己提的 CCR（管理員也一樣），避免一個人同時當申請者與核准者。
+  if (nextStatus === "已核准" && row.requested_by === user.id) return c.json({ error: "不能核准自己提出的 CCR，請由其他核准人處理" }, 403);
   const now = new Date().toISOString();
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare("UPDATE ccr_records SET status=?,approved_by=CASE WHEN ?='已核准' THEN ? ELSE approved_by END,approved_at=CASE WHEN ?='已核准' THEN ? ELSE approved_at END,closed_at=CASE WHEN ?='已結案' THEN ? WHEN ?='評估中' THEN NULL ELSE closed_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
