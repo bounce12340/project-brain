@@ -36,7 +36,7 @@ class TestD1 {
         product_line TEXT NOT NULL, category TEXT, title TEXT NOT NULL,
         key_points TEXT, link TEXT, file_id TEXT, created_by TEXT,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        status TEXT NOT NULL, source TEXT NOT NULL, source_ref TEXT
+        status TEXT NOT NULL, source TEXT NOT NULL, source_ref TEXT, company_id TEXT
       );
       CREATE TABLE reg_entry_files (
         entry_id TEXT NOT NULL, file_id TEXT NOT NULL, position INTEGER NOT NULL
@@ -82,8 +82,8 @@ function setup() {
 
 function insertEntry(db: TestD1, id: string, entryDate: string) {
   db.sqlite.prepare(`INSERT INTO reg_entries
-    (id,entry_date,entry_type,product_line,title,key_points,created_by,created_at,updated_at,status,source)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,entry_date,entry_type,product_line,title,key_points,created_by,created_at,updated_at,status,source,company_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,'co_uic')`).run(
     id, entryDate, "announcement", "藥品", id, "", user.id,
     `${entryDate} 00:00:00`, `${entryDate} 00:00:00`, "published", "manual",
   );

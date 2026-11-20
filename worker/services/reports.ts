@@ -16,6 +16,8 @@ interface ReportProject extends ReportProjectAccess {
 }
 
 export interface GenerateReportInput {
+  /** 報告屬於哪家公司：內容只含這家公司（專案的組別所屬公司）的專案。 */
+  companyId: string;
   start: string;
   end: string;
   scope: string;
@@ -42,7 +44,8 @@ function placeholders(length: number): string {
 }
 
 export async function dataMarkdown(env: Env, input: GenerateReportInput): Promise<string> {
-  const allProjects = await env.DB.prepare("SELECT id,name,group_id,progress,status,visibility FROM projects WHERE status!='archived' ORDER BY name").all<ReportProject>();
+  const allProjects = await env.DB.prepare("SELECT p.id,p.name,p.group_id,p.progress,p.status,p.visibility FROM projects p JOIN groups g ON g.id=p.group_id WHERE p.status!='archived' AND g.company_id=? ORDER BY p.name")
+    .bind(input.companyId).all<ReportProject>();
   const projects = allProjects.results.filter((project) => reportProjectVisible(project, input.scope, !!input.includePrivate));
   const periodName = input.periodType === "month" ? "月報" : "週報";
   const lines = [`# 專案${periodName}（${input.start} ～ ${input.end}）`, "", "## 專案進度變化"];
@@ -105,32 +108,53 @@ export async function generateReport(env: Env, input: GenerateReportInput): Prom
   }
   if (!content.trimEnd().endsWith(privacyNote)) content = `${content.trimEnd()}\n\n---\n${privacyNote}`;
   const id = createId("report");
-  await env.DB.prepare("INSERT INTO ai_reports (id,period_start,period_end,scope,content_md,period_type,include_private) VALUES (?,?,?,?,?,?,?)")
-    .bind(id, input.start, input.end, input.scope, content, input.periodType, input.includePrivate ? 1 : 0).run();
+  await env.DB.prepare("INSERT INTO ai_reports (id,period_start,period_end,scope,content_md,period_type,include_private,company_id) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(id, input.start, input.end, input.scope, content, input.periodType, input.includePrivate ? 1 : 0, input.companyId).run();
   return { id, content_md: content, fallback };
 }
 
-export async function regenerateReports(env: Env, periodType: ReportPeriodType, period: { start: string; end: string }): Promise<{ reports: number; ai_fallbacks: number }> {
-  const groups = await env.DB.prepare("SELECT id,name FROM groups ORDER BY name").all<{ id: string; name: string }>();
-  const scopes = ["all", ...groups.results.map((group) => group.id)];
-  let fallbacks = 0;
-  for (const scope of scopes) {
-    const report = await generateReport(env, { ...period, scope, periodType, includePrivate: false });
-    if (report.fallback) fallbacks += 1;
-  }
-  return { reports: scopes.length, ai_fallbacks: fallbacks };
+/** 啟用中的公司（排程用）；指定 companyIds 時只取其中的。 */
+async function activeCompanyIds(env: Env, companyIds?: string[]): Promise<string[]> {
+  const rows = await env.DB.prepare("SELECT id FROM companies WHERE status='active' ORDER BY created_at, id").all<{ id: string }>();
+  return rows.results.map((row) => row.id).filter((id) => !companyIds || companyIds.includes(id));
 }
 
-export async function regenerateWeeklyReports(env: Env, period = previousTaipeiWeek()): Promise<{ reports: number; ai_fallbacks: number }> {
-  const result = await regenerateReports(env, "week", period);
-  const users = await env.DB.prepare("SELECT id FROM users WHERE is_active=1").all<{ id: string }>();
-  if (users.results.length) {
-    await env.DB.batch(users.results.map((user) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)")
-      .bind(createId("noti"), user.id, "weekly_report", "上週專案週報已產生", `${period.start} 至 ${period.end} 的專案週報已可查看。`, "/reports")));
+/** 每家公司各自產「全公司」與每個組別的報告；一家公司失敗不影響其他公司。 */
+export async function regenerateReports(env: Env, periodType: ReportPeriodType, period: { start: string; end: string }, companyIds?: string[]): Promise<{ reports: number; ai_fallbacks: number }> {
+  let reports = 0;
+  let fallbacks = 0;
+  for (const companyId of await activeCompanyIds(env, companyIds)) {
+    try {
+      const groups = await env.DB.prepare("SELECT id,name FROM groups WHERE company_id=? ORDER BY name").bind(companyId).all<{ id: string; name: string }>();
+      for (const scope of ["all", ...groups.results.map((group) => group.id)]) {
+        const report = await generateReport(env, { ...period, companyId, scope, periodType, includePrivate: false });
+        reports += 1;
+        if (report.fallback) fallbacks += 1;
+      }
+    } catch (error) {
+      console.error(JSON.stringify({ message: "公司報表產生失敗", company_id: companyId, period_type: periodType, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+  return { reports, ai_fallbacks: fallbacks };
+}
+
+export async function regenerateWeeklyReports(env: Env, period = previousTaipeiWeek(), companyIds?: string[]): Promise<{ reports: number; ai_fallbacks: number }> {
+  const result = await regenerateReports(env, "week", period, companyIds);
+  // 週報通知只發給各公司自己的同仁。
+  for (const companyId of await activeCompanyIds(env, companyIds)) {
+    try {
+      const users = await env.DB.prepare("SELECT u.id FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND g.company_id=?").bind(companyId).all<{ id: string }>();
+      if (users.results.length) {
+        await env.DB.batch(users.results.map((user) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)")
+          .bind(createId("noti"), user.id, "weekly_report", "上週專案週報已產生", `${period.start} 至 ${period.end} 的專案週報已可查看。`, "/reports")));
+      }
+    } catch (error) {
+      console.error(JSON.stringify({ message: "公司週報通知失敗", company_id: companyId, error: error instanceof Error ? error.message : String(error) }));
+    }
   }
   return result;
 }
 
-export async function regenerateMonthlyReports(env: Env, period = previousTaipeiMonth()): Promise<{ reports: number; ai_fallbacks: number }> {
-  return regenerateReports(env, "month", period);
+export async function regenerateMonthlyReports(env: Env, period = previousTaipeiMonth(), companyIds?: string[]): Promise<{ reports: number; ai_fallbacks: number }> {
+  return regenerateReports(env, "month", period, companyIds);
 }

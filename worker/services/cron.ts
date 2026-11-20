@@ -4,6 +4,7 @@ import { sendNotificationMail } from "./notification-mail";
 import { groupEmailNotifications } from "./reminders";
 import { taipeiDate } from "./time";
 import { licenseNotificationStage } from "./licenses";
+import { HOME_COMPANY_ID } from "./tenant";
 import { fetchTfdaDrafts, type TfdaFetchStats } from "./tfda";
 
 interface Recipient { id: string; email: string; email_notifications: number }
@@ -24,17 +25,25 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-async function projectRecipients(db: D1Database, source: ReminderSource, sameGroup = false): Promise<Recipient[]> {
-  const query = sameGroup
-    ? "SELECT DISTINCT id,email,email_notifications FROM users WHERE is_active=1 AND (id=? OR group_id=?)"
-    : "SELECT DISTINCT u.id,u.email,u.email_notifications FROM users u LEFT JOIN project_members pm ON pm.user_id=u.id AND pm.project_id=? WHERE u.is_active=1 AND (u.id=? OR pm.project_id=?)";
+/** 專案所屬公司 = 專案組別所屬公司。收件人一定要和專案同一家公司（負責人、專案成員都檢查）。 */
+const USER_IN_COMPANY = "u.group_id IN (SELECT id FROM groups WHERE company_id=?)";
+const PROJECT_IN_COMPANY = "p.group_id IN (SELECT id FROM groups WHERE company_id=?)";
+
+async function projectRecipients(db: D1Database, companyId: string, source: ReminderSource, sameGroup = false): Promise<Recipient[]> {
   const result = sameGroup
-    ? await db.prepare(query).bind(source.owner_id, source.group_id).all<Recipient>()
-    : await db.prepare(query).bind(source.project_id, source.owner_id, source.project_id).all<Recipient>();
+    ? await db.prepare(`SELECT DISTINCT u.id,u.email,u.email_notifications FROM users u WHERE u.is_active=1 AND ${USER_IN_COMPANY} AND (u.id=? OR u.group_id=?)`)
+      .bind(companyId, source.owner_id, source.group_id).all<Recipient>()
+    : await db.prepare(`SELECT DISTINCT u.id,u.email,u.email_notifications FROM users u LEFT JOIN project_members pm ON pm.user_id=u.id AND pm.project_id=? WHERE u.is_active=1 AND ${USER_IN_COMPANY} AND (u.id=? OR pm.project_id=?)`)
+      .bind(source.project_id, companyId, source.owner_id, source.project_id).all<Recipient>();
   return result.results;
 }
 
-export async function runDailyReminders(env: Env): Promise<{ notifications: number; emails: number; archived: number; license_notifications: number }> {
+interface CompanyReminders { notifications: NotificationItem[]; archived: number; licenseNotifications: number }
+
+/**
+ * 一家公司的每日提醒：只看這家公司組別底下的專案與帳號。通知寫入資料庫後，回傳要寄信的項目。
+ */
+async function runCompanyReminders(env: Env, companyId: string): Promise<CompanyReminders> {
   const today = taipeiDate();
   const next3 = addDays(today, 3);
   const next7 = addDays(today, 7);
@@ -44,31 +53,34 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   const licenseUpdates: D1PreparedStatement[] = [];
   let licenseNotificationCount = 0;
   const addFor = async (source: ReminderSource, title: string, body: string, sameGroup = false) => {
-    for (const recipient of await projectRecipients(env.DB, source, sameGroup)) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${source.project_id}` });
+    for (const recipient of await projectRecipients(env.DB, companyId, source, sameGroup)) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${source.project_id}` });
   };
-  const milestones = await env.DB.prepare(`SELECT m.title,COALESCE(m.end_date, m.due_date) AS due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND COALESCE(m.end_date, m.due_date)<=? AND ${OPEN_PROJECT}`).bind(next3).all<ReminderSource & { title: string; due_date: string }>();
+  const milestones = await env.DB.prepare(`SELECT m.title,COALESCE(m.end_date, m.due_date) AS due_date,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM milestones m JOIN projects p ON p.id=m.project_id WHERE m.kind='milestone' AND m.done=0 AND COALESCE(m.end_date, m.due_date)<=? AND ${OPEN_PROJECT} AND ${PROJECT_IN_COMPANY}`).bind(next3, companyId).all<ReminderSource & { title: string; due_date: string }>();
   for (const row of milestones.results) await addFor(row, row.due_date < today ? "里程碑已逾期" : "里程碑即將到期", `${row.project_name}：${row.title}（${row.due_date}）`);
 
-  const todos = await env.DB.prepare("SELECT t.user_id,t.title,t.due_date,u.email,u.email_notifications FROM todos t JOIN users u ON u.id=t.user_id WHERE t.done=0 AND t.due_date<=? AND u.is_active=1").bind(today).all<{ user_id: string; title: string; due_date: string; email: string; email_notifications: number }>();
+  const todos = await env.DB.prepare(`SELECT t.user_id,t.title,t.due_date,u.email,u.email_notifications FROM todos t JOIN users u ON u.id=t.user_id WHERE t.done=0 AND t.due_date<=? AND u.is_active=1 AND ${USER_IN_COMPANY}`).bind(today, companyId).all<{ user_id: string; title: string; due_date: string; email: string; email_notifications: number }>();
   for (const row of todos.results) notifications.push({ user_id: row.user_id, email: row.email_notifications ? row.email : "", title: row.due_date < today ? "待辦事項已逾期" : "待辦事項今日到期", body: `${row.title}（${row.due_date}）`, link: "/todos" });
 
-  const approvals = await env.DB.prepare("SELECT bc.case_name,bc.expected_approval,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM bd_cases bc JOIN projects p ON p.id=bc.project_id WHERE bc.expected_approval BETWEEN ? AND ? AND bc.current_status NOT IN ('核准','結案')").bind(today, next7).all<ReminderSource & { case_name: string; expected_approval: string }>();
+  const approvals = await env.DB.prepare(`SELECT bc.case_name,bc.expected_approval,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM bd_cases bc JOIN projects p ON p.id=bc.project_id WHERE bc.expected_approval BETWEEN ? AND ? AND bc.current_status NOT IN ('核准','結案') AND ${PROJECT_IN_COMPANY}`).bind(today, next7, companyId).all<ReminderSource & { case_name: string; expected_approval: string }>();
   for (const row of approvals.results) await addFor(row, "BD 預計核准日將近", `${row.project_name}／${row.case_name}：${row.expected_approval}`, true);
 
-  const stalledCases = await env.DB.prepare(`SELECT bc.case_name,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id,MAX(e.event_date) AS last_event FROM bd_cases bc JOIN projects p ON p.id=bc.project_id LEFT JOIN bd_case_events e ON e.case_id=bc.id WHERE bc.current_status='補件中' GROUP BY bc.id HAVING last_event IS NULL OR last_event<?`).bind(staleCaseDate).all<ReminderSource & { case_name: string }>();
+  const stalledCases = await env.DB.prepare(`SELECT bc.case_name,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id,MAX(e.event_date) AS last_event FROM bd_cases bc JOIN projects p ON p.id=bc.project_id LEFT JOIN bd_case_events e ON e.case_id=bc.id WHERE bc.current_status='補件中' AND ${PROJECT_IN_COMPANY} GROUP BY bc.id HAVING last_event IS NULL OR last_event<?`).bind(companyId, staleCaseDate).all<ReminderSource & { case_name: string }>();
   for (const row of stalledCases.results) await addFor(row, "BD 補件案件停滯", `${row.project_name}／${row.case_name} 已超過 14 天無歷程更新。`, true);
 
-  const stalledProjects = await env.DB.prepare(`SELECT p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM projects p WHERE ${OPEN_PROJECT} AND p.status='active' AND p.last_activity_at<?`).bind(staleProjectAt).all<ReminderSource>();
+  const stalledProjects = await env.DB.prepare(`SELECT p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM projects p WHERE ${OPEN_PROJECT} AND p.status='active' AND p.last_activity_at<? AND ${PROJECT_IN_COMPANY}`).bind(staleProjectAt, companyId).all<ReminderSource>();
   for (const row of stalledProjects.results) await addFor(row, "專案停滯", `${row.project_name} 已超過 21 天無更新。`, true);
 
   const licenses = await env.DB.prepare(`SELECT l.id,l.name,l.expires_at,l.last_notified_stage,p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id
     FROM licenses l JOIN projects p ON p.id=l.project_id
-    WHERE l.status NOT IN ('已停用') AND p.status!='archived' ORDER BY l.expires_at`).all<ReminderSource & { id: string; name: string; expires_at: string; last_notified_stage: string | null }>();
+    WHERE l.status NOT IN ('已停用') AND p.status!='archived' AND ${PROJECT_IN_COMPANY} ORDER BY l.expires_at`).bind(companyId).all<ReminderSource & { id: string; name: string; expires_at: string; last_notified_stage: string | null }>();
+  // 證照效期同時通知 QA：UIC 維持原本的 QA 組（grp_qa）；其他公司是自己公司裡類型為 qa 的組別。
+  const isHome = companyId === HOME_COMPANY_ID;
+  const qaGroups = isHome ? "u.group_id='grp_qa'" : "u.group_id IN (SELECT id FROM groups WHERE company_id=? AND type='qa')";
   for (const row of licenses.results) {
     const stage = licenseNotificationStage(row.expires_at, today, row.last_notified_stage);
     if (!stage) continue;
-    const recipients = await env.DB.prepare("SELECT DISTINCT id,email,email_notifications FROM users WHERE is_active=1 AND approval_status='approved' AND (id=? OR group_id='grp_qa')")
-      .bind(row.owner_id).all<Recipient>();
+    const recipients = await env.DB.prepare(`SELECT DISTINCT u.id,u.email,u.email_notifications FROM users u WHERE u.is_active=1 AND u.approval_status='approved' AND ${USER_IN_COMPANY} AND (u.id=? OR ${qaGroups})`)
+      .bind(...(isHome ? [companyId, row.owner_id] : [companyId, row.owner_id, companyId])).all<Recipient>();
     const title = stage === "expired" ? "證照效期已逾期" : `證照效期剩餘 ${stage} 天`;
     const body = `${row.project_name}／${row.name}（效期 ${row.expires_at}）`;
     for (const recipient of recipients.results) notifications.push({ user_id: recipient.id, email: recipient.email_notifications ? recipient.email : "", title, body, link: `/projects/${row.project_id}` });
@@ -77,12 +89,32 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
   }
 
   const archiveAt = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const archiveRows = await env.DB.prepare("SELECT id AS project_id,name AS project_name,owner_id,group_id FROM projects WHERE status='done' AND auto_archive=1 AND last_activity_at<?").bind(archiveAt).all<ReminderSource>();
+  const archiveRows = await env.DB.prepare(`SELECT p.id AS project_id,p.name AS project_name,p.owner_id,p.group_id FROM projects p WHERE p.status='done' AND p.auto_archive=1 AND p.last_activity_at<? AND ${PROJECT_IN_COMPANY}`).bind(archiveAt, companyId).all<ReminderSource>();
   if (archiveRows.results.length) await env.DB.batch(archiveRows.results.map((row) => env.DB.prepare("UPDATE projects SET status='archived',archived_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.project_id)));
   for (const row of archiveRows.results) await addFor(row, "專案已自動歸檔", `${row.project_name} 完成超過 14 天，已自動歸檔。`);
 
   const notificationStatements = notifications.map((item) => env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)").bind(createId("noti"), item.user_id, "daily_reminder", item.title, item.body, item.link));
   if (notificationStatements.length || licenseUpdates.length) await env.DB.batch([...notificationStatements, ...licenseUpdates]);
+  return { notifications, archived: archiveRows.results.length, licenseNotifications: licenseNotificationCount };
+}
+
+export async function runDailyReminders(env: Env): Promise<{ notifications: number; emails: number; archived: number; license_notifications: number }> {
+  const notifications: NotificationItem[] = [];
+  let archived = 0;
+  let licenseNotificationCount = 0;
+  // 每家使用中的公司各跑各的；一家出錯只記錄，不影響其他公司。
+  const companies = await env.DB.prepare("SELECT id FROM companies WHERE status='active' ORDER BY created_at, id").all<{ id: string }>();
+  for (const company of companies.results) {
+    try {
+      const result = await runCompanyReminders(env, company.id);
+      notifications.push(...result.notifications);
+      archived += result.archived;
+      licenseNotificationCount += result.licenseNotifications;
+    } catch (error) {
+      console.error(JSON.stringify({ message: "公司每日提醒失敗", company_id: company.id, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+  // 信件只寄給通知本人（每個帳號只屬於一家公司），所以各公司的提醒可以合在一起彙整成一封。
   const recentMentions = await env.DB.prepare(`SELECT n.user_id,u.email,n.title,n.body,n.link FROM notifications n JOIN users u ON u.id=n.user_id
     WHERE n.type IN ('mention','automation','tfda_draft','import_request') AND n.created_at>=datetime('now','-1 day') AND u.is_active=1 AND u.email_notifications=1`).all<NotificationItem>();
   const emailItems = [...notifications.filter((item) => item.email), ...recentMentions.results];
@@ -97,7 +129,7 @@ export async function runDailyReminders(env: Env): Promise<{ notifications: numb
       console.log(JSON.stringify({ message: "今日提醒信寄送失敗", user_id: digest.user_id, error: error instanceof Error ? error.message : String(error) }));
     }
   }
-  return { notifications: notifications.length, emails: sent, archived: archiveRows.results.length, license_notifications: licenseNotificationCount };
+  return { notifications: notifications.length, emails: sent, archived, license_notifications: licenseNotificationCount };
 }
 
 export interface DailyWorkflowResult {
@@ -122,7 +154,8 @@ async function fetchFeedSafely(env: Env, label: string, fetcher: (env: Env) => P
 }
 
 export async function runDailyWorkflow(env: Env, dependencies: DailyWorkflowDependencies = {}): Promise<DailyWorkflowResult> {
-  const tfda = await fetchFeedSafely(env, "TFDA", dependencies.tfdaFetch ?? fetchTfdaDrafts);
+  // 每日抓取替所有使用中的公司各建一份草稿（TFDA 是公開資料）。
+  const tfda = await fetchFeedSafely(env, "TFDA", dependencies.tfdaFetch ?? ((activeEnv) => fetchTfdaDrafts(activeEnv)));
   const reminders = await (dependencies.reminders ?? runDailyReminders)(env);
   return { tfda, reminders };
 }

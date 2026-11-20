@@ -20,13 +20,13 @@ class TestD1 {
     this.sqlite.exec(`
       PRAGMA foreign_keys=ON;
       CREATE TABLE reg_entries (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
+        id TEXT PRIMARY KEY, company_id TEXT, title TEXT NOT NULL, status TEXT NOT NULL,
         source TEXT NOT NULL DEFAULT 'manual', source_ref TEXT,
         file_id TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE tfda_rejected (
-        source_ref TEXT PRIMARY KEY, title TEXT, rejected_by TEXT,
-        rejected_at TEXT DEFAULT CURRENT_TIMESTAMP
+        company_id TEXT NOT NULL, source_ref TEXT NOT NULL, title TEXT, rejected_by TEXT,
+        rejected_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (company_id, source_ref)
       );
       CREATE TABLE files (
         id TEXT PRIMARY KEY, project_id TEXT, storage_key TEXT NOT NULL
@@ -116,7 +116,7 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
 
   it("approve 只核准 draft，published 與不存在 id 計入 skipped", async () => {
     const { app, db, env } = setup();
-    db.sqlite.exec("INSERT INTO reg_entries(id,title,status) VALUES ('draft-1','Draft','draft'),('published-1','Published','published')");
+    db.sqlite.exec("INSERT INTO reg_entries(id,title,status,company_id) VALUES ('draft-1','Draft','draft','co_uic'),('published-1','Published','published','co_uic')");
     const response = await batchRequest(app, env, { action: "approve", ids: ["draft-1", "published-1", "missing-1"] });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ processed: 1, skipped: 2 });
@@ -126,7 +126,7 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
 
   it("重複 id 只處理一次，其餘請求項計入 skipped", async () => {
     const { app, db, env } = setup();
-    db.sqlite.exec("INSERT INTO reg_entries(id,title,status) VALUES ('draft-1','Draft','draft')");
+    db.sqlite.exec("INSERT INTO reg_entries(id,title,status,company_id) VALUES ('draft-1','Draft','draft','co_uic')");
     const response = await batchRequest(app, env, { action: "approve", ids: ["draft-1", "draft-1"] });
     await expect(response.json()).resolves.toEqual({ processed: 1, skipped: 1 });
   });
@@ -135,9 +135,9 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
     const { app, db, env, deletedObjects } = setup();
     db.sqlite.exec(`
       INSERT INTO files(id,storage_key) VALUES ('file-orphan','regwatch/file-orphan/source.txt');
-      INSERT INTO reg_entries(id,title,status,file_id) VALUES
-        ('draft-1','Draft','draft','file-orphan'),
-        ('published-1','Published','published',NULL);
+      INSERT INTO reg_entries(id,title,status,file_id,company_id) VALUES
+        ('draft-1','Draft','draft','file-orphan','co_uic'),
+        ('published-1','Published','published',NULL,'co_uic');
       INSERT INTO reg_entry_files(entry_id,file_id) VALUES ('draft-1','file-orphan');
     `);
     const response = await batchRequest(app, env, { action: "delete", ids: ["draft-1", "published-1"] });
@@ -151,9 +151,9 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
     const { app, db, env, deletedObjects } = setup();
     db.sqlite.exec(`
       INSERT INTO files(id,storage_key) VALUES ('file-shared','regwatch/file-shared/source.txt');
-      INSERT INTO reg_entries(id,title,status,file_id) VALUES
-        ('draft-1','Draft','draft','file-shared'),
-        ('published-1','Published','published','file-shared');
+      INSERT INTO reg_entries(id,title,status,file_id,company_id) VALUES
+        ('draft-1','Draft','draft','file-shared','co_uic'),
+        ('published-1','Published','published','file-shared','co_uic');
       INSERT INTO reg_entry_files(entry_id,file_id) VALUES ('draft-1','file-shared'),('published-1','file-shared');
     `);
     const response = await batchRequest(app, env, { action: "delete", ids: ["draft-1"] });
@@ -164,7 +164,7 @@ describe("SPEC-V11-1 TFDA 草稿批次端點", () => {
 
   it("每次有效批次只寫一筆含 action 與筆數的 audit", async () => {
     const { app, db, env } = setup();
-    db.sqlite.exec("INSERT INTO reg_entries(id,title,status) VALUES ('draft-1','Draft','draft')");
+    db.sqlite.exec("INSERT INTO reg_entries(id,title,status,company_id) VALUES ('draft-1','Draft','draft','co_uic')");
     await batchRequest(app, env, { action: "approve", ids: ["draft-1", "missing-1"] });
     const rows = db.sqlite.prepare("SELECT action,summary FROM audit_log").all() as Array<{ action: string; summary: string }>;
     expect(rows).toHaveLength(1);

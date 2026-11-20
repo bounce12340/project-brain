@@ -291,8 +291,8 @@ v6Routes.get("/regwatch", async (c) => {
   const user = c.get("user");
   const canManage = canManageRegwatch(user);
   const status = regwatchListStatus(user, c.req.query("view"));
-  const conditions: string[] = ["r.status=?"];
-  const values: unknown[] = [status];
+  const conditions: string[] = ["r.status=?", "r.company_id=?"];
+  const values: unknown[] = [status, user.company_id];
   const productLine = c.req.query("product_line");
   const entryType = c.req.query("entry_type");
   const year = c.req.query("year");
@@ -316,7 +316,7 @@ v6Routes.get("/regwatch", async (c) => {
       FROM reg_entries r LEFT JOIN users u ON u.id=r.created_by ${where}
       ORDER BY r.entry_date DESC,r.created_at DESC LIMIT 50 OFFSET ?`).bind(...values, (page - 1) * 50).all(),
     c.env.DB.prepare(`SELECT COUNT(*) AS value FROM reg_entries r ${where}`).bind(...values).first<number>("value"),
-    canManage ? c.env.DB.prepare("SELECT COUNT(*) AS value FROM reg_entries WHERE status='draft'").first<number>("value") : Promise.resolve(0),
+    canManage ? c.env.DB.prepare("SELECT COUNT(*) AS value FROM reg_entries WHERE status='draft' AND company_id=?").bind(user.company_id).first<number>("value") : Promise.resolve(0),
   ]);
   const entryIds = (rows.results as Array<{ id: string }>).map((entry) => entry.id);
   let attachments = new Map<string, RegwatchAttachment[]>();
@@ -353,8 +353,8 @@ v6Routes.post("/regwatch", async (c) => {
   const status = body.status === "draft" ? "draft" : "published";
   const id = createId("reg");
   try {
-    await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id, status).run();
+    await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,company_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id, status, user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
@@ -366,7 +366,7 @@ v6Routes.post("/regwatch", async (c) => {
 v6Routes.patch("/regwatch/:id", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
-  const current = await c.env.DB.prepare("SELECT * FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<Record<string, string | null>>();
+  const current = await c.env.DB.prepare("SELECT * FROM reg_entries WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).first<Record<string, string | null>>();
   if (!current) return c.json({ error: "找不到法規動態" }, 404);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const type = optionalString(body, "entry_type") ?? String(current.entry_type);
@@ -374,8 +374,8 @@ v6Routes.patch("/regwatch/:id", async (c) => {
   const entryDate = optionalString(body, "entry_date") ?? String(current.entry_date);
   if (!isIsoDate(entryDate) || !entryTypes.has(type) || !productLines.has(line)) return c.json({ error: "日期、類型或產品線不正確" }, 422);
   try {
-    await c.env.DB.prepare("UPDATE reg_entries SET entry_date=?,entry_type=?,product_line=?,category=?,title=?,key_points=?,link=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, "link" in body ? optionalString(body, "link") : current.link, c.req.param("id")).run();
+    await c.env.DB.prepare("UPDATE reg_entries SET entry_date=?,entry_type=?,product_line=?,category=?,title=?,key_points=?,link=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?")
+      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, "link" in body ? optionalString(body, "link") : current.link, c.req.param("id"), user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
@@ -387,7 +387,7 @@ v6Routes.patch("/regwatch/:id", async (c) => {
 v6Routes.delete("/regwatch/:id", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可維護法規動態" }, 403);
-  const result = await deleteRegwatchEntry(c.env, c.req.param("id"), user.id);
+  const result = await deleteRegwatchEntry(c.env, c.req.param("id"), user.id, user.company_id);
   if (!result) return c.json({ error: "找不到法規動態" }, 404);
   await writeAudit(c.env.DB, user, "delete", "reg_entry", c.req.param("id"), `刪除法規動態「${result.title}」`);
   return c.json({ ok: true, deleted_files: result.deletedFiles });
