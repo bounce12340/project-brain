@@ -109,9 +109,10 @@ const present = ({ summary_json, result_json, payload_json, ...row }: RequestRow
   ...(payload_json !== undefined ? { payload: parse(payload_json) } : {}),
 });
 
-async function submitterOf(db: D1Database, userId: string): Promise<AuthUser | null> {
+/** 提交者必須還在審核者的公司裡；換了公司或停用的人不能再以他的身分匯入。 */
+async function submitterOf(db: D1Database, userId: string, companyId: string): Promise<AuthUser | null> {
   return await db.prepare(`SELECT ${USER_COLUMNS}
-    FROM users u ${USER_JOINS} WHERE u.id=? AND u.is_active=1 AND u.approval_status='approved'`).bind(userId).first<AuthUser>();
+    FROM users u ${USER_JOINS} WHERE u.id=? AND u.is_active=1 AND u.approval_status='approved' AND g.company_id=?`).bind(userId, companyId).first<AuthUser>();
 }
 
 /** 管理頁原本的入口：管理員貼 JSON 直接匯入。`scripts/import-remote.ts` 與文件都指向這裡。 */
@@ -164,7 +165,8 @@ importRoutes.post("/import/check-failed", async (c) => {
 importRoutes.get("/import/check-failures", async (c) => {
   if (c.get("user").role !== "admin") return c.json({ error: "僅限管理員" }, 403);
   const rows = await c.env.DB.prepare(`SELECT a.id,a.created_at,a.summary,u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
-    WHERE a.action='import_check_failed' AND a.created_at>=datetime('now','-30 days') ORDER BY a.created_at DESC LIMIT 30`).all();
+    WHERE a.action='import_check_failed' AND a.created_at>=datetime('now','-30 days') AND a.user_id IN (SELECT u2.id FROM users u2 JOIN groups g2 ON g2.id=u2.group_id WHERE g2.company_id=?)
+    ORDER BY a.created_at DESC LIMIT 30`).bind(c.get("user").company_id).all();
   return c.json({ failures: rows.results });
 });
 
@@ -190,10 +192,10 @@ importRoutes.post("/import", async (c) => {
   if ((pending ?? 0) >= MAX_PENDING_PER_USER) return c.json({ error: `你已有 ${MAX_PENDING_PER_USER} 筆待審核的匯入，請等管理員處理或先撤回` }, 429);
   const id = createId("imp");
   const describe = describeImport(checked.summary);
-  const admins = await c.env.DB.prepare("SELECT id FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").all<{ id: string }>();
+  const admins = await c.env.DB.prepare("SELECT u.id FROM users u JOIN groups g ON g.id=u.group_id WHERE u.role='admin' AND u.is_active=1 AND u.approval_status='approved' AND g.company_id=?").bind(user.company_id).all<{ id: string }>();
   await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO import_requests (id,submitted_by,status,source_name,payload_json,summary_json) VALUES (?,?,'pending',?,?,?)")
-      .bind(id, user.id, sourceName, JSON.stringify(wrapper.payload), JSON.stringify(checked.summary)),
+    c.env.DB.prepare("INSERT INTO import_requests (id,submitted_by,company_id,status,source_name,payload_json,summary_json) VALUES (?,?,?,'pending',?,?,?)")
+      .bind(id, user.id, user.company_id, sourceName, JSON.stringify(wrapper.payload), JSON.stringify(checked.summary)),
     audit(c.env.DB, user.id, "import_submitted", id, `${sourceName || "批次匯入"}：${describe}`),
     ...admins.results.map((admin) => notify(c.env.DB, admin.id, `批次匯入待審核：${user.name}`, `${sourceName ? `${sourceName}：` : ""}${describe}`, `/import?request=${id}`)),
   ]);
@@ -203,9 +205,9 @@ importRoutes.post("/import", async (c) => {
 importRoutes.get("/import/requests", async (c) => {
   const user = c.get("user");
   const status = c.req.query("status");
-  const filters: string[] = [];
-  const params: unknown[] = [];
-  // 一般使用者只看得到自己的申請；管理員看全部。
+  const filters: string[] = ["r.company_id=?"];
+  const params: unknown[] = [user.company_id];
+  // 一般使用者只看得到自己的申請；管理員看自己公司的全部。
   if (user.role !== "admin") { filters.push("r.submitted_by=?"); params.push(user.id); }
   if (status && ["pending", "approved", "rejected", "withdrawn", "failed"].includes(status)) { filters.push("r.status=?"); params.push(status); }
   const rows = await c.env.DB.prepare(`SELECT ${REQUEST_COLUMNS} ${REQUEST_FROM} ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""} ORDER BY r.created_at DESC LIMIT 100`)
@@ -215,12 +217,12 @@ importRoutes.get("/import/requests", async (c) => {
 
 importRoutes.get("/import/requests/:id", async (c) => {
   const user = c.get("user");
-  const row = await c.env.DB.prepare(`SELECT ${REQUEST_COLUMNS},r.payload_json ${REQUEST_FROM} WHERE r.id=?`).bind(c.req.param("id")).first<RequestRow>();
+  const row = await c.env.DB.prepare(`SELECT ${REQUEST_COLUMNS},r.payload_json ${REQUEST_FROM} WHERE r.id=? AND r.company_id=?`).bind(c.req.param("id"), user.company_id).first<RequestRow>();
   if (!row || (user.role !== "admin" && row.submitted_by !== user.id)) return c.json({ error: "找不到匯入申請" }, 404);
   const request = present(row);
   if (row.status !== "pending" && row.status !== "failed") return c.json({ request });
   // 從送出到審核之間資料可能變了（專案被刪、權限被改），所以每次打開都以提交者身分重新預演。
-  const submitter = await submitterOf(c.env.DB, row.submitted_by);
+  const submitter = await submitterOf(c.env.DB, row.submitted_by, user.company_id);
   if (!submitter) return c.json({ request, check: { ok: false, issues: ["提交者的帳號已停用或未核准"] } });
   const checked = await validate(c.env.DB, submitter, request.payload, "member");
   return c.json({ request, check: "status" in checked ? { ok: false, issues: checked.body.issues ?? [checked.body.error] } : checked });
@@ -230,9 +232,9 @@ importRoutes.post("/import/requests/:id/approve", async (c) => {
   const user = c.get("user");
   if (user.role !== "admin") return c.json({ error: "僅限管理員" }, 403);
   const id = c.req.param("id");
-  const row = await c.env.DB.prepare("SELECT id,submitted_by,status,source_name,payload_json FROM import_requests WHERE id=?").bind(id).first<{ id: string; submitted_by: string; status: string; source_name: string; payload_json: string }>();
+  const row = await c.env.DB.prepare("SELECT id,submitted_by,status,source_name,payload_json FROM import_requests WHERE id=? AND company_id=?").bind(id, user.company_id).first<{ id: string; submitted_by: string; status: string; source_name: string; payload_json: string }>();
   if (!row) return c.json({ error: "找不到匯入申請" }, 404);
-  const submitter = await submitterOf(c.env.DB, row.submitted_by);
+  const submitter = await submitterOf(c.env.DB, row.submitted_by, user.company_id);
   if (!submitter) return c.json({ error: "提交者的帳號已停用或未核准，無法以他的身分匯入" }, 409);
   // 先搶下這筆，兩位管理員同時按核准時只有一位會真的執行。沒專案代碼的新專案重跑會建出兩份。
   const claimed = await c.env.DB.prepare("UPDATE import_requests SET status='approved',reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')").bind(user.id, id).run();
@@ -267,7 +269,7 @@ importRoutes.post("/import/requests/:id/reject", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ note?: unknown }>().catch(() => ({} as { note?: unknown }));
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : "";
-  const row = await c.env.DB.prepare("SELECT submitted_by,source_name FROM import_requests WHERE id=?").bind(id).first<{ submitted_by: string; source_name: string }>();
+  const row = await c.env.DB.prepare("SELECT submitted_by,source_name FROM import_requests WHERE id=? AND company_id=?").bind(id, user.company_id).first<{ submitted_by: string; source_name: string }>();
   if (!row) return c.json({ error: "找不到匯入申請" }, 404);
   const updated = await c.env.DB.prepare("UPDATE import_requests SET status='rejected',review_note=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')").bind(note, user.id, id).run();
   if (!updated.meta?.changes) return c.json({ error: "這筆申請已經處理過了" }, 409);

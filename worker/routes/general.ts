@@ -7,6 +7,7 @@ import { accessFrom, projectRows } from "./projects";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
+import { projectInCompany } from "../services/workspace-scope";
 
 export const generalRoutes = new Hono<AppContext>();
 
@@ -93,7 +94,7 @@ generalRoutes.post("/todos", async (c) => {
   const projectId = optionalString(body, "project_id");
   if (projectId) {
     const access = await getProjectAccess(c.env.DB, projectId);
-    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+    if (!access || !(await projectInCompany(c.env.DB, projectId, c.get("user").company_id)) || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
   }
   const id = createId("todo");
   await c.env.DB.prepare("INSERT INTO todos (id,user_id,title,due_date,project_id) VALUES (?,?,?,?,?)").bind(id, c.get("user").id, title, optionalString(body, "due_date"), projectId).run();
@@ -113,7 +114,7 @@ generalRoutes.patch("/todos/:id", async (c) => {
   const nextProjectId = "project_id" in body ? optionalString(body, "project_id") : current.project_id;
   if (nextProjectId) {
     const access = await getProjectAccess(c.env.DB, nextProjectId);
-    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+    if (!access || !(await projectInCompany(c.env.DB, nextProjectId, c.get("user").company_id)) || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
   }
   await c.env.DB.prepare("UPDATE todos SET title=?,due_date=?,project_id=?,done=?,done_at=? WHERE id=? AND user_id=?")
     .bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, nextProjectId, done, done ? new Date().toISOString() : null, c.req.param("id"), c.get("user").id).run();
@@ -175,7 +176,7 @@ generalRoutes.patch("/profile", async (c) => {
     const cleaned = cleanDisplayName(body.name);
     if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
     if (cleaned.name !== user.name) {
-      const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE id<>? AND lower(trim(name))=lower(?)").bind(user.id, cleaned.name).first();
+      const taken = await c.env.DB.prepare("SELECT 1 FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id<>? AND g.company_id=? AND lower(trim(u.name))=lower(?)").bind(user.id, user.company_id, cleaned.name).first();
       if (taken) return c.json({ error: `已經有人叫「${cleaned.name}」，請換一個名稱（例如加上姓氏）` }, 409);
       await c.env.DB.prepare("UPDATE users SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(cleaned.name, user.id).run();
       await writeAudit(c.env.DB, user, "update", "user", user.id, `顯示名稱由「${user.name}」改為「${cleaned.name}」`);

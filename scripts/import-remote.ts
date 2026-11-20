@@ -138,7 +138,7 @@ function createRemoteD1(accountId: string, databaseId: string, token: string): R
 
 async function resolveActor(db: D1Database, email: string): Promise<AuthUser> {
   const row = await db.prepare(`
-    SELECT u.id, u.email, u.name, u.role, u.group_id, u.is_active, u.approval_status, g.name AS group_name, g.type AS group_type
+    SELECT u.id, u.email, u.name, u.role, u.group_id, u.is_active, u.approval_status, g.name AS group_name, g.type AS group_type, g.company_id
     FROM users u JOIN groups g ON g.id = u.group_id WHERE lower(u.email) = ?
   `).bind(email).first<Record<string, unknown>>();
   if (!row) throw new Error(`正式站沒有這個帳號：${email}`);
