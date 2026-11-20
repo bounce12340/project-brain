@@ -62,9 +62,9 @@ describe("整理專案在任何頁面都要能用", () => {
 });
 
 describe("連線診斷", () => {
-  it("只有管理員能用", () => {
+  it("只有系統管理員能用（各公司的管理員不行）", () => {
     const body = handler(routes, "/diagnostics");
-    expect(body).toMatch(/user\.role !== "admin"/);
+    expect(body).toMatch(/user\.is_system_admin !== 1/);
   });
 
   it("只回報金鑰在不在，不回報金鑰本身", () => {

@@ -49,7 +49,7 @@ subtasksRoutes.get("/tasks/:id/subtasks", async (c) => {
   const projectId = await taskProjectId(c.env.DB, c.req.param("id"));
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   return c.json({ subtasks: await listSubtasks(c.env.DB, c.req.param("id")) });
 });
@@ -59,7 +59,7 @@ subtasksRoutes.post("/tasks/:id/subtasks", async (c) => {
   const projectId = await taskProjectId(c.env.DB, taskId);
   if (!projectId) return c.json({ error: "找不到任務" }, 404);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const fields = await readFields(c.env.DB, c.get("user").company_id, { title: "", ...body });
@@ -79,7 +79,7 @@ subtasksRoutes.patch("/subtasks/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT s.*,t.project_id FROM subtasks s JOIN tasks t ON t.id=s.task_id WHERE s.id=?").bind(id).first<SubtaskRow & { project_id: string }>();
   if (!current) return c.json({ error: "找不到子任務" }, 404);
   const access = await getProjectAccess(c.env.DB, current.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到子任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const fields = await readFields(c.env.DB, c.get("user").company_id, body);
@@ -98,7 +98,7 @@ subtasksRoutes.delete("/subtasks/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT t.project_id FROM subtasks s JOIN tasks t ON t.id=s.task_id WHERE s.id=?").bind(id).first<{ project_id: string }>();
   if (!current) return c.json({ error: "找不到子任務" }, 404);
   const access = await getProjectAccess(c.env.DB, current.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到子任務" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM subtasks WHERE id=?").bind(id).run();
   await touchProject(c.env.DB, current.project_id);

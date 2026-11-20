@@ -69,6 +69,11 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
     @apply rounded-control border border-nexus-line bg-nexus-raised px-3 py-2 text-sm text-star outline-none placeholder:text-star-dim focus:border-psi focus:ring-2 focus:ring-psi-glow;
   }
+  /* iOS Safari 在輸入框字級小於 16px 時，點進去會自動放大整個頁面，放大後畫面就超出螢幕、要左右拖。
+     手機寬度一律用 16px，桌機維持原本的 14px。 */
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: 16px; }
+  }
   input[type="range"] { @apply accent-psi; }
   input[type="checkbox"], input[type="radio"] { @apply accent-psi; }
   button { @apply transition disabled:cursor-not-allowed disabled:opacity-50; }
@@ -165,7 +170,8 @@
   .risk-medium { @apply stamp stamp-amber; }
   .risk-high { @apply stamp stamp-red; }
   /* 登入頁是卷宗的封面：一張紙頁，上方一個米色標籤寫著單位。 */
-  .auth-stage { @apply relative isolate overflow-hidden bg-void; }
+  /* 單欄格線要用 minmax(0,1fr)：預設的 auto 欄會被表單內容的最小寬度撐開，手機上卡片就超出螢幕。 */
+  .auth-stage { @apply relative isolate overflow-hidden bg-void; grid-template-columns: minmax(0, 1fr); justify-items: center; }
   /* 左上角接著卷宗標籤，那一角不圓，標籤才接得上。 */
   .auth-panel { @apply relative z-10 mt-7 rounded-tl-none; }
   /* 封面上方的卷宗標籤。 */

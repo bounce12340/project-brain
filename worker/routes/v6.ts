@@ -69,7 +69,7 @@ v6Routes.patch("/licenses/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM licenses WHERE id=?").bind(c.req.param("id")).first<Record<string, string | null>>();
   if (!current) return c.json({ error: "找不到效期紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, String(current.project_id), c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到效期紀錄" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const status = optionalString(body, "status") ?? String(current.status);
@@ -87,7 +87,7 @@ v6Routes.delete("/licenses/:id", async (c) => {
   const row = await c.env.DB.prepare("SELECT project_id FROM licenses WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!row) return c.json({ error: "找不到效期紀錄" }, 404);
   const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到效期紀錄" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM licenses WHERE id=?").bind(c.req.param("id")).run();
   await touchProject(c.env.DB, row.project_id);
@@ -143,9 +143,9 @@ v6Routes.post("/projects/:id/ccrs", async (c) => {
   const id = createId("ccr");
   const eventId = createId("ccre");
   await c.env.DB.batch([
-    c.env.DB.prepare(`INSERT INTO ccr_records (id,project_id,ccr_no,title,target_type,description,reason,classification,impact_assessment,requested_by,note)
-      SELECT ?,?,'CCR-' || ? || '-' || printf('%03d',COALESCE(MAX(CASE WHEN ccr_no LIKE ? THEN CAST(substr(ccr_no,10) AS INTEGER) END),0)+1),?,?,?,?,?,?,?,? FROM ccr_records`)
-      .bind(id, projectId, year, `CCR-${year}-%`, title, targetType, description, reason, classification, optionalString(body, "impact_assessment"), user.id, optionalString(body, "note") ?? ""),
+    c.env.DB.prepare(`INSERT INTO ccr_records (id,company_id,project_id,ccr_no,title,target_type,description,reason,classification,impact_assessment,requested_by,note)
+      SELECT ?,?,?,'CCR-' || ? || '-' || printf('%03d',COALESCE(MAX(CASE WHEN ccr_no LIKE ? THEN CAST(substr(ccr_no,10) AS INTEGER) END),0)+1),?,?,?,?,?,?,?,? FROM ccr_records WHERE company_id=?`)
+      .bind(id, access.company_id, projectId, year, `CCR-${year}-%`, title, targetType, description, reason, classification, optionalString(body, "impact_assessment"), user.id, optionalString(body, "note") ?? "", access.company_id),
     c.env.DB.prepare("INSERT INTO ccr_events (id,ccr_id,event_type,from_status,to_status,description,created_by) VALUES (?,?,'狀態變更',NULL,'申請','建立 CCR',?)").bind(eventId, id, user.id),
   ]);
   await touchProject(c.env.DB, projectId);
@@ -157,7 +157,7 @@ v6Routes.patch("/ccrs/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT * FROM ccr_records WHERE id=?").bind(c.req.param("id")).first<Record<string, string | null>>();
   if (!current) return c.json({ error: "找不到 CCR" }, 404);
   const access = await getProjectAccess(c.env.DB, String(current.project_id), c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到 CCR" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const targetType = optionalString(body, "target_type") ?? String(current.target_type);
@@ -174,7 +174,7 @@ v6Routes.post("/ccrs/:id/transition", async (c) => {
   if (!row) return c.json({ error: "找不到 CCR" }, 404);
   const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
   const user = c.get("user");
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到 CCR" }, 404);
   if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const nextStatus = requiredString(body, "status") as CcrStatus | null;
@@ -197,7 +197,7 @@ v6Routes.post("/ccrs/:id/events", async (c) => {
   const row = await c.env.DB.prepare("SELECT project_id FROM ccr_records WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!row) return c.json({ error: "找不到 CCR" }, 404);
   const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到 CCR" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const description = requiredString(body, "description");
@@ -262,7 +262,7 @@ v6Routes.patch("/key-results/:id", async (c) => {
   if (!current) return c.json({ error: "找不到 KR" }, 404);
   const projectId = String(current.project_id);
   const access = await getProjectAccess(c.env.DB, projectId, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到 KR" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const status = optionalString(body, "status") ?? String(current.status);
@@ -284,7 +284,7 @@ v6Routes.delete("/key-results/:id", async (c) => {
   const current = await c.env.DB.prepare("SELECT project_id FROM key_results WHERE id=?").bind(c.req.param("id")).first<{ project_id: string }>();
   if (!current) return c.json({ error: "找不到 KR" }, 404);
   const access = await getProjectAccess(c.env.DB, current.project_id, c.get("user"));
-  if (!access) return c.json({ error: "找不到資料" }, 404);
+  if (!access) return c.json({ error: "找不到 KR" }, 404);
   if (!canEditProgress(c.get("user"), access)) return c.json({ error: "沒有編輯權限" }, 403);
   await c.env.DB.prepare("DELETE FROM key_results WHERE id=?").bind(c.req.param("id")).run();
   await touchProject(c.env.DB, current.project_id);

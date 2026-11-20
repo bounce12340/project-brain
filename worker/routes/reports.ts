@@ -19,7 +19,7 @@ import { MAX_BRIEF, assistantContext, executeAssistantAction, loadProjectForAgen
 import { ToolCallingUnavailable, llmEndpoint, type LlmRole } from "../services/llm";
 import { ToolError } from "../mcp/protocol";
 import { resolveProject, type ToolContext } from "../mcp/tools";
-import { AiQuotaError, chargeAiCall, companyGroupIds, projectInCompany } from "../services/ai-tenant";
+import { AiQuotaError, chargeAiCall, chargeOrQuotaResponse, companyGroupIds, projectInCompany } from "../services/ai-tenant";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -82,6 +82,8 @@ reportsRoutes.post("/ai/generate", async (c) => {
     const group = await groupInCompany(c.env.DB, scope, user.company_id);
     if (!group) return c.json({ error: "找不到組別" }, 404);
   }
+  const quota = await chargeOrQuotaResponse(c.env, user.company_id);
+  if (quota) return c.json({ error: quota }, 429);
   const period = reportPeriod(preset);
   const generated = await generateReport(c.env, { companyId: user.company_id, start: period.start, end: period.end, scope, periodType: period.periodType, includePrivate });
   const report = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.id=?")
@@ -94,6 +96,8 @@ reportsRoutes.post("/ai/regenerate", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const start = requiredString(body, "period_start");
   const end = requiredString(body, "period_end");
+  const quota = await chargeOrQuotaResponse(c.env, c.get("user").company_id);
+  if (quota) return c.json({ error: quota }, 429);
   const result = await regenerateWeeklyReports(c.env, start && end ? { start, end } : undefined, [c.get("user").company_id]);
   return c.json(result);
 });
@@ -101,7 +105,7 @@ reportsRoutes.post("/ai/regenerate", async (c) => {
 export const aiRoutes = new Hono<AppContext>();
 
 // 所有會呼叫語言模型的 /api/ai 端點共用的公司防線：
-// 1. 請求帶的專案必須屬於登入者的公司（別家公司的專案和不存在一樣回「找不到專案」），不靠後面的權限判斷。
+// 1. 請求帶的專案或任務必須屬於登入者的公司（別家公司的和不存在一樣回「找不到」），不靠後面的權限判斷。
 // 2. 每次呼叫算進公司的每日 AI 用量，超過上限回 429 與說明。
 aiRoutes.use("*", async (c, next) => {
   if (c.req.method !== "POST" || c.req.path.endsWith("/agent/execute")) return next();
@@ -109,6 +113,11 @@ aiRoutes.use("*", async (c, next) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
   if (projectId && !(await projectInCompany(c.env.DB, projectId, user.company_id))) return c.json({ error: "找不到專案" }, 404);
+  const taskId = typeof body.task_id === "string" ? body.task_id.trim() : "";
+  if (taskId) {
+    const inCompany = await c.env.DB.prepare("SELECT 1 AS found FROM tasks t JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE t.id=? AND g.company_id=?").bind(taskId, user.company_id).first();
+    if (!inCompany) return c.json({ error: "找不到任務" }, 404);
+  }
   try { await chargeAiCall(c.env, user.company_id); } catch (error) {
     if (error instanceof AiQuotaError) return c.json({ error: error.message }, 429);
     throw error;
@@ -446,7 +455,8 @@ function adminDetail(user: { role: string }, message: string, reason: string): s
 // AI 失敗時最花時間的一直是「到底是金鑰、模型名還是逾時」，這裡一次講清楚。
 aiRoutes.get("/diagnostics", async (c) => {
   const user = c.get("user");
-  if (user.role !== "admin") return c.json({ error: "僅管理員可使用" }, 403);
+  // 診斷頁會顯示整個平台的 AI 設定並發出付費的測試呼叫，只給系統管理員，不給各公司的管理員。
+  if (user.is_system_admin !== 1) return c.json({ error: "僅系統管理員可使用" }, 403);
   const main = llmEndpoint(c.env);
   const advisor = llmEndpoint(c.env, "advisor");
   const result: Record<string, unknown> = {
