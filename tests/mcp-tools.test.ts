@@ -309,7 +309,7 @@ describe("擴充工具", () => {
   });
 
   it("聯絡人搜尋與已發布法規查詢：限制輸出，不帶審核草稿", async () => {
-    await db.prepare("INSERT INTO contacts (id,organization,name,email) VALUES ('ct1','醫院','林醫師','LIN@example.com'),('ct2','公司','王先生','wang@example.com')").run();
+    await db.prepare("INSERT INTO contacts (id,organization,name,email,company_id) VALUES ('ct1','醫院','林醫師','LIN@example.com','co_uic'),('ct2','公司','王先生','wang@example.com','co_uic')").run();
     expect((await run("search_contacts", { query: "lin@" })).contacts.map((c: { id: string }) => c.id)).toEqual(["ct1"]);
     expect((await run("search_contacts", { query: "公司", limit: 1 })).count).toBe(1);
     await db.prepare("DELETE FROM reg_entries").run();

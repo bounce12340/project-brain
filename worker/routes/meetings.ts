@@ -3,10 +3,11 @@ import type { AppContext, AuthUser, ProjectAccess } from "../types";
 import { createId, getProjectAccess, writeAudit } from "../services/db";
 import { canViewProject } from "../services/permissions";
 import { taipeiDateTime } from "../services/time";
+import { projectInCompany } from "../services/workspace-scope";
 
 /**
  * 會議記錄與公司外訓紀錄。
- * 所有登入的人都看得到；掛在專案底下的會議只有看得到那個專案的人看得到。
+ * 同一家公司所有登入的人都看得到（不同公司互相看不到）；掛在專案底下的會議只有看得到那個專案的人看得到。
  * 修改與刪除限建立的人與管理員。每一筆新增、修改、刪除都記稽核紀錄。
  */
 export const meetingsRoutes = new Hono<AppContext>();
@@ -116,7 +117,8 @@ const SELECT = `SELECT m.*, cu.name AS created_by_name, uu.name AS updated_by_na
 async function checkProject(db: D1Database, user: AuthUser, projectId: string | null | undefined): Promise<string | null> {
   if (!projectId) return null;
   const access = await getProjectAccess(db, projectId);
-  if (!access || !canViewProject(user, access)) return "找不到這個專案，或你沒有檢視權限";
+  // 專案必須是自己公司的：管理員的檢視權限不分公司，所以先擋公司。
+  if (!access || !(await projectInCompany(db, projectId, user.company_id)) || !canViewProject(user, access)) return "找不到這個專案，或你沒有檢視權限";
   return null;
 }
 
@@ -127,9 +129,9 @@ meetingsRoutes.get("/meetings", async (c) => {
   const kind = c.req.query("kind");
   if (kind && !KINDS.has(kind as MeetingKind)) return c.json({ error: "種類不正確" }, 422);
   const projectId = c.req.query("project_id");
-  const where = [kind ? "m.kind=?" : "", projectId ? "m.project_id=?" : ""].filter(Boolean);
-  const result = await c.env.DB.prepare(`${SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY m.starts_at DESC, m.created_at DESC LIMIT 2000`)
-    .bind(...[kind, projectId].filter(Boolean)).all<ListedRow>();
+  const where = ["m.company_id=?", kind ? "m.kind=?" : "", projectId ? "m.project_id=?" : ""].filter(Boolean);
+  const result = await c.env.DB.prepare(`${SELECT} WHERE ${where.join(" AND ")} ORDER BY m.starts_at DESC, m.created_at DESC LIMIT 2000`)
+    .bind(...[user.company_id, kind, projectId].filter(Boolean)).all<ListedRow>();
   return c.json({ meetings: result.results.filter((row) => visibleTo(user, row)).map((row) => present(user, row)) });
 });
 
@@ -140,8 +142,8 @@ meetingsRoutes.get("/meetings/overview", async (c) => {
   // 多抓一些再依權限篩，篩完仍有 OVERVIEW_LIMIT 筆的機會比較大。
   const fetch = OVERVIEW_LIMIT * 8;
   const [upcoming, recent] = await Promise.all([
-    c.env.DB.prepare(`${SELECT} WHERE COALESCE(m.ends_at, m.starts_at) >= ? ORDER BY m.starts_at ASC LIMIT ?`).bind(now, fetch).all<ListedRow>(),
-    c.env.DB.prepare(`${SELECT} WHERE COALESCE(m.ends_at, m.starts_at) < ? ORDER BY m.starts_at DESC LIMIT ?`).bind(now, fetch).all<ListedRow>(),
+    c.env.DB.prepare(`${SELECT} WHERE m.company_id=? AND COALESCE(m.ends_at, m.starts_at) >= ? ORDER BY m.starts_at ASC LIMIT ?`).bind(user.company_id, now, fetch).all<ListedRow>(),
+    c.env.DB.prepare(`${SELECT} WHERE m.company_id=? AND COALESCE(m.ends_at, m.starts_at) < ? ORDER BY m.starts_at DESC LIMIT ?`).bind(user.company_id, now, fetch).all<ListedRow>(),
   ]);
   const pick = (rows: ListedRow[]) => rows.filter((row) => visibleTo(user, row)).slice(0, OVERVIEW_LIMIT).map((row) => present(user, row));
   return c.json({ upcoming: pick(upcoming.results), recent: pick(recent.results) });
@@ -160,19 +162,19 @@ meetingsRoutes.post("/meetings", async (c) => {
   const projectError = await checkProject(c.env.DB, user, values.project_id);
   if (projectError) return c.json({ error: projectError }, 422);
   const id = createId(kind === "meeting" ? "meeting" : "course");
-  await c.env.DB.prepare(`INSERT INTO meetings (id,kind,title,starts_at,ends_at,location,attendees,organizer,summary,category,project_id,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, kind, values.title, values.starts_at, values.ends_at ?? null, values.location ?? "", values.attendees ?? "", values.organizer ?? "", values.summary ?? "", values.category ?? "", values.project_id ?? null, user.id, user.id).run();
+  await c.env.DB.prepare(`INSERT INTO meetings (id,kind,title,starts_at,ends_at,location,attendees,organizer,summary,category,project_id,company_id,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, kind, values.title, values.starts_at, values.ends_at ?? null, values.location ?? "", values.attendees ?? "", values.organizer ?? "", values.summary ?? "", values.category ?? "", values.project_id ?? null, user.company_id, user.id, user.id).run();
   await writeAudit(c.env.DB, user, "create", kind, id, `新增${describe({ kind, title: values.title!, starts_at: values.starts_at! })}`);
   return c.json({ id }, 201);
 });
 
-async function loadForChange(db: D1Database, id: string) {
-  return db.prepare("SELECT * FROM meetings WHERE id=?").bind(id).first<MeetingRow>();
+async function loadForChange(db: D1Database, id: string, companyId: string) {
+  return db.prepare("SELECT * FROM meetings WHERE id=? AND company_id=?").bind(id, companyId).first<MeetingRow>();
 }
 
 meetingsRoutes.patch("/meetings/:id", async (c) => {
   const user = c.get("user");
-  const current = await loadForChange(c.env.DB, c.req.param("id"));
+  const current = await loadForChange(c.env.DB, c.req.param("id"), user.company_id);
   if (!current) return c.json({ error: "找不到這筆紀錄" }, 404);
   if (user.role !== "admin" && current.created_by !== user.id) return c.json({ error: "只有建立這筆紀錄的人或管理員可以修改" }, 403);
   const cleaned = cleanFields(await readObject(c.req.raw), true);
@@ -187,8 +189,8 @@ meetingsRoutes.patch("/meetings/:id", async (c) => {
     const projectError = await checkProject(c.env.DB, user, cleaned.values.project_id);
     if (projectError) return c.json({ error: projectError }, 422);
   }
-  await c.env.DB.prepare(`UPDATE meetings SET ${changes.map(([field]) => `${field}=?`).join(",")},updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .bind(...changes.map(([, value]) => value), user.id, current.id).run();
+  await c.env.DB.prepare(`UPDATE meetings SET ${changes.map(([field]) => `${field}=?`).join(",")},updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?`)
+    .bind(...changes.map(([, value]) => value), user.id, current.id, user.company_id).run();
   const after = { kind: current.kind, title: cleaned.values.title ?? current.title, starts_at: startsAt };
   await writeAudit(c.env.DB, user, "update", current.kind, current.id, `更新${describe(after)}：${changes.map(([field]) => LABELS[field]).join("、")}`);
   return c.json({ ok: true });
@@ -196,10 +198,10 @@ meetingsRoutes.patch("/meetings/:id", async (c) => {
 
 meetingsRoutes.delete("/meetings/:id", async (c) => {
   const user = c.get("user");
-  const current = await loadForChange(c.env.DB, c.req.param("id"));
+  const current = await loadForChange(c.env.DB, c.req.param("id"), user.company_id);
   if (!current) return c.json({ error: "找不到這筆紀錄" }, 404);
   if (user.role !== "admin" && current.created_by !== user.id) return c.json({ error: "只有建立這筆紀錄的人或管理員可以刪除" }, 403);
-  await c.env.DB.prepare("DELETE FROM meetings WHERE id=?").bind(current.id).run();
+  await c.env.DB.prepare("DELETE FROM meetings WHERE id=? AND company_id=?").bind(current.id, user.company_id).run();
   await writeAudit(c.env.DB, user, "delete", current.kind, current.id, `刪除${describe(current)}`);
   return c.json({ ok: true });
 });
