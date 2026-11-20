@@ -124,6 +124,8 @@ function routeDb(): D1Database {
       const statement = {
         bind() { return statement; },
         async first() {
+          if (query.includes("FROM projects p JOIN groups g")) return { found: 1 }; // 專案屬於登入者的公司
+          if (query.includes("INSERT INTO ai_usage")) return { calls: 1 };
           if (query.includes("SELECT id, owner_id, group_id, visibility FROM projects")) {
             return { id: "project-demo", owner_id: "owner", group_id: "group-project", visibility: "all" };
           }

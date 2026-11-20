@@ -18,6 +18,7 @@ import { MAX_BRIEF, assistantContext, executeAssistantAction, loadProjectForAgen
 import { ToolCallingUnavailable, llmEndpoint, type LlmRole } from "../services/llm";
 import { ToolError } from "../mcp/protocol";
 import { resolveProject, type ToolContext } from "../mcp/tools";
+import { AiQuotaError, chargeAiCall, companyGroupIds, projectInCompany } from "../services/ai-tenant";
 
 export const reportsRoutes = new Hono<AppContext>();
 
@@ -95,6 +96,22 @@ reportsRoutes.post("/ai/regenerate", async (c) => {
 });
 
 export const aiRoutes = new Hono<AppContext>();
+
+// 所有會呼叫語言模型的 /api/ai 端點共用的公司防線：
+// 1. 請求帶的專案必須屬於登入者的公司（別家公司的專案和不存在一樣回「找不到專案」），不靠後面的權限判斷。
+// 2. 每次呼叫算進公司的每日 AI 用量，超過上限回 429 與說明。
+aiRoutes.use("*", async (c, next) => {
+  if (c.req.method !== "POST" || c.req.path.endsWith("/agent/execute")) return next();
+  const user = c.get("user");
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
+  if (projectId && !(await projectInCompany(c.env.DB, projectId, user.company_id))) return c.json({ error: "找不到專案" }, 404);
+  try { await chargeAiCall(c.env, user.company_id); } catch (error) {
+    if (error instanceof AiQuotaError) return c.json({ error: error.message }, 429);
+    throw error;
+  }
+  return next();
+});
 
 aiRoutes.post("/progress-links", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
@@ -270,7 +287,9 @@ aiRoutes.post("/assistant", async (c) => {
   if (!question) return c.json({ error: "請輸入問題" }, 422);
   const lang = normalizeAiLang(body.lang);
   const user = c.get("user");
-  const visible = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row)));
+  // 只把自己公司的專案餵給 AI：不依賴 projectRows 是否已依公司過濾。
+  const ownGroups = await companyGroupIds(c.env.DB, user.company_id);
+  const visible = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row))).filter((row) => ownGroups.has(row.group_id));
   const projects: AssistantProjectSummary[] = visible.slice(0, MAX_CONTEXT_PROJECTS).map((row) => ({
     name: row.name, group: row.group_name, product: row.product ?? "", site: row.site ?? "",
     status: row.status, progress: row.progress, target_date: row.target_date, last_activity: row.last_activity_at,

@@ -1,5 +1,6 @@
 import type { AuthUser } from "../types";
 import { writeAudit } from "../services/db";
+import { activeUserIdsInCompany, companyGroupIds } from "../services/ai-tenant";
 import { isIsoDate } from "../services/importer";
 import { taipeiDate } from "../services/time";
 import { closestProjectName, normalizeProjectName } from "../../src/project-names";
@@ -70,10 +71,17 @@ function checkDate(value: unknown, label: string): void {
   if (typeof value === "string" && value !== "" && !isIsoDate(value)) throw new ToolError(`${label}不是有效日期：${value}`);
 }
 
+/** 專案清單只留自己公司的（路由之外的第二道防線，不靠清單來源已經過濾）。 */
+async function ownProjects<T extends { group_id?: string }>(ctx: ToolContext, projects: T[]): Promise<T[]> {
+  const groups = await companyGroupIds(ctx.db, ctx.user.company_id);
+  return projects.filter((project) => project.group_id !== undefined && groups.has(project.group_id));
+}
+
 /** 專案可以用 id 或名稱指定。名稱比對與批次匯入相同：全形半形、空白、大小寫不影響。 */
 export async function resolveProject(ctx: ToolContext, reference: unknown): Promise<ProjectSummary> {
   const wanted = text(reference);
-  const { projects } = await ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1");
+  // 只在自己公司的專案裡找：別家公司的同名專案不會被比對到，錯誤訊息也不會透露它存在。
+  const projects = await ownProjects(ctx, (await ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1")).projects);
   const byId = projects.find((project) => project.id === wanted);
   if (byId) return byId;
   const key = normalizeProjectName(wanted);
@@ -131,7 +139,10 @@ const stageNames = (stages: Stage[]) => stages.map((stage) => stage.name);
 async function resolveAssignee(ctx: ToolContext, wanted: unknown): Promise<string | null> {
   const value = text(wanted);
   if (!value) return null;
-  const { users } = await ctx.api.get<{ users: MetadataUser[] }>("/api/metadata");
+  const { users: listed } = await ctx.api.get<{ users: MetadataUser[] }>("/api/metadata");
+  // 負責人只能是自己公司的人：別家公司同名或同 Email 的帳號不會被比對到。
+  const allowed = await activeUserIdsInCompany(ctx.db, ctx.user.company_id);
+  const users = listed.filter((user) => allowed.has(user.id));
   const byEmail = users.find((user) => user.email.toLowerCase() === value.toLowerCase());
   if (byEmail) return byEmail.id;
   const byName = users.filter((user) => user.name.trim() === value);
@@ -143,7 +154,9 @@ async function resolveAssignee(ctx: ToolContext, wanted: unknown): Promise<strin
 /** 組別可用 id 或名稱指定，「RA/PV」和「RA/PV組」都算同一組。 */
 async function resolveGroup(ctx: ToolContext, wanted: unknown): Promise<{ id: string; name: string }> {
   const value = text(wanted);
-  const { groups } = await ctx.api.get<{ groups: Array<{ id: string; name: string }> }>("/api/metadata");
+  const { groups: listed } = await ctx.api.get<{ groups: Array<{ id: string; name: string }> }>("/api/metadata");
+  const own = await companyGroupIds(ctx.db, ctx.user.company_id);
+  const groups = listed.filter((group) => own.has(group.id));
   const key = (name: string) => normalizeProjectName(name).replace(/組$/, "");
   const found = groups.find((group) => group.id === value) ?? groups.find((group) => key(group.name) === key(value));
   if (!found) throw new ToolError(`找不到組別「${value}」。現有組別：${groups.map((group) => group.name).join("、")}`);
@@ -162,7 +175,8 @@ const tool = <T extends McpTool<ToolContext>>(definition: T) => definition;
 /** 專案每個任務的子任務（呼叫前已確認看得到專案）。 */
 async function subtasksOfProject(ctx: ToolContext, projectId: string) {
   const rows = (await ctx.db.prepare(`SELECT s.id,s.task_id,s.title,s.done,s.due_date,u.name AS assignee FROM subtasks s JOIN tasks t ON t.id=s.task_id
-    LEFT JOIN users u ON u.id=s.assignee_id WHERE t.project_id=? ORDER BY s.position,s.created_at`).bind(projectId)
+    JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id
+    LEFT JOIN users u ON u.id=s.assignee_id WHERE t.project_id=? AND g.company_id=? ORDER BY s.position,s.created_at`).bind(projectId, ctx.user.company_id)
     .all<{ id: string; task_id: string; title: string; done: number; due_date: string | null; assignee: string | null }>()).results;
   const byTask = new Map<string, Array<Record<string, unknown>>>();
   for (const row of rows) byTask.set(row.task_id, [...(byTask.get(row.task_id) ?? []), { id: row.id, title: row.title, done: !!row.done, ...(row.assignee ? { assignee: row.assignee } : {}), ...(row.due_date ? { due_date: row.due_date } : {}) }]);
@@ -171,14 +185,14 @@ async function subtasksOfProject(ctx: ToolContext, projectId: string) {
 
 /** 找任務並確認看得到它的專案；看不到時和不存在一樣回「找不到」。 */
 async function taskForTool(ctx: ToolContext, taskId: unknown) {
-  const task = await ctx.db.prepare("SELECT id,project_id,title FROM tasks WHERE id=?").bind(text(taskId)).first<{ id: string; project_id: string; title: string }>();
+  const task = await ctx.db.prepare("SELECT t.id,t.project_id,t.title FROM tasks t JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE t.id=? AND g.company_id=?").bind(text(taskId), ctx.user.company_id).first<{ id: string; project_id: string; title: string }>();
   if (!task) throw new ToolError(`找不到任務 ${text(taskId)}`);
   const detail = await loadProject(ctx, task.project_id);
   return { id: task.id, title: task.title, project: detail.project.name };
 }
 
 async function subtaskForTool(ctx: ToolContext, subtaskId: unknown) {
-  const row = await ctx.db.prepare("SELECT s.id,s.title,s.task_id FROM subtasks s WHERE s.id=?").bind(text(subtaskId)).first<{ id: string; title: string; task_id: string }>();
+  const row = await ctx.db.prepare("SELECT s.id,s.title,s.task_id FROM subtasks s JOIN tasks t ON t.id=s.task_id JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE s.id=? AND g.company_id=?").bind(text(subtaskId), ctx.user.company_id).first<{ id: string; title: string; task_id: string }>();
   if (!row) throw new ToolError(`找不到子任務 ${text(subtaskId)}`);
   const task = await taskForTool(ctx, row.task_id).catch(() => { throw new ToolError(`找不到子任務 ${text(subtaskId)}`); });
   return { id: row.id, title: row.title, task: task.title, project: task.project };
@@ -220,7 +234,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const status = STATUS_FILTER[text(args.status) || "ongoing"];
       if (status) query.set("status", status);
       if (text(args.keyword)) query.set("keyword", text(args.keyword));
-      const { projects } = await ctx.api.get<{ projects: ProjectListRow[] }>(`/api/projects?${query}`);
+      const projects = await ownProjects(ctx, (await ctx.api.get<{ projects: ProjectListRow[] }>(`/api/projects?${query}`)).projects);
       const mine = (project: ProjectListRow) => project.owner_id === ctx.user.id || project.member_ids.includes(ctx.user.id);
       const rows = projects.filter((project) => (!args.mine || mine(project)) && (!args.risk || project.risk_level === args.risk));
       const names = new Map(projects.map((project) => [project.id, project.name]));
@@ -296,15 +310,16 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const today = taipeiDate();
       const days = typeof args.days_ahead === "number" ? args.days_ahead : 14;
       const horizon = new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-      const { projects } = await ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1&status=active,paused");
+      const projects = await ownProjects(ctx, (await ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1&status=active,paused")).projects);
       const visible = new Map(projects.map((project) => [project.id, project.name]));
       const [tasks, milestones, todos, allVisible] = await Promise.all([
         ctx.db.prepare(`SELECT t.id,t.title,t.start_date,t.due_date,t.project_id,s.name AS stage FROM tasks t JOIN stages s ON s.id=t.stage_id
-          WHERE t.assignee_id=? AND t.done=0`).bind(ctx.user.id).all<{ id: string; title: string; start_date: string | null; due_date: string | null; project_id: string; stage: string }>(),
-        ctx.db.prepare(`SELECT m.id,m.title,m.due_date,m.end_date,m.project_id FROM milestones m JOIN projects p ON p.id=m.project_id
-          WHERE p.owner_id=? AND m.kind='milestone' AND m.done=0`).bind(ctx.user.id).all<{ id: string; title: string; due_date: string | null; end_date: string | null; project_id: string }>(),
+          JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id
+          WHERE t.assignee_id=? AND t.done=0 AND g.company_id=?`).bind(ctx.user.id, ctx.user.company_id).all<{ id: string; title: string; start_date: string | null; due_date: string | null; project_id: string; stage: string }>(),
+        ctx.db.prepare(`SELECT m.id,m.title,m.due_date,m.end_date,m.project_id FROM milestones m JOIN projects p ON p.id=m.project_id JOIN groups g ON g.id=p.group_id
+          WHERE p.owner_id=? AND m.kind='milestone' AND m.done=0 AND g.company_id=?`).bind(ctx.user.id, ctx.user.company_id).all<{ id: string; title: string; due_date: string | null; end_date: string | null; project_id: string }>(),
         ctx.api.get<{ todos: Array<{ id: string; title: string; due_date: string | null; done: number; project_id: string | null; project_name: string | null }> }>("/api/todos"),
-        ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1"),
+        ctx.api.get<{ projects: ProjectSummary[] }>("/api/projects?summary=1").then(async (result) => ({ projects: await ownProjects(ctx, result.projects) })),
       ]);
       type Item = { type: string; id: string; title: string; date: string | null; project?: string; stage?: string };
       const items: Item[] = [
@@ -391,7 +406,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const fields = ["done", "stage", "title", "start_date", "due_date", "assignee", "description", "fields"].filter((key) => args[key] !== undefined);
       if (!fields.length) throw new ToolError("沒有要修改的欄位");
       checkDate(args.start_date, "開始日"); checkDate(args.due_date, "到期日");
-      const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t WHERE t.id=?").bind(text(args.task_id)).first<{ project_id: string; title: string }>();
+      const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE t.id=? AND g.company_id=?").bind(text(args.task_id), ctx.user.company_id).first<{ project_id: string; title: string }>();
       if (!task) throw new ToolError(`找不到任務 ${text(args.task_id)}`);
       const detail = await loadProject(ctx, task.project_id); // 看不到的專案在這裡就被擋下，不會洩漏任務是否存在以外的內容
       const body: Record<string, unknown> = {};
@@ -519,7 +534,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
       const fields = ["done", "title", "date", "end_date"].filter((key) => args[key] !== undefined);
       if (!fields.length) throw new ToolError("沒有要修改的欄位");
       checkDate(args.date, "日期"); checkDate(args.end_date, "結束日");
-      const milestone = await ctx.db.prepare("SELECT project_id,title FROM milestones WHERE id=?").bind(text(args.milestone_id)).first<{ project_id: string; title: string }>();
+      const milestone = await ctx.db.prepare("SELECT m.project_id,m.title FROM milestones m JOIN projects p ON p.id=m.project_id JOIN groups g ON g.id=p.group_id WHERE m.id=? AND g.company_id=?").bind(text(args.milestone_id), ctx.user.company_id).first<{ project_id: string; title: string }>();
       if (!milestone) throw new ToolError(`找不到里程碑 ${text(args.milestone_id)}`);
       const detail = await loadProject(ctx, milestone.project_id);
       const body: Record<string, unknown> = {};
@@ -543,7 +558,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
     } },
     async run(args, ctx) {
       const id = text(args.task_id);
-      const task = await ctx.db.prepare("SELECT project_id,title FROM tasks WHERE id=?").bind(id).first<{ project_id: string; title: string }>();
+      const task = await ctx.db.prepare("SELECT t.project_id,t.title FROM tasks t JOIN projects p ON p.id=t.project_id JOIN groups g ON g.id=p.group_id WHERE t.id=? AND g.company_id=?").bind(id, ctx.user.company_id).first<{ project_id: string; title: string }>();
       if (!task) throw new ToolError(`找不到任務 ${id}`);
       const detail = await loadProject(ctx, task.project_id); // 看不到的專案在這裡就被擋下
       await ctx.api.send("DELETE", `/api/tasks/${encodeURIComponent(id)}`);
@@ -562,7 +577,7 @@ export const MCP_TOOLS: McpTool<ToolContext>[] = [
     } },
     async run(args, ctx) {
       const id = text(args.milestone_id);
-      const milestone = await ctx.db.prepare("SELECT project_id,title,kind FROM milestones WHERE id=?").bind(id).first<{ project_id: string; title: string; kind: string }>();
+      const milestone = await ctx.db.prepare("SELECT m.project_id,m.title,m.kind FROM milestones m JOIN projects p ON p.id=m.project_id JOIN groups g ON g.id=p.group_id WHERE m.id=? AND g.company_id=?").bind(id, ctx.user.company_id).first<{ project_id: string; title: string; kind: string }>();
       if (!milestone) throw new ToolError(`找不到里程碑 ${id}`);
       const detail = await loadProject(ctx, milestone.project_id);
       const label = milestone.kind === "event" ? "歷程事件" : "里程碑";

@@ -23,7 +23,7 @@ export const ISOLATION_STAGES = {
   projects: false, // 第 2 階段：專案、看板、任務、里程碑、進度、檔案
   workspace: false, // 第 3 階段：聯絡人、會議、待辦、通知、匯入匯出、搜尋
   regulatory: false, // 第 4 階段：法規動態、報表、AI 風險分析、排程
-  ai: false, // 第 5 階段：AI 連接器（MCP）、站內 AI 小幫手
+  ai: true, // 第 5 階段：AI 連接器（MCP）、站內 AI 小幫手
 } as const;
 
 export const tenantIsolationComplete = () => Object.values(ISOLATION_STAGES).every(Boolean);
