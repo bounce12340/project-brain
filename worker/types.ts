@@ -27,6 +27,8 @@ export interface ProjectAccess {
   group_id: string;
   visibility: Visibility;
   member_ids: string[];
+  /** 專案所屬公司（專案組別的 company_id）。權限檢查先比對這個；沒帶的呼叫端（尚未改完的舊路徑）不比對。 */
+  company_id?: string;
 }
 
 export type AppContext = {

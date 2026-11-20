@@ -84,8 +84,8 @@ function routeDb(content = "✔ 完成任務「Demo」進度 50%") {
         },
         async first(column?: string) {
           if (query.includes("FROM progress_updates")) return state.row;
-          if (query.includes("SELECT id, owner_id, group_id, visibility FROM projects")) {
-            return { id: project.id, owner_id: project.owner_id, group_id: project.group_id, visibility: project.visibility };
+          if (query.includes("g.company_id FROM projects p JOIN groups g")) {
+            return { id: project.id, owner_id: project.owner_id, group_id: project.group_id, visibility: project.visibility, company_id: "co_uic" };
           }
           if (column === "project_id") return state.row?.project_id ?? null;
           return null;

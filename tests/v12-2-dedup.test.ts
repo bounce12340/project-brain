@@ -30,8 +30,8 @@ function milestoneDb() {
           return statement;
         },
         async first(column?: string) {
-          if (query.includes("SELECT id, owner_id, group_id, visibility FROM projects")) {
-            return { id: "project-demo", owner_id: actor.id, group_id: actor.group_id, visibility: "private" };
+          if (query.includes("g.company_id FROM projects p JOIN groups g")) {
+            return { id: "project-demo", owner_id: actor.id, group_id: actor.group_id, visibility: "private", company_id: "co_uic" };
           }
           if (query.includes("SELECT id FROM milestones WHERE project_id=")) {
             const title = String(statement.values[1]);

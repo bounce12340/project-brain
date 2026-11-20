@@ -124,8 +124,8 @@ function routeDb(): D1Database {
       const statement = {
         bind() { return statement; },
         async first() {
-          if (query.includes("SELECT id, owner_id, group_id, visibility FROM projects")) {
-            return { id: "project-demo", owner_id: "owner", group_id: "group-project", visibility: "all" };
+          if (query.includes("g.company_id FROM projects p JOIN groups g")) {
+            return { id: "project-demo", owner_id: "owner", group_id: "group-project", visibility: "all", company_id: "co_uic" };
           }
           return null;
         },
