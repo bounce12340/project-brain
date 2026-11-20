@@ -1,10 +1,12 @@
+import { safeHttpUrl } from "./http";
 import type { AuthUser, ProjectAccess } from "../types";
 import { createId, getProjectAccess } from "./db";
 import { isIsoDate, resolveImportUser, type ImportUserResolution } from "./importer";
 import { currentTaipeiQuarter, taipeiDate } from "./time";
 import { milestoneDateRangeError } from "./milestone-dates";
 import { stageColorFor } from "./stage-colors";
-import { canEditProgress, canViewProject } from "./permissions";
+import { canEditProgress, canManageProject, canViewProject } from "./permissions";
+import { CCR_APPROVED_STATES, canApproveCcr } from "./ccr";
 import { recomputeAutoProgress } from "./auto-progress";
 import { closestProjectName, normalizeProjectName } from "../../src/project-names";
 import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
@@ -112,7 +114,8 @@ export function chooseStageTemplate(templates: StageTemplate[], group: { id: str
   return best && best.covered > 0 ? best.template : fallback;
 }
 
-async function createCcrFromImport(db: D1Database, projectId: string, item: JsonObject, actorId: string, notePrefix: string, dryRun: boolean): Promise<void> {
+async function createCcrFromImport(db: D1Database, projectId: string, item: JsonObject, actor: AuthUser, notePrefix: string, dryRun: boolean): Promise<void> {
+  const actorId = actor.id;
   const title = text(item.title);
   if (!title) throw new ImportValidationError("ccrs[].title 必填");
   if (await db.prepare("SELECT id FROM ccr_records WHERE project_id=? AND title=? AND reason=?").bind(projectId, title, text(item.reason) ?? "匯入").first()) return;
@@ -120,6 +123,7 @@ async function createCcrFromImport(db: D1Database, projectId: string, item: Json
   const classification = text(item.classification) ?? "次要";
   const status = text(item.status) ?? "申請";
   if (!["產品", "文件", "供應商", "製程", "設備", "其他"].includes(targetType) || !["重大", "次要"].includes(classification) || !["申請", "評估中", "已核准", "執行中", "效期確認", "已結案", "駁回"].includes(status)) throw new ImportValidationError(`CCR「${title}」的類型、分級或狀態不正確`);
+  if ((CCR_APPROVED_STATES as readonly string[]).includes(status) && !canApproveCcr(actor)) throw new ImportValidationError(`CCR「${title}」的狀態為「${status}」，只有管理員或 QA 組成員可以匯入已核准以後的 CCR`);
   const year = (date(item.requested_at, "ccrs[].requested_at") ?? taipeiDate()).slice(0, 4);
   if (dryRun) return;
   const id = createId("ccr");
@@ -135,7 +139,7 @@ async function createCcrFromImport(db: D1Database, projectId: string, item: Json
 
 interface ExistingProject {
   id: string; name: string; group_id: string; owner_id: string; goal_summary: string;
-  start_date: string | null; target_date: string | null; progress: number; progress_mode: "manual" | "auto";
+  start_date: string | null; target_date: string | null; progress: number; progress_mode: "manual" | "auto"; status: string; visibility: string;
 }
 
 interface PlannedProject {
@@ -148,7 +152,7 @@ interface PlannedProject {
   group: { id: string; name: string; type: string } | null;
 }
 
-const EXISTING_COLUMNS = "p.id,p.name,p.group_id,p.owner_id,p.goal_summary,p.start_date,p.target_date,p.progress,p.progress_mode";
+const EXISTING_COLUMNS = "p.id,p.name,p.group_id,p.owner_id,p.goal_summary,p.start_date,p.target_date,p.progress,p.progress_mode,p.status,p.visibility";
 /** 只認匯入者公司的專案（專案的公司 = 所屬組別的公司）。 */
 const EXISTING_FROM = "FROM projects p JOIN groups g ON g.id=p.group_id";
 
@@ -222,6 +226,15 @@ async function planProjects(
         // 看不到的專案連名稱都不能說出來：猜中別人私人專案的代碼，不該因此得知它叫什麼。
         if (!canViewProject(actor, access)) issues.push(`專案代碼「${externalKey}」已被你沒有權限的專案使用，請換一個代碼`);
         else if (!canEditProgress(actor, access)) issues.push(`你沒有權限修改專案「${existing.name}」`);
+        else if (!canManageProject(actor, access)) {
+          // 與 PATCH /api/projects/:id 一致：改可見性、狀態、名稱要有管理權（擁有者或管理員），
+          // 否則一般成員／實習生能藉匯入把別人專案改成公開或封存。值沒變就不算。
+          const denied: string[] = [];
+          if (has(item, "visibility") && (text(item.visibility) ?? "") !== existing.visibility) denied.push("可見性");
+          if (has(item, "status") && (text(item.status) ?? "") !== existing.status) denied.push("狀態");
+          if (externalKey && name && name !== existing.name) denied.push("名稱");
+          if (denied.length) issues.push(`你不是專案「${existing.name}」的負責人，不能透過匯入修改${denied.join("、")}`);
+        }
       }
     } else {
       if (!name) issues.push(`「${label}」是新專案，需要專案名稱`);
@@ -483,7 +496,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     }
     // 這個專案的寫入在這裡送出：CCR 要在資料庫裡依序取號、自動進度要讀剛寫進去的任務，都得先寫進去。
     await flush();
-    for (const ccr of objects(item.ccrs, `${label}.ccrs`)) await createCcrFromImport(db, projectId, ccr, actor.id, "", dryRun);
+    for (const ccr of objects(item.ccrs, `${label}.ccrs`)) await createCcrFromImport(db, projectId, ccr, actor, "", dryRun);
 
     // 匯進來的任務可能已經標完成；自動進度不重算的話，專案會一直顯示 0%。
     // 有明確填 progress 的保留那個值。
@@ -502,7 +515,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=? AND company_id=?").bind(entryDate, title, companyId).first()) { stats.reg_entries.skipped += 1; continue; }
     writtenEntries.add(entryKey);
     await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,company_id) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id, companyId));
+      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), safeHttpUrl(entry.link), actor.id, companyId));
     stats.reg_entries.created += 1;
   }
   await flush();

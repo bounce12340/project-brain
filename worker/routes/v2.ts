@@ -11,6 +11,7 @@ import { isValidRuleCombination, type ActionType, type TriggerType } from "../se
 import { activeUserInCompany } from "../services/tenant";
 import { regwatchFileInCompany } from "../services/regwatch";
 import { accessFrom, projectRows } from "./projects";
+import { activeUserCanViewProject } from "../services/workspace-scope";
 
 export const v2Routes = new Hono<AppContext>();
 
@@ -197,6 +198,8 @@ v2Routes.post("/projects/:id/rules", async (c) => {
   if (trigger === "progress_reached" && (!triggerParam || Number(triggerParam) < 1 || Number(triggerParam) > 100)) return c.json({ error: "進度門檻須為 1 至 100" }, 422);
   const actionUser = optionalString(body, "action_param_user");
   if (["notify_user", "assign_task_to", "create_todo_for"].includes(action) && (!actionUser || !(await activeUserInCompany(c.env.DB, actionUser, user.company_id)))) return c.json({ error: "請選擇有效成員" }, 422);
+  // 通知、指派、建待辦的對象必須看得到這個專案，否則私人專案的名稱與內容會推給打不開它的人。
+  if (actionUser && ["notify_user", "assign_task_to", "create_todo_for"].includes(action) && !(await activeUserCanViewProject(c.env.DB, actionUser, access))) return c.json({ error: "這位成員看不到這個專案，請先把他加入專案" }, 422);
   const ruleId = createId("rule");
   await c.env.DB.prepare("INSERT INTO automation_rules (id,project_id,name,trigger_type,trigger_param,action_type,action_param_user,action_param_text,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
     .bind(ruleId, projectId, name, trigger, triggerParam, action, actionUser, optionalString(body, "action_param_text"), user.id).run();

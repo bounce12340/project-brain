@@ -25,8 +25,10 @@ export function canViewProject(user: AuthUser, project: ProjectAccess): boolean 
   return project.visibility === "group" && user.group_id === project.group_id;
 }
 
+// 會改到專案內容、看到費用或設自動化的權限，一律先要「看得到這個專案」：
+// 否則同組成員只要拿到私人專案的網址，就能改一個自己打不開的專案。
 export function canEditProgress(user: AuthUser, project: ProjectAccess): boolean {
-  if (!sameCompany(user, project)) return false;
+  if (!canViewProject(user, project)) return false;
   if (user.role === "admin" || project.owner_id === user.id || isMember(user, project)) return true;
   return user.role === "member" && user.group_id === project.group_id;
 }
@@ -41,11 +43,11 @@ export function canManageProject(user: AuthUser, project: ProjectAccess): boolea
 }
 
 export function canViewFees(user: AuthUser, project: ProjectAccess): boolean {
-  if (!sameCompany(user, project)) return false;
+  if (!canViewProject(user, project)) return false;
   return user.role === "admin" || project.owner_id === user.id || (user.role === "member" && user.group_id === project.group_id);
 }
 
 export function canManageAutomation(user: AuthUser, project: ProjectAccess): boolean {
-  if (!sameCompany(user, project)) return false;
+  if (!canViewProject(user, project)) return false;
   return user.role === "admin" || project.owner_id === user.id || (user.role === "member" && user.group_id === project.group_id);
 }

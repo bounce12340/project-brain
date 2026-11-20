@@ -4,6 +4,8 @@ import { hashPassword, randomToken, sha256 } from "../services/crypto";
 import { createId } from "../services/db";
 import { sendMail } from "../services/mailer";
 import { clientIp, consumeDailyLimit } from "../services/rate-limit";
+import { clearLoginThrottleForAccount } from "../services/login-throttle";
+import { revokeUserAccess } from "../services/revoke-access";
 import { isValidEmail, normalizeEmail } from "../services/registration";
 
 /**
@@ -80,6 +82,9 @@ passwordResetRoutes.post("/reset-password", async (c) => {
     c.env.DB.prepare("INSERT INTO audit_log (id,user_id,action,entity_type,entity_id,summary) VALUES (?,?,?,?,?,?)")
       .bind(createId("audit"), reset.user_id, "password_reset", "user", reset.user_id, "用 Email 連結重設密碼，並登出所有裝置"),
   ]);
+  // session 已在上面的 batch 刪掉；這裡補收 AI 連接器授權，並解除各 IP 的登入鎖定。
+  await revokeUserAccess(c.env, reset.user_id);
+  await clearLoginThrottleForAccount(c.env.DB, reset.email);
   try {
     await sendMail(c.env, reset.email, "[艾爾水晶] 密碼已重設", `${reset.name} 您好：\n\n你的艾爾水晶密碼剛剛用 Email 連結重設了，所有裝置都已登出，請用新密碼重新登入：\n${new URL(c.env.APP_BASE_URL).origin}/login\n\n如果不是你本人操作，請立刻聯絡管理員。`);
   } catch (error) {

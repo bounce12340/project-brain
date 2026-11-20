@@ -1,0 +1,8 @@
+# 靜態檔案（index.html、/assets/*）由 assets binding 直接回應、不經過 Worker，所以安全標頭要在這裡再設一次。
+# 內容必須與 worker/services/security-headers.ts 一致（tests/security-headers.test.ts 會檢查）。
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'

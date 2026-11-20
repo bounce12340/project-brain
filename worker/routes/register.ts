@@ -57,6 +57,8 @@ async function registrationGroups(db: D1Database, invite: InviteRow | null) {
   return (await db.prepare("SELECT id,name FROM groups WHERE company_id=? ORDER BY name").bind(invite?.company_id ?? HOME_COMPANY_ID).all<{ id: string; name: string }>()).results;
 }
 
+const SEND_CODE_MESSAGE = "驗證碼已寄出，15 分鐘內有效";
+const INVALID_CODE = "驗證碼無效，請重新取得";
 const INVALID_INVITE = "邀請碼無效、已過期或已用完，請向邀請你的人索取新的邀請碼";
 
 registerRoutes.get("/meta", async (c) => {
@@ -78,24 +80,30 @@ registerRoutes.post("/send-code", async (c) => {
   const email = normalizeEmail(body.email ?? "");
   if (!isValidEmail(email)) return c.json({ error: "請輸入有效的 Email" }, 422);
   const existing = await c.env.DB.prepare("SELECT 1 AS found FROM users WHERE email=?").bind(email).first();
-  if (existing) return c.json({ error: "此 Email 已註冊" }, 409);
-  const recent = await c.env.DB.prepare("SELECT 1 AS found FROM email_verifications WHERE email=? AND purpose='register' AND created_at > datetime('now','-60 seconds') ORDER BY created_at DESC LIMIT 1").bind(email).first();
+  // 已註冊的 Email 走一樣的流程：同樣的 60 秒冷卻、同樣寄一封信（改成「此 Email 已有帳號」的通知）、同樣的回應，
+  // 否則連打兩次（新 Email 第二次會 429）就能分辨誰有帳號。冷卻紀錄用另一個 purpose，
+  // 不會被 /submit 當成驗證碼（它只讀 purpose='register'）。
+  const purpose = existing ? "register_existing" : "register";
+  const recent = await c.env.DB.prepare("SELECT 1 AS found FROM email_verifications WHERE email=? AND purpose=? AND created_at > datetime('now','-60 seconds') ORDER BY created_at DESC LIMIT 1").bind(email, purpose).first();
   if (recent) return c.json({ error: "請於 60 秒後再取得驗證碼" }, 429);
 
   const code = generateOtp();
   const id = createId("verify");
   const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
-  await c.env.DB.prepare("INSERT INTO email_verifications (id,email,code_hash,expires_at) VALUES (?,?,?,?)")
-    .bind(id, email, await hashOtp(code), expiresAt).run();
+  await c.env.DB.prepare("INSERT INTO email_verifications (id,email,code_hash,purpose,expires_at) VALUES (?,?,?,?,?)")
+    .bind(id, email, await hashOtp(code), purpose, expiresAt).run();
   try {
-    const mail = await sendMail(c.env, email, "[艾爾水晶] 註冊驗證碼", `您的註冊驗證碼是：${code}\n\n驗證碼 15 分鐘內有效，請勿轉交他人。`);
+    const text = existing
+      ? `有人用這個 Email 在艾爾水晶申請註冊，但這個 Email 已經有帳號了。\n\n如果是你本人，請直接登入：${new URL(c.env.APP_BASE_URL).origin}/login\n忘記密碼可以在登入頁使用「忘記密碼」重設。\n\n如果不是你本人，請忽略這封信，你的帳號不會有任何變動。`
+      : `您的註冊驗證碼是：${code}\n\n驗證碼 15 分鐘內有效，請勿轉交他人。`;
+    const mail = await sendMail(c.env, email, existing ? "[艾爾水晶] 此 Email 已有帳號" : "[艾爾水晶] 註冊驗證碼", text);
     if (!mail.sent) throw new Error("寄信服務未設定");
   } catch (error) {
     await c.env.DB.prepare("DELETE FROM email_verifications WHERE id=?").bind(id).run();
     console.error(JSON.stringify({ message: "registration OTP email failed", error: error instanceof Error ? error.message : "unknown" }));
     return c.json({ error: "驗證碼寄送失敗，請稍後再試" }, 503);
   }
-  return c.json({ ok: true, message: "驗證碼已寄出，15 分鐘內有效" });
+  return c.json({ ok: true, message: SEND_CODE_MESSAGE });
 });
 
 registerRoutes.post("/submit", async (c) => {
@@ -113,8 +121,10 @@ registerRoutes.post("/submit", async (c) => {
   ]);
   // 組別只能選邀請（或原本的公司）允許的那些，不能用改過的 group_id 跳到別家公司。
   const group = groups.find((item) => item.id === body.group_id?.trim()) ?? null;
-  const validation = validateRegistrationInput(body, { enabled, emailExists: Boolean(existing), groupExists: Boolean(group) });
+  const validation = validateRegistrationInput(body, { enabled, emailExists: false, groupExists: Boolean(group) });
   if (!validation.ok) return c.json({ error: validation.error }, validation.status);
+  // 已註冊的 Email 不會有驗證碼（send-code 不寄），用跟「驗證碼無效」一樣的訊息擋下，不洩漏帳號存在。
+  if (existing) return c.json({ error: INVALID_CODE }, 422);
 
   const verification = await c.env.DB.prepare(`
     SELECT id,code_hash,expires_at,attempts,verified FROM email_verifications
@@ -154,7 +164,7 @@ registerRoutes.post("/submit", async (c) => {
     await c.env.DB.batch(statements);
   } catch (error) {
     await releaseInvite();
-    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "此 Email 已註冊" }, 409);
+    if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: INVALID_CODE }, 422);
     throw error;
   }
   if (directAdmin) {

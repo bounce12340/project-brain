@@ -33,7 +33,7 @@ export function ReportsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [reports, setReports] = useState<AiReport[]>([]);
   const [meta, setMeta] = useState<Metadata | null>(null);
-  const [scope, setScope] = useState(user?.role === "admin" ? "all" : user?.group_id ?? "");
+  const [scope, setScope] = useState(user?.role === "admin" ? "all" : user?.role === "intern" ? "mine" : user?.group_id ?? "");
   const [period, setPeriod] = useState("last-week");
   const [includePrivate, setIncludePrivate] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,7 +66,8 @@ export function ReportsPage() {
       setError(cause instanceof Error ? cause.message : t("reports.failed"));
     } finally { setBusy(false); }
   };
-  const selectableGroups = user?.role === "admin" ? meta?.groups ?? [] : (meta?.groups ?? []).filter((group) => group.id === user?.group_id);
+  // 實習生只能產自己被邀進去的專案報告（mine）；組別／全公司報告會帶出他看不到的專案。
+  const selectableGroups = user?.role === "intern" ? [] : user?.role === "admin" ? meta?.groups ?? [] : (meta?.groups ?? []).filter((group) => group.id === user?.group_id);
 
   return <>
     <PageHeader title={t("reports.title")} description={t("reports.description")} actions={<div className="flex gap-2 no-print"><button className="btn-secondary" onClick={() => window.print()}>{t("reports.print")}</button><button className="btn-secondary" onClick={() => csv("summary")}>{t("reports.exportCsv")}</button></div>} />
@@ -74,7 +75,7 @@ export function ReportsPage() {
       <h2 className="mb-4 text-lg font-bold" data-tour="reports-generate">{t("reports.generateTitle")}</h2>
       {error && <ErrorBox message={error} />}
       <div className="grid gap-3 md:grid-cols-4">
-        <label><span className="label">{t("reports.group")}</span><select className="w-full" value={scope} onChange={(event) => setScope(event.target.value)}>{user?.role === "admin" && <option value="all">{t("reports.company")}</option>}{selectableGroups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label>
+        <label><span className="label">{t("reports.group")}</span><select className="w-full" value={scope} onChange={(event) => setScope(event.target.value)}>{user?.role === "admin" && <option value="all">{t("reports.company")}</option>}<option value="mine">{t("reports.mine")}</option>{selectableGroups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}</select></label>
         <label><span className="label">{t("reports.period")}</span><select className="w-full" value={period} onChange={(event) => setPeriod(event.target.value)}><option value="this-week">{t("reports.thisWeek")}</option><option value="last-week">{t("reports.lastWeek")}</option><option value="this-month">{t("reports.thisMonth")}</option><option value="last-month">{t("reports.lastMonth")}</option></select></label>
         {user?.role === "admin" ? <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={includePrivate} onChange={(event) => setIncludePrivate(event.target.checked)} />{t("reports.includePrivate")}</label> : <p className="self-end pb-2 text-sm text-star-dim">{t("reports.privateExcluded")}</p>}
         <button className="btn self-end" disabled={busy || !scope} onClick={() => void generate()}>{t(busy ? "reports.generating" : "reports.generate")}</button>

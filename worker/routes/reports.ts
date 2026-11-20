@@ -5,7 +5,7 @@ import { optionalString, requiredString } from "../services/http";
 import { llmChat, parseLooseJson } from "../services/llm";
 import { webSearch, webSearchEndpoint } from "../services/web-search";
 import { canEditProgress, canViewFees, canViewProject } from "../services/permissions";
-import { canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
+import { MINE_SCOPE, canGenerateReport, canReadReport, generateReport, regenerateWeeklyReports } from "../services/reports";
 import { groupInCompany } from "../services/tenant";
 import { reportPeriod, taipeiDate, type ReportPeriodPreset } from "../services/time";
 import { accessFrom, projectRows } from "./projects";
@@ -53,15 +53,17 @@ reportsRoutes.get("/summary", async (c) => {
 
 reportsRoutes.get("/ai", async (c) => {
   const user = c.get("user");
+  // 非管理員：自己的個人報告，加上（非實習生才有）自己組別的非保密報告。
+  const groupScope = user.role === "intern" ? "" : " OR (ar.scope=? AND ar.include_private=0)";
   const statement = user.role === "admin"
-    ? c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.company_id=? ORDER BY ar.created_at DESC LIMIT 50").bind(user.company_id)
-    : c.env.DB.prepare("SELECT ar.*,g.name AS scope_name FROM ai_reports ar JOIN groups g ON g.id=ar.scope WHERE ar.company_id=? AND ar.scope=? AND ar.include_private=0 ORDER BY ar.created_at DESC LIMIT 50").bind(user.company_id, user.group_id);
+    ? c.env.DB.prepare("SELECT ar.*,CASE ar.scope WHEN 'all' THEN '全公司' WHEN 'mine' THEN '個人：'||COALESCE(ou.name,'') ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope LEFT JOIN users ou ON ou.id=ar.owner_user_id WHERE ar.company_id=? ORDER BY ar.created_at DESC LIMIT 50").bind(user.company_id)
+    : c.env.DB.prepare(`SELECT ar.*,CASE ar.scope WHEN 'all' THEN '全公司' WHEN 'mine' THEN '個人：'||COALESCE(ou.name,'') ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope LEFT JOIN users ou ON ou.id=ar.owner_user_id WHERE ar.company_id=? AND ((ar.scope='mine' AND ar.owner_user_id=?)${groupScope}) ORDER BY ar.created_at DESC LIMIT 50`).bind(...(user.role === "intern" ? [user.company_id, user.id] : [user.company_id, user.id, user.group_id]));
   const result = await statement.all();
   return c.json({ reports: result.results });
 });
 
 reportsRoutes.get("/ai/:id", async (c) => {
-  const report = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.id=? AND ar.company_id=?")
+  const report = await c.env.DB.prepare("SELECT ar.*,CASE ar.scope WHEN 'all' THEN '全公司' WHEN 'mine' THEN '個人：'||COALESCE(ou.name,'') ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope LEFT JOIN users ou ON ou.id=ar.owner_user_id WHERE ar.id=? AND ar.company_id=?")
     .bind(c.req.param("id"), c.get("user").company_id).first<Record<string, unknown> & { scope: string; include_private: number }>();
   if (!report) return c.json({ error: "找不到報告" }, 404);
   if (!canReadReport(c.get("user"), report)) return c.json({ error: "沒有報告讀取權限" }, 403);
@@ -78,15 +80,15 @@ reportsRoutes.post("/ai/generate", async (c) => {
   if (!scope || !preset || !reportPresets.has(preset)) return c.json({ error: "請選擇組別與報告期間" }, 422);
   const user = c.get("user");
   if (!canGenerateReport(user, scope, includePrivate)) return c.json({ error: "沒有此範圍的報告產生權限" }, 403);
-  if (scope !== "all") {
+  if (scope !== "all" && scope !== MINE_SCOPE) {
     const group = await groupInCompany(c.env.DB, scope, user.company_id);
     if (!group) return c.json({ error: "找不到組別" }, 404);
   }
   const quota = await chargeOrQuotaResponse(c.env, user.company_id);
   if (quota) return c.json({ error: quota }, 429);
   const period = reportPeriod(preset);
-  const generated = await generateReport(c.env, { companyId: user.company_id, start: period.start, end: period.end, scope, periodType: period.periodType, includePrivate });
-  const report = await c.env.DB.prepare("SELECT ar.*,CASE WHEN ar.scope='all' THEN '全公司' ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope WHERE ar.id=?")
+  const generated = await generateReport(c.env, { companyId: user.company_id, start: period.start, end: period.end, scope, periodType: period.periodType, includePrivate, ownerUserId: scope === MINE_SCOPE ? user.id : undefined });
+  const report = await c.env.DB.prepare("SELECT ar.*,CASE ar.scope WHEN 'all' THEN '全公司' WHEN 'mine' THEN '個人：'||COALESCE(ou.name,'') ELSE g.name END AS scope_name FROM ai_reports ar LEFT JOIN groups g ON g.id=ar.scope LEFT JOIN users ou ON ou.id=ar.owner_user_id WHERE ar.id=?")
     .bind(generated.id).first();
   return c.json({ report, fallback: generated.fallback }, 201);
 });

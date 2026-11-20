@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import type { AppContext } from "../types";
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
-import { optionalString, requiredString } from "../services/http";
+import { INVALID_LINK, optionalString, requiredString, safeHttpUrl } from "../services/http";
 import { canEditProgress, canViewProject } from "../services/permissions";
-import { canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
+import { canApproveCcr, canTransitionCcr, ccrStatuses, type CcrStatus } from "../services/ccr";
 import { canManageRegwatch, deleteRegwatchEntry, mergeRegwatchAttachments, regwatchListStatus, type RegwatchAttachment } from "../services/regwatch";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
@@ -31,8 +31,12 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function csvCell(value: unknown): string {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+// CSV 公式注入：試算表會把以 = + - @ 開頭（或 Tab、CR 開頭，可繞過前導判斷）的儲存格當公式執行，
+// 使用者可控的文字（標題、備註）匯出後被開啟就可能外洩資料。開頭加單引號讓它被當成純文字。
+export function csvCell(value: unknown): string {
+  let text = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 v6Routes.get("/projects/:id/licenses", async (c) => {
@@ -122,7 +126,7 @@ v6Routes.get("/projects/:id/ccrs", async (c) => {
   if (keyword) { filters.push("(c.ccr_no LIKE ? OR c.title LIKE ? OR c.description LIKE ?)"); values.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`); }
   const rows = await c.env.DB.prepare(`SELECT c.*,u.name AS requested_by_name,a.name AS approved_by_name FROM ccr_records c JOIN users u ON u.id=c.requested_by LEFT JOIN users a ON a.id=c.approved_by WHERE ${filters.join(" AND ")} ORDER BY c.created_at DESC`).bind(...values).all();
   const events = await c.env.DB.prepare("SELECT e.*,u.name AS created_by_name FROM ccr_events e JOIN ccr_records c ON c.id=e.ccr_id JOIN users u ON u.id=e.created_by WHERE c.project_id=? ORDER BY e.created_at").bind(projectId).all();
-  return c.json({ ccrs: rows.results, events: events.results, can_edit: canEditProgress(c.get("user"), access), can_reopen: c.get("user").role === "admin" });
+  return c.json({ ccrs: rows.results, events: events.results, can_edit: canEditProgress(c.get("user"), access), can_reopen: c.get("user").role === "admin", can_approve: canApproveCcr(c.get("user")), me: c.get("user").id });
 });
 
 v6Routes.post("/projects/:id/ccrs", async (c) => {
@@ -179,6 +183,9 @@ v6Routes.post("/ccrs/:id/transition", async (c) => {
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const nextStatus = requiredString(body, "status") as CcrStatus | null;
   if (!nextStatus || !ccrStatuses.includes(nextStatus) || !canTransitionCcr(row.status, nextStatus, user.role === "admin")) return c.json({ error: "不允許的 CCR 狀態流轉" }, 422);
+  if ((nextStatus === "已核准" || nextStatus === "駁回") && !canApproveCcr(user)) return c.json({ error: "只有管理員或 QA 組成員可以核准或駁回 CCR" }, 403);
+  // 不能自己核准自己提的 CCR（管理員也一樣），避免一個人同時當申請者與核准者。
+  if (nextStatus === "已核准" && row.requested_by === user.id) return c.json({ error: "不能核准自己提出的 CCR，請由其他核准人處理" }, 403);
   const now = new Date().toISOString();
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare("UPDATE ccr_records SET status=?,approved_by=CASE WHEN ?='已核准' THEN ? ELSE approved_by END,approved_at=CASE WHEN ?='已核准' THEN ? ELSE approved_at END,closed_at=CASE WHEN ?='已結案' THEN ? WHEN ?='評估中' THEN NULL ELSE closed_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -367,12 +374,14 @@ v6Routes.post("/regwatch", async (c) => {
   const line = requiredString(body, "product_line");
   const title = requiredString(body, "title");
   if (!date || !isIsoDate(date) || !entryTypes.has(type) || !line || !productLines.has(line) || !title) return c.json({ error: "法規動態資料不完整" }, 422);
+  const link = optionalString(body, "link");
+  if (link && !safeHttpUrl(link)) return c.json({ error: INVALID_LINK }, 422);
   // status=draft：先進「待審核」，核准後才對全員發布（AI 連接器新增的一律走這條）。
   const status = body.status === "draft" ? "draft" : "published";
   const id = createId("reg");
   try {
     await c.env.DB.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,company_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), optionalString(body, "link"), user.id, status, user.company_id).run();
+      .bind(id, date, type, line, optionalString(body, "category"), title, optionalString(body, "key_points"), link, user.id, status, user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
@@ -391,9 +400,11 @@ v6Routes.patch("/regwatch/:id", async (c) => {
   const line = optionalString(body, "product_line") ?? String(current.product_line);
   const entryDate = optionalString(body, "entry_date") ?? String(current.entry_date);
   if (!isIsoDate(entryDate) || !entryTypes.has(type) || !productLines.has(line)) return c.json({ error: "日期、類型或產品線不正確" }, 422);
+  const nextLink = "link" in body ? optionalString(body, "link") : current.link;
+  if ("link" in body && nextLink && !safeHttpUrl(nextLink)) return c.json({ error: INVALID_LINK }, 422);
   try {
     await c.env.DB.prepare("UPDATE reg_entries SET entry_date=?,entry_type=?,product_line=?,category=?,title=?,key_points=?,link=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?")
-      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, "link" in body ? optionalString(body, "link") : current.link, c.req.param("id"), user.company_id).run();
+      .bind(entryDate, type, line, "category" in body ? optionalString(body, "category") : current.category, optionalString(body, "title") ?? current.title, "key_points" in body ? optionalString(body, "key_points") : current.key_points, nextLink, c.req.param("id"), user.company_id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "相同日期與標題已存在" }, 422);
     throw error;
