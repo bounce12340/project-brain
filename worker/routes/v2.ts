@@ -9,6 +9,7 @@ import { canEditProgress, canManageAutomation, canViewProject } from "../service
 import { groupTimelineProjects } from "../services/timeline";
 import { isValidRuleCombination, type ActionType, type TriggerType } from "../services/automation";
 import { activeUserInCompany } from "../services/tenant";
+import { regwatchFileInCompany } from "../services/regwatch";
 import { accessFrom, projectRows } from "./projects";
 
 export const v2Routes = new Hono<AppContext>();
@@ -147,6 +148,8 @@ v2Routes.post("/projects/:id/files", async (c) => {
 v2Routes.get("/files/:id/download", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM files WHERE id=?").bind(c.req.param("id")).first<{ project_id: string | null; storage_key: string; filename: string; content_type: string }>();
   if (!row) return c.json({ error: "找不到檔案" }, 404);
+  // 沒有專案的檔案是法規動態附件：只有掛在自己公司法規動態底下的才能下載。
+  if (row.project_id === null && !(await regwatchFileInCompany(c.env.DB, c.req.param("id"), c.get("user").company_id))) return c.json({ error: "找不到檔案" }, 404);
   if (row.project_id !== null) {
     const access = await getProjectAccess(c.env.DB, row.project_id, c.get("user"));
     if (!access) return c.json({ error: "找不到檔案" }, 404);

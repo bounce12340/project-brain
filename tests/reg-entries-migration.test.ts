@@ -27,9 +27,9 @@ describe("migration 0028：reg_entries 重建", () => {
       { id: "r2", source: "tfda_rss", source_ref: "31671", file_id: null, created_by: null },
     ]);
     expect(raw.prepare("SELECT entry_id,file_id,position FROM reg_entry_files").all()).toEqual([{ entry_id: "r1", file_id: "f1", position: 0 }]);
-    raw.exec("INSERT INTO reg_entries (id,entry_date,product_line,title,status,source,source_ref) VALUES ('r3','2026-11-01','藥品','健保署公告','draft','nhi_rss','nhi-1')");
-    expect(() => raw.exec("INSERT INTO reg_entries (id,entry_date,product_line,title,status,source,source_ref) VALUES ('r4','2026-11-02','藥品','重複','draft','nhi_rss','nhi-1')")).toThrow(/UNIQUE/);
-    expect(() => raw.exec("INSERT INTO reg_entries (id,entry_date,product_line,title,status,source) VALUES ('r5','2026-11-01','藥品','健保署公告','draft','manual')")).toThrow(/UNIQUE/);
+    raw.exec("INSERT INTO reg_entries (id,company_id,entry_date,product_line,title,status,source,source_ref) VALUES ('r3','co_uic','2026-11-01','藥品','健保署公告','draft','nhi_rss','nhi-1')");
+    expect(() => raw.exec("INSERT INTO reg_entries (id,company_id,entry_date,product_line,title,status,source,source_ref) VALUES ('r4','co_uic','2026-11-02','藥品','重複','draft','nhi_rss','nhi-1')")).toThrow(/UNIQUE/);
+    expect(() => raw.exec("INSERT INTO reg_entries (id,company_id,entry_date,product_line,title,status,source) VALUES ('r5','co_uic','2026-11-01','藥品','健保署公告','draft','manual')")).toThrow(/UNIQUE/);
     // 刪除條目時附件關聯照舊一起刪（ON DELETE CASCADE 仍指向新表）。
     raw.exec("DELETE FROM reg_entries WHERE id='r1'");
     expect(raw.prepare("SELECT COUNT(*) AS n FROM reg_entry_files").get()).toEqual({ n: 0 });

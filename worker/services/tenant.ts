@@ -22,7 +22,7 @@ export const ISOLATION_STAGES = {
   accounts: true, // 第 1 階段：帳號、組別、註冊申請、管理員權限
   projects: true, // 第 2 階段：專案、看板、任務、里程碑、進度、檔案
   workspace: true, // 第 3 階段：聯絡人、會議、待辦、通知、匯入匯出、搜尋
-  regulatory: false, // 第 4 階段：法規動態、報表、AI 風險分析、排程
+  regulatory: true, // 第 4 階段：法規動態、報表、AI 風險分析、排程
   ai: false, // 第 5 階段：AI 連接器（MCP）、站內 AI 小幫手
 } as const;
 

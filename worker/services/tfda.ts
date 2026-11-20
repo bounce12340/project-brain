@@ -1,6 +1,7 @@
 import { createId } from "./db";
 import { extractRegwatchEntries, type RegwatchExtractedEntry } from "./regwatch-ai";
 import { taipeiDate } from "./time";
+import { regwatchReviewerSql } from "./regwatch";
 
 export const TFDA_RSS_URL = "https://www.fda.gov.tw/TC/rssAnnouncement.ashx";
 export const TFDA_RSS_TIMEOUT_MS = 20_000;
@@ -40,6 +41,8 @@ export type TfdaDuplicateReason = "source_ref" | "rejected" | "entry" | null;
 interface TfdaFetchDependencies {
   fetcher?: typeof fetch;
   extract?: (env: Env, text: string) => Promise<RegwatchExtractedEntry[]>;
+  /** 只替這些公司建草稿；不指定就是所有使用中的公司。 */
+  companyIds?: string[];
 }
 
 const namedEntities: Record<string, string> = {
@@ -199,11 +202,11 @@ async function responseTextWithinLimit(response: Response, limit: number): Promi
   }
 }
 
-async function notifyTfdaDrafts(db: D1Database, count: number, label: string): Promise<void> {
+async function notifyTfdaDrafts(db: D1Database, companyId: string, count: number, label: string): Promise<void> {
   if (count <= 0) return;
-  const recipients = await db.prepare(`SELECT id FROM users
-    WHERE is_active=1 AND approval_status='approved'
-      AND (role='admin' OR (role='member' AND group_id='grp_general'))`).all<{ id: string }>();
+  const reviewers = regwatchReviewerSql(companyId);
+  const recipients = await db.prepare(`SELECT u.id FROM users u JOIN groups g ON g.id=u.group_id WHERE ${reviewers.where}`)
+    .bind(...reviewers.bind).all<{ id: string }>();
   if (!recipients.results.length) return;
   await db.batch(recipients.results.map((recipient) => db.prepare(
     "INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)",
@@ -254,6 +257,10 @@ export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: Tfd
     console.error(JSON.stringify({ message: `${feed.label} RSS parse failed`, error: "no RSS items" }));
     return stats;
   }
+  // TFDA 公告是公開資料：每家使用中的公司各自有一份草稿、各自去重、各自的駁回記錄，審核互不影響。
+  const activeCompanies = (await env.DB.prepare("SELECT id FROM companies WHERE status='active' ORDER BY created_at, id").all<{ id: string }>()).results.map((row) => row.id);
+  const companyIds = dependencies.companyIds ? activeCompanies.filter((id) => dependencies.companyIds!.includes(id)) : activeCompanies;
+  const newDraftsByCompany = new Map<string, number>(companyIds.map((id) => [id, 0]));
   const processItem = async (item: TfdaRssItem): Promise<void> => {
     const sourceRef = feed.sourceRef(item.link);
     const entryDate = tfdaPubDateToTaipeiDate(item.pubDate);
@@ -261,23 +268,9 @@ export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: Tfd
       stats.errors.push(`item: invalid metadata (${item.link || item.title || "unknown"})`);
       return;
     }
-    try {
-      const existingRef = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE source_ref=? LIMIT 1").bind(sourceRef).first();
-      if (existingRef) {
-        stats.skipped_ref += 1;
-        return;
-      }
-      const rejectedRef = await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE source_ref=? LIMIT 1").bind(sourceRef).first();
-      if (rejectedRef) {
-        stats.skipped_rejected += 1;
-        return;
-      }
-      const existingEntry = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE entry_date=? AND title=? LIMIT 1").bind(entryDate, item.title).first();
-      if (existingEntry) {
-        stats.skipped_dup += 1;
-        return;
-      }
-
+    // AI 整理一則公告只做一次，各公司共用（第一家需要時才呼叫）。
+    let draftPromise: Promise<TfdaDraft> | undefined;
+    const draftFor = (): Promise<TfdaDraft> => draftPromise ??= (async () => {
       const plainText = tfdaHtmlToText(item.descriptionHtml);
       let extracted: RegwatchExtractedEntry | undefined;
       try {
@@ -294,27 +287,49 @@ export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: Tfd
           error: error instanceof Error ? error.message : String(error),
         }));
       }
-      const draft = buildTfdaDraft(item, sourceRef, entryDate, plainText, extracted);
-      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO reg_entries
-        (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,source,source_ref)
-        SELECT ?,?,?,?,?,?,?,?,NULL,'draft',?,?
-        WHERE NOT EXISTS (SELECT 1 FROM tfda_rejected WHERE source_ref=?)`)
-        .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, feed.source, draft.sourceRef, draft.sourceRef)
-        .run();
-      if ((inserted.meta.changes ?? 0) > 0) {
-        stats.new_drafts += 1;
-        if (draft.usedFallback) stats.ai_fallback += 1;
-      } else if (await env.DB.prepare("SELECT 1 FROM reg_entries WHERE source_ref=? LIMIT 1").bind(sourceRef).first()) {
-        stats.skipped_ref += 1;
-      } else if (await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE source_ref=? LIMIT 1").bind(sourceRef).first()) {
-        stats.skipped_rejected += 1;
-      } else {
-        stats.skipped_dup += 1;
+      return buildTfdaDraft(item, sourceRef, entryDate, plainText, extracted);
+    })();
+    for (const companyId of companyIds) {
+      // 一家公司出錯不影響其他公司。
+      try {
+        const existingRef = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE company_id=? AND source_ref=? LIMIT 1").bind(companyId, sourceRef).first();
+        if (existingRef) {
+          stats.skipped_ref += 1;
+          continue;
+        }
+        const rejectedRef = await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE company_id=? AND source_ref=? LIMIT 1").bind(companyId, sourceRef).first();
+        if (rejectedRef) {
+          stats.skipped_rejected += 1;
+          continue;
+        }
+        const existingEntry = await env.DB.prepare("SELECT 1 FROM reg_entries WHERE company_id=? AND entry_date=? AND title=? LIMIT 1").bind(companyId, entryDate, item.title).first();
+        if (existingEntry) {
+          stats.skipped_dup += 1;
+          continue;
+        }
+        const draft = await draftFor();
+        const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO reg_entries
+          (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,status,source,source_ref,company_id)
+          SELECT ?,?,?,?,?,?,?,?,NULL,'draft',?,?,?
+          WHERE NOT EXISTS (SELECT 1 FROM tfda_rejected WHERE company_id=? AND source_ref=?)`)
+          .bind(createId("reg"), draft.entryDate, "announcement", draft.productLine, draft.category || null, draft.title, draft.keyPoints || null, draft.link, feed.source, draft.sourceRef, companyId, companyId, draft.sourceRef)
+          .run();
+        if ((inserted.meta.changes ?? 0) > 0) {
+          stats.new_drafts += 1;
+          newDraftsByCompany.set(companyId, (newDraftsByCompany.get(companyId) ?? 0) + 1);
+          if (draft.usedFallback) stats.ai_fallback += 1;
+        } else if (await env.DB.prepare("SELECT 1 FROM reg_entries WHERE company_id=? AND source_ref=? LIMIT 1").bind(companyId, sourceRef).first()) {
+          stats.skipped_ref += 1;
+        } else if (await env.DB.prepare("SELECT 1 FROM tfda_rejected WHERE company_id=? AND source_ref=? LIMIT 1").bind(companyId, sourceRef).first()) {
+          stats.skipped_rejected += 1;
+        } else {
+          stats.skipped_dup += 1;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        stats.errors.push(`item ${sourceRef} (${companyId}): ${message}`);
+        console.error(JSON.stringify({ message: `${feed.label} RSS item failed`, source_ref: sourceRef, company_id: companyId, error: message }));
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      stats.errors.push(`item ${sourceRef}: ${message}`);
-      console.error(JSON.stringify({ message: `${feed.label} RSS item failed`, source_ref: sourceRef, error: message }));
     }
   };
   let nextItem = 0;
@@ -326,12 +341,14 @@ export async function fetchFeedDrafts(env: Env, feed: RegFeed, dependencies: Tfd
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, items.length) }, () => processNext()));
-  try {
-    await notifyTfdaDrafts(env.DB, stats.new_drafts, feed.label);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    stats.errors.push(`notification: ${message}`);
-    console.error(JSON.stringify({ message: `${feed.label} draft notification failed`, error: message }));
+  for (const [companyId, count] of newDraftsByCompany) {
+    try {
+      await notifyTfdaDrafts(env.DB, companyId, count, feed.label);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      stats.errors.push(`notification (${companyId}): ${message}`);
+      console.error(JSON.stringify({ message: `${feed.label} draft notification failed`, company_id: companyId, error: message }));
+    }
   }
   return stats;
 }
