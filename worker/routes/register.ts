@@ -15,6 +15,7 @@ import {
   type RegistrationInput,
   type VerificationRecord,
 } from "../services/registration";
+import { findUsableInvite, HOME_COMPANY_ID, type InviteRow } from "../services/tenant";
 
 export const registerRoutes = new Hono<AppContext>();
 
@@ -42,18 +43,38 @@ async function consumeIpLimit(c: Context<AppContext>, action: "send_code" | "sub
   return rateLimitResult(count - 1, limit).allowed;
 }
 
+/**
+ * 註冊分兩種：
+ * - 沒有邀請碼：公開註冊，進到原本的公司，要管理員開放註冊並核准。
+ * - 有邀請碼：進到發邀請的那家公司，不受公開註冊開關限制。管理員邀請直接成為那家公司的管理員；
+ *   一般邀請仍要該公司的管理員核准。
+ */
+const inviteOf = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 64) : "";
+
+/** 註冊時可選的組別：邀請指定了組別就只有那一組，否則是那家公司的所有組別。 */
+async function registrationGroups(db: D1Database, invite: InviteRow | null) {
+  if (invite?.group_id) return (await db.prepare("SELECT id,name FROM groups WHERE id=? AND company_id=?").bind(invite.group_id, invite.company_id).all<{ id: string; name: string }>()).results;
+  return (await db.prepare("SELECT id,name FROM groups WHERE company_id=? ORDER BY name").bind(invite?.company_id ?? HOME_COMPANY_ID).all<{ id: string; name: string }>()).results;
+}
+
+const INVALID_INVITE = "邀請碼無效、已過期或已用完，請向邀請你的人索取新的邀請碼";
+
 registerRoutes.get("/meta", async (c) => {
-  const [enabled, groups] = await Promise.all([
-    registrationEnabled(c.env.DB),
-    c.env.DB.prepare("SELECT id,name FROM groups ORDER BY name").all<{ id: string; name: string }>(),
-  ]);
-  return c.json({ enabled, groups: groups.results });
+  const code = inviteOf(c.req.query("invite"));
+  if (code) {
+    const invite = await findUsableInvite(c.env.DB, code);
+    if (!invite) return c.json({ enabled: false, groups: [], invite_error: INVALID_INVITE });
+    return c.json({ enabled: true, groups: await registrationGroups(c.env.DB, invite), invite: { company: invite.company_name, role: invite.role } });
+  }
+  const [enabled, groups] = await Promise.all([registrationEnabled(c.env.DB), registrationGroups(c.env.DB, null)]);
+  return c.json({ enabled, groups });
 });
 
 registerRoutes.post("/send-code", async (c) => {
   if (!(await consumeIpLimit(c, "send_code", SEND_CODE_DAILY_LIMIT))) return c.json({ error: "今日取得驗證碼次數已達上限" }, 429);
-  if (!(await registrationEnabled(c.env.DB))) return c.json({ error: "目前未開放自助註冊" }, 422);
-  const body: { email?: string } = await c.req.json().catch(() => ({}));
+  const body: { email?: string; invite?: unknown } = await c.req.json().catch(() => ({}));
+  const inviteCode = inviteOf(body.invite);
+  if (inviteCode ? !(await findUsableInvite(c.env.DB, inviteCode)) : !(await registrationEnabled(c.env.DB))) return c.json({ error: inviteCode ? INVALID_INVITE : "目前未開放自助註冊" }, 422);
   const email = normalizeEmail(body.email ?? "");
   if (!isValidEmail(email)) return c.json({ error: "請輸入有效的 Email" }, 422);
   const existing = await c.env.DB.prepare("SELECT 1 AS found FROM users WHERE email=?").bind(email).first();
@@ -79,13 +100,19 @@ registerRoutes.post("/send-code", async (c) => {
 
 registerRoutes.post("/submit", async (c) => {
   if (!(await consumeIpLimit(c, "submit", SUBMIT_DAILY_LIMIT))) return c.json({ error: "今日註冊嘗試次數已達上限" }, 429);
-  const body: RegistrationInput = await c.req.json().catch(() => ({}));
+  const body: RegistrationInput & { invite?: unknown } = await c.req.json().catch(() => ({}));
   const email = normalizeEmail(body.email ?? "");
-  const [enabled, existing, group] = await Promise.all([
-    registrationEnabled(c.env.DB),
+  const code = inviteOf(body.invite);
+  const invite = code ? await findUsableInvite(c.env.DB, code) : null;
+  if (code && !invite) return c.json({ error: INVALID_INVITE }, 422);
+  const companyId = invite?.company_id ?? HOME_COMPANY_ID;
+  const [enabled, existing, groups] = await Promise.all([
+    invite ? Promise.resolve(true) : registrationEnabled(c.env.DB),
     c.env.DB.prepare("SELECT 1 AS found FROM users WHERE email=?").bind(email).first(),
-    c.env.DB.prepare("SELECT id,name FROM groups WHERE id=?").bind(body.group_id ?? "").first<{ id: string; name: string }>(),
+    registrationGroups(c.env.DB, invite),
   ]);
+  // 組別只能選邀請（或原本的公司）允許的那些，不能用改過的 group_id 跳到別家公司。
+  const group = groups.find((item) => item.id === body.group_id?.trim()) ?? null;
   const validation = validateRegistrationInput(body, { enabled, emailExists: Boolean(existing), groupExists: Boolean(group) });
   if (!validation.ok) return c.json({ error: validation.error }, validation.status);
 
@@ -101,13 +128,24 @@ registerRoutes.post("/submit", async (c) => {
     return c.json({ error: otp.error ?? "驗證碼無效" }, 422);
   }
 
+  // 先佔用邀請名額（條件式更新，兩個人同時用最後一個名額時只有一個會成功）。
+  if (invite) {
+    const claimed = await c.env.DB.prepare("UPDATE company_invites SET used_count=used_count+1 WHERE id=? AND used_count<max_uses AND revoked_at IS NULL AND expires_at>?")
+      .bind(invite.id, new Date().toISOString()).run();
+    if (!claimed.meta.changes) return c.json({ error: INVALID_INVITE }, 422);
+  }
+  const releaseInvite = () => invite ? c.env.DB.prepare("UPDATE company_invites SET used_count=used_count-1 WHERE id=? AND used_count>0").bind(invite.id).run() : Promise.resolve(null);
+
+  // 管理員邀請：直接成為那家公司的管理員，不用等核准（公司開通前仍不能登入）。
+  const directAdmin = invite?.role === "admin";
   const userId = createId("usr");
-  const admins = await c.env.DB.prepare("SELECT id,email,name,email_notifications FROM users WHERE role='admin' AND is_active=1 AND approval_status='approved'").all<{ id: string; email: string; name: string; email_notifications: number }>();
+  const admins = directAdmin ? { results: [] } : await c.env.DB.prepare(`SELECT u.id,u.email,u.name,u.email_notifications FROM users u JOIN groups g ON g.id=u.group_id
+    WHERE u.role='admin' AND u.is_active=1 AND u.approval_status='approved' AND g.company_id=?`).bind(companyId).all<{ id: string; email: string; name: string; email_notifications: number }>();
   const noticeTitle = `新註冊申請：${validation.value.name}`;
   const noticeBody = `${validation.value.email}／${group!.name}`;
   const statements = [
-    c.env.DB.prepare("INSERT INTO users (id,email,name,password_hash,role,group_id,must_change_password,onboarding_done,approval_status) VALUES (?,?,?,?,?,?,0,0,'pending')")
-      .bind(userId, validation.value.email, validation.value.name, await hashPassword(validation.value.password), "member", validation.value.group_id),
+    c.env.DB.prepare("INSERT INTO users (id,email,name,password_hash,role,group_id,must_change_password,onboarding_done,approval_status) VALUES (?,?,?,?,?,?,0,0,?)")
+      .bind(userId, validation.value.email, validation.value.name, await hashPassword(validation.value.password), directAdmin ? "admin" : "member", group!.id, directAdmin ? "approved" : "pending"),
     c.env.DB.prepare("UPDATE email_verifications SET verified=1 WHERE id=? AND verified=0").bind(verification!.id),
     ...admins.results.map((admin) => c.env.DB.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)")
       .bind(createId("ntf"), admin.id, "registration", noticeTitle, noticeBody, "/admin")),
@@ -115,8 +153,13 @@ registerRoutes.post("/submit", async (c) => {
   try {
     await c.env.DB.batch(statements);
   } catch (error) {
+    await releaseInvite();
     if (error instanceof Error && error.message.includes("UNIQUE")) return c.json({ error: "此 Email 已註冊" }, 409);
     throw error;
+  }
+  if (directAdmin) {
+    const ready = invite!.company_status === "active";
+    return c.json({ id: userId, status: "approved", message: ready ? `帳號已建立，你是「${invite!.company_name}」的管理員，現在就能登入` : `帳號已建立，你是「${invite!.company_name}」的管理員。公司開通後就能登入，系統管理員會通知你` }, 201);
   }
   // 系統內的通知一定有；信只寄給沒關掉通知信的管理員。
   await Promise.allSettled(admins.results.filter((admin) => admin.email_notifications === 1).map((admin) => sendNotificationMail(

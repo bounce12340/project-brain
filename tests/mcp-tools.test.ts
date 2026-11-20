@@ -13,7 +13,7 @@ import { createTestD1 } from "./helpers/d1-sqlite";
 
 let db: D1Database;
 const person = (id: string, role: AuthUser["role"], group: string, name = id) =>
-  ({ id, email: `${id}@example.com`, name, role, group_id: group, group_name: group, group_type: "general", must_change_password: 0 }) as AuthUser;
+  ({ id, email: `${id}@example.com`, name, role, group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC", is_system_admin: 0 }) as AuthUser;
 const owner = person("owner", "member", "grp_general", "陳冠宇");
 const mate = person("mate", "member", "grp_general", "同組同事");
 const outsider = person("bd", "member", "grp_bd", "BD 同事");

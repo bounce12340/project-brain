@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import type { AppContext, AuthUser } from "../types";
 import { createId } from "../services/db";
 import { ImportValidationError, runImport, type ImportMode, type ImportStats } from "../services/import-data";
+import { USER_COLUMNS, USER_JOINS } from "../services/session-user";
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 /** 待審核的匯入整份存在 D1 一列裡；D1 單列上限約 2 MB，留一點餘裕。 */
@@ -109,8 +110,8 @@ const present = ({ summary_json, result_json, payload_json, ...row }: RequestRow
 });
 
 async function submitterOf(db: D1Database, userId: string): Promise<AuthUser | null> {
-  return await db.prepare(`SELECT u.id,u.email,u.name,u.role,u.group_id,g.name AS group_name,g.type AS group_type,u.must_change_password
-    FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id=? AND u.is_active=1 AND u.approval_status='approved'`).bind(userId).first<AuthUser>();
+  return await db.prepare(`SELECT ${USER_COLUMNS}
+    FROM users u ${USER_JOINS} WHERE u.id=? AND u.is_active=1 AND u.approval_status='approved'`).bind(userId).first<AuthUser>();
 }
 
 /** 管理頁原本的入口：管理員貼 JSON 直接匯入。`scripts/import-remote.ts` 與文件都指向這裡。 */

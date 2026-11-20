@@ -5,7 +5,7 @@ import type { AppContext, AuthUser } from "../worker/types";
 
 const admin: AuthUser = {
   id: "usr_admin", email: "admin@example.com", name: "Admin", role: "admin", group_id: "grp", group_name: "Group",
-  group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1, approval_status: "approved",
+  group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1, approval_status: "approved", company_id: "co_uic", company_name: "UIC", is_system_admin: 0,
 };
 
 const row = (id: string, name: string, groupId = "grp") => ({

@@ -14,6 +14,11 @@ export interface AuthUser {
   email_notifications: number;
   onboarding_done: number;
   approval_status: "pending" | "approved" | "rejected";
+  /** 所屬公司（由組別決定）。 */
+  company_id: string;
+  company_name: string;
+  /** 系統管理員：可以建立公司、發邀請。和公司內的 admin 角色分開。 */
+  is_system_admin: number;
 }
 
 export interface ProjectAccess {

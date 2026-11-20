@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { runAdminImport } from "../worker/services/import-data";
+import { applyMigration } from "./helpers/d1-sqlite";
 import { collectPayloadEmails, d1Params, databaseIdFromWranglerConfig, firstRowValue, parseArgs } from "../scripts/import-remote";
 
 /**
@@ -13,7 +14,7 @@ import { collectPayloadEmails, d1Params, databaseIdFromWranglerConfig, firstRowV
 function migratedDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   for (const file of readdirSync("migrations").filter((name) => name.endsWith(".sql")).sort()) {
-    db.exec(readFileSync(`migrations/${file}`, "utf8"));
+    applyMigration(db, file, readFileSync(`migrations/${file}`, "utf8"));
   }
   return db;
 }

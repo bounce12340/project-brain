@@ -4,6 +4,7 @@ import type { AppContext, AuthUser } from "../types";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../services/crypto";
 import { approvalLoginError, type ApprovalStatus } from "../services/registration";
 import { nextCredentialFailure } from "../services/admin-transfer";
+import { companyLoginError, type CompanyStatus } from "../services/tenant";
 
 export const authRoutes = new Hono<AppContext>();
 
@@ -12,8 +13,9 @@ authRoutes.post("/login", async (c) => {
   const email = body.email?.trim().toLowerCase();
   if (!email || !body.password) return c.json({ error: "請輸入 Email 與密碼" }, 422);
   const account = await c.env.DB.prepare(`
-    SELECT u.*, g.name AS group_name, g.type AS group_type FROM users u JOIN groups g ON g.id = u.group_id WHERE u.email = ?
-  `).bind(email).first<AuthUser & { password_hash: string; is_active: number; failed_count: number; locked_until: string | null; approval_status: ApprovalStatus; email_token: string | null }>();
+    SELECT u.*, g.name AS group_name, g.type AS group_type, g.company_id, co.name AS company_name, co.status AS company_status
+    FROM users u JOIN groups g ON g.id = u.group_id JOIN companies co ON co.id = g.company_id WHERE u.email = ?
+  `).bind(email).first<AuthUser & { password_hash: string; is_active: number; failed_count: number; locked_until: string | null; approval_status: ApprovalStatus; email_token: string | null; company_status: CompanyStatus }>();
   if (!account || account.is_active !== 1) return c.json({ error: "帳號或密碼錯誤" }, 401);
   if (account.locked_until && new Date(account.locked_until).getTime() > Date.now()) return c.json({ error: "登入失敗次數過多，請稍後再試" }, 423);
   if (!(await verifyPassword(body.password, account.password_hash))) {
@@ -24,6 +26,9 @@ authRoutes.post("/login", async (c) => {
   }
   const approvalError = approvalLoginError(account.approval_status);
   if (approvalError) return c.json({ error: approvalError }, 403);
+  // 公司還在建置中或已停用：密碼對了也不能登入。
+  const companyError = companyLoginError(account.company_status, account.company_name);
+  if (companyError) return c.json({ error: companyError, code: "COMPANY_NOT_ACTIVE" }, 403);
   const token = randomToken();
   const sessionId = await sha256(token);
   const expiresAt = new Date(Date.now() + 30 * 86_400_000);
@@ -32,7 +37,7 @@ authRoutes.post("/login", async (c) => {
     c.env.DB.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").bind(sessionId, account.id, expiresAt.toISOString()),
   ]);
   setCookie(c, "sid", token, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", expires: expiresAt });
-  const { password_hash: _passwordHash, is_active: _isActive, failed_count: _failedCount, locked_until: _lockedUntil, email_token: _emailToken, ...user } = account;
+  const { password_hash: _passwordHash, is_active: _isActive, failed_count: _failedCount, locked_until: _lockedUntil, email_token: _emailToken, company_status: _companyStatus, ...user } = account;
   return c.json({ user });
 });
 

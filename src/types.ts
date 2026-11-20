@@ -1,5 +1,5 @@
 export interface User {
-  id: string; email: string; name: string; role: "admin" | "member" | "intern"; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; must_change_password: number; email_notifications: number; onboarding_done: number; approval_status: "pending" | "approved" | "rejected";
+  id: string; email: string; name: string; role: "admin" | "member" | "intern"; group_id: string; group_name: string; group_type: "clinical" | "bd" | "general" | "qa"; must_change_password: number; email_notifications: number; onboarding_done: number; approval_status: "pending" | "approved" | "rejected"; company_id?: string; company_name?: string; is_system_admin?: number;
 }
 
 export interface Project {

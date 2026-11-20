@@ -1,13 +1,18 @@
 import type { AuthUser } from "../types";
 import { sha256 } from "./crypto";
 
-const USER_COLUMNS = `u.id, u.email, u.name, u.role, u.group_id, g.name AS group_name, g.type AS group_type,
-  u.must_change_password, u.email_notifications, u.onboarding_done, u.approval_status`;
+/** 登入者的欄位。公司由組別決定；只有「使用中」的公司的帳號算登入成功。 */
+export const USER_COLUMNS = `u.id, u.email, u.name, u.role, u.group_id, g.name AS group_name, g.type AS group_type,
+  u.must_change_password, u.email_notifications, u.onboarding_done, u.approval_status,
+  g.company_id, co.name AS company_name, u.is_system_admin`;
+
+/** 使用者 → 組別 → 公司，只接受使用中的公司。 */
+export const USER_JOINS = "JOIN groups g ON g.id = u.group_id JOIN companies co ON co.id = g.company_id AND co.status = 'active'";
 
 /** 用登入 cookie 的 token 找出使用者；過期、停用或尚未核准的都當作沒登入。 */
 export async function findSessionUser(db: D1Database, token: string): Promise<AuthUser | null> {
   return db.prepare(`SELECT ${USER_COLUMNS}
-    FROM sessions s JOIN users u ON u.id = s.user_id JOIN groups g ON g.id = u.group_id
+    FROM sessions s JOIN users u ON u.id = s.user_id ${USER_JOINS}
     WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1 AND u.approval_status = 'approved'`)
     .bind(await sha256(token)).first<AuthUser>();
 }
@@ -17,6 +22,6 @@ export async function findSessionUser(db: D1Database, token: string): Promise<Au
  * 帳號被停用或改了組別，下一次呼叫就生效，不必等 token 過期。
  */
 export async function loadActiveUser(db: D1Database, userId: string): Promise<AuthUser | null> {
-  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u JOIN groups g ON g.id = u.group_id
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u ${USER_JOINS}
     WHERE u.id = ? AND u.is_active = 1 AND u.approval_status = 'approved'`).bind(userId).first<AuthUser>();
 }

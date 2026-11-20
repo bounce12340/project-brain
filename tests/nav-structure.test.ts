@@ -27,7 +27,7 @@ describe("主導覽的階層", () => {
   it("App 裡每個主要頁面都有導覽入口", () => {
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
     const routes = [...app.matchAll(/<Route path="([^"]+)"/g)].map((match) => match[1]);
-    const reachable = new Set(["/", "/notifications", "/admin", "/help", "/profile", ...NAV_GROUPS.flatMap((group) => group.items.map((item) => item.to))]);
+    const reachable = new Set(["/", "/notifications", "/admin", "/system", "/help", "/profile", ...NAV_GROUPS.flatMap((group) => group.items.map((item) => item.to))]);
     // 登入前的頁面、專案內頁、匯入（從專案列表進去）不在導覽列上
     const exempt = new Set(["/login", "/register", "/forgot-password", "/reset-password", "/change-password", "/projects/:id", "/import", "*"]);
     for (const route of routes.filter((path) => !exempt.has(path))) expect(reachable.has(route), route).toBe(true);

@@ -18,7 +18,7 @@ const account = (role: "admin" | "member" | "intern", patch: Partial<TransferCan
 
 const actor: AuthUser = {
   id: "usr_actor", email: "actor@example.com", name: "Actor", role: "admin", group_id: "grp", group_name: "Group",
-  group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1, approval_status: "approved",
+  group_type: "general", must_change_password: 0, email_notifications: 1, onboarding_done: 1, approval_status: "approved", company_id: "co_uic", company_name: "UIC", is_system_admin: 0,
 };
 
 function guardTestApp(activeAdminCount: number) {
