@@ -1,11 +1,42 @@
 import type { AuthUser } from "../types";
+import { HOME_COMPANY_ID } from "./tenant";
 
-export function canManageRegwatch(user: Pick<AuthUser, "role" | "group_id">): boolean {
-  return user.role === "admin" || (user.role === "member" && user.group_id === "grp_general");
+type RegwatchActor = Pick<AuthUser, "role" | "group_id"> & Partial<Pick<AuthUser, "group_type" | "company_id">>;
+
+/**
+ * 誰能審核與維護法規動態（RA/PV 的工作）：
+ * - 管理員（各公司只管自己公司，資料本身已依公司隔離）。
+ * - 成員：UIC 維持原本的 RA/PV 組（grp_general）；其他公司沒有固定的組別代號，
+ *   改成「類型為 general 的組別」的成員。
+ */
+export function canManageRegwatch(user: RegwatchActor): boolean {
+  if (user.role === "admin") return true;
+  if (user.role !== "member") return false;
+  return (user.company_id ?? HOME_COMPANY_ID) === HOME_COMPANY_ID ? user.group_id === "grp_general" : user.group_type === "general";
+}
+
+/**
+ * 同一條規則的 SQL 版：某家公司裡「能審核法規動態」的帳號（通知草稿待審用）。
+ * 查詢要寫成 FROM users u JOIN groups g ON g.id=u.group_id WHERE ${where}，並綁定 bind。
+ */
+export function regwatchReviewerSql(companyId: string): { where: string; bind: string[] } {
+  const member = companyId === HOME_COMPANY_ID
+    ? "u.group_id='grp_general'"
+    : "g.type='general'";
+  return {
+    where: `u.is_active=1 AND u.approval_status='approved' AND g.company_id=? AND (u.role='admin' OR (u.role='member' AND ${member}))`,
+    bind: [companyId],
+  };
+}
+
+/** 檔案是否掛在這家公司的法規動態底下（法規附件沒有專案，下載時用這個判斷歸屬）。 */
+export async function regwatchFileInCompany(db: D1Database, fileId: string, companyId: string): Promise<boolean> {
+  return Boolean(await db.prepare(`SELECT 1 AS found FROM reg_entries r WHERE r.company_id=? AND (r.file_id=? OR EXISTS (SELECT 1 FROM reg_entry_files rf WHERE rf.entry_id=r.id AND rf.file_id=?)) LIMIT 1`)
+    .bind(companyId, fileId, fileId).first());
 }
 
 export function regwatchListStatus(
-  user: Pick<AuthUser, "role" | "group_id">,
+  user: RegwatchActor,
   requestedView: string | undefined,
 ): "published" | "draft" {
   return requestedView === "drafts" && canManageRegwatch(user) ? "draft" : "published";
@@ -64,18 +95,19 @@ export async function deleteRegwatchEntry(
   env: Pick<Env, "DB" | "FILES">,
   id: string,
   rejectedBy: string,
+  companyId: string,
   draftOnly = false,
 ): Promise<{ title: string; deletedFiles: number } | null> {
-  const current = await env.DB.prepare(`SELECT title,file_id,source,source_ref FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`)
-    .bind(id).first<{ title: string; file_id: string | null; source: string; source_ref: string | null }>();
+  const current = await env.DB.prepare(`SELECT title,file_id,source,source_ref FROM reg_entries WHERE id=? AND company_id=?${draftOnly ? " AND status='draft'" : ""}`)
+    .bind(id, companyId).first<{ title: string; file_id: string | null; source: string; source_ref: string | null }>();
   if (!current) return null;
   const linked = await env.DB.prepare("SELECT file_id FROM reg_entry_files WHERE entry_id=?").bind(id).all<{ file_id: string }>();
   const candidateIds = [...linked.results.map((row) => row.file_id), ...(current.file_id ? [current.file_id] : [])];
-  const deleteStatement = env.DB.prepare(`DELETE FROM reg_entries WHERE id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id);
+  const deleteStatement = env.DB.prepare(`DELETE FROM reg_entries WHERE id=? AND company_id=?${draftOnly ? " AND status='draft'" : ""}`).bind(id, companyId);
   const result = current.source === "tfda_rss" && current.source_ref
     ? (await env.DB.batch([
-      env.DB.prepare("INSERT OR IGNORE INTO tfda_rejected(source_ref,title,rejected_by) VALUES (?,?,?)")
-        .bind(current.source_ref, current.title, rejectedBy),
+      env.DB.prepare("INSERT OR IGNORE INTO tfda_rejected(company_id,source_ref,title,rejected_by) VALUES (?,?,?,?)")
+        .bind(companyId, current.source_ref, current.title, rejectedBy),
       deleteStatement,
     ]))[1]
     : await deleteStatement.run();
@@ -102,17 +134,18 @@ export async function processRegwatchDraftBatch(
   env: Pick<Env, "DB" | "FILES">,
   input: RegwatchDraftBatchInput,
   rejectedBy: string,
+  companyId: string,
 ): Promise<RegwatchDraftBatchResult> {
   const uniqueIds = [...new Set(input.ids)];
   let processed = 0;
   if (input.action === "approve") {
     const placeholders = uniqueIds.map(() => "?").join(",");
-    const result = await env.DB.prepare(`UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft' AND id IN (${placeholders})`)
-      .bind(...uniqueIds).run();
+    const result = await env.DB.prepare(`UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft' AND company_id=? AND id IN (${placeholders})`)
+      .bind(companyId, ...uniqueIds).run();
     processed = result.meta.changes ?? 0;
   } else {
     for (const id of uniqueIds) {
-      if (await deleteRegwatchEntry(env, id, rejectedBy, true)) processed += 1;
+      if (await deleteRegwatchEntry(env, id, rejectedBy, companyId, true)) processed += 1;
     }
   }
   return { processed, skipped: input.ids.length - processed };

@@ -9,6 +9,7 @@ import { recomputeAutoProgress } from "./auto-progress";
 import { closestProjectName, normalizeProjectName } from "../../src/project-names";
 import { PROJECT_TEXT_LIMITS, textLength } from "../../src/project-text";
 import { defaultVisibility } from "../../src/project-groups";
+import { companyOfActor } from "./workspace-scope";
 
 type JsonObject = Record<string, unknown>;
 
@@ -146,14 +147,16 @@ interface PlannedProject {
   group: { id: string; name: string; type: string } | null;
 }
 
-const EXISTING_COLUMNS = "id,name,group_id,owner_id,goal_summary,start_date,target_date,progress,progress_mode";
+const EXISTING_COLUMNS = "p.id,p.name,p.group_id,p.owner_id,p.goal_summary,p.start_date,p.target_date,p.progress,p.progress_mode";
+/** 只認匯入者公司的專案（專案的公司 = 所屬組別的公司）。 */
+const EXISTING_FROM = "FROM projects p JOIN groups g ON g.id=p.group_id";
 
 /**
  * 寫入前先把每個專案對到資料庫：新增還是既有、有沒有權限、組別存不存在。
  * 問題一次收齊再丟出，使用者才能一次改完，而不是改一個、送一次、再看到下一個。
  */
 async function planProjects(
-  db: D1Database, actor: AuthUser, mode: ImportMode, items: JsonObject[],
+  db: D1Database, actor: AuthUser, companyId: string, mode: ImportMode, items: JsonObject[],
   groups: Map<string, { id: string; name: string; type: string }>, issues: string[], warnings: string[],
 ): Promise<PlannedProject[]> {
   const planned: PlannedProject[] = [];
@@ -162,10 +165,10 @@ async function planProjects(
   let visibleProjects: Array<{ id: string; name: string }> | null = null;
   const visible = async () => {
     if (visibleProjects) return visibleProjects;
-    const rows = await db.prepare("SELECT p.id,p.name,p.owner_id,p.group_id,p.visibility,GROUP_CONCAT(pm.user_id) AS member_ids_csv FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id GROUP BY p.id")
-      .all<{ id: string; name: string; owner_id: string; group_id: string; visibility: ProjectAccess["visibility"]; member_ids_csv: string | null }>();
+    const rows = await db.prepare("SELECT p.id,p.name,p.owner_id,p.group_id,p.visibility,g.company_id,GROUP_CONCAT(pm.user_id) AS member_ids_csv FROM projects p JOIN groups g ON g.id=p.group_id AND g.company_id=? LEFT JOIN project_members pm ON pm.project_id=p.id GROUP BY p.id")
+      .bind(companyId).all<{ id: string; name: string; owner_id: string; group_id: string; visibility: ProjectAccess["visibility"]; company_id: string; member_ids_csv: string | null }>();
     visibleProjects = rows.results
-      .filter((row) => canViewProject(actor, { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] }))
+      .filter((row) => canViewProject({ ...actor, company_id: companyId }, { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, company_id: row.company_id, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] }))
       .map(({ id, name }) => ({ id, name }));
     return visibleProjects;
   };
@@ -193,14 +196,19 @@ async function planProjects(
 
     let existing: ExistingProject | null = null;
     if (externalKey) {
-      existing = await db.prepare(`SELECT ${EXISTING_COLUMNS} FROM projects WHERE external_key=?`).bind(externalKey).first<ExistingProject>();
+      existing = await db.prepare(`SELECT ${EXISTING_COLUMNS} ${EXISTING_FROM} WHERE p.external_key=? AND g.company_id=?`).bind(externalKey, companyId).first<ExistingProject>();
+      // 專案代碼全系統不重複。已被別家公司用掉的，不能對應、也不透露是誰的，請對方換一個。
+      if (!existing && await db.prepare("SELECT 1 AS found FROM projects WHERE external_key=?").bind(externalKey).first()) {
+        issues.push(`專案代碼「${externalKey}」已被使用，請換一個代碼`);
+        continue;
+      }
     } else if (name) {
       // 沒有專案代碼時用名稱對既有專案。只在看得到的專案裡找——看不到的不能被「猜中」。
       // 全形半形與空白不影響比對：「QA:GDP/GMP」對得到「QA：GDP/GMP」。
       const key = normalizeProjectName(name);
       const matches = (await visible()).filter((row) => normalizeProjectName(row.name) === key);
       if (matches.length > 1) { issues.push(`有 ${matches.length} 個專案都叫「${name}」，請填專案代碼區分`); continue; }
-      existing = matches[0] ? await db.prepare(`SELECT ${EXISTING_COLUMNS} FROM projects WHERE id=?`).bind(matches[0].id).first<ExistingProject>() : null;
+      existing = matches[0] ? await db.prepare(`SELECT ${EXISTING_COLUMNS} ${EXISTING_FROM} WHERE p.id=? AND g.company_id=?`).bind(matches[0].id, companyId).first<ExistingProject>() : null;
     }
 
     const target = existing ? `id:${existing.id}` : `new:${externalKey ?? name}`;
@@ -258,10 +266,12 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
   const projects = objects(root.projects, "projects");
   const regEntries = objects(root.reg_entries, "reg_entries");
   const stats: ImportStats = { projects: { created: 0, updated: 0 }, tasks: { created: 0, skipped: 0 }, milestones: { created: 0, skipped: 0 }, events: { created: 0, skipped: 0 }, progress_updates: { created: 0, skipped: 0 }, reg_entries: { created: 0, skipped: 0 }, warnings: [] };
+  // 人、組別、既有專案都只在匯入者的公司內找；別家公司的帳號與組別不能被名稱或 Email 對到。
+  const companyId = await companyOfActor(db, actor);
   const [userRows, groupRows, templateRows] = await Promise.all([
-    db.prepare("SELECT id,email FROM users WHERE is_active=1 AND approval_status='approved'").all<{ id: string; email: string }>(),
-    db.prepare("SELECT id,name,type FROM groups").all<{ id: string; name: string; type: string }>(),
-    db.prepare("SELECT name,group_id,stages_json FROM stage_templates ORDER BY group_id IS NULL,name").all<{ name: string; group_id: string | null; stages_json: string }>(),
+    db.prepare("SELECT u.id,u.email FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND u.approval_status='approved' AND g.company_id=?").bind(companyId).all<{ id: string; email: string }>(),
+    db.prepare("SELECT id,name,type FROM groups WHERE company_id=?").bind(companyId).all<{ id: string; name: string; type: string }>(),
+    db.prepare("SELECT name,group_id,stages_json FROM stage_templates WHERE company_id=? ORDER BY group_id IS NULL,name").bind(companyId).all<{ name: string; group_id: string | null; stages_json: string }>(),
   ]);
   const usersByEmail = new Map(userRows.results.map((row) => [row.email.toLowerCase(), row.id]));
   const groups = new Map<string, { id: string; name: string; type: string }>();
@@ -278,7 +288,7 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
 
   const issues: string[] = [];
   if (mode === "member" && regEntries.length) issues.push("法規動態僅限管理員匯入");
-  const planned = await planProjects(db, actor, mode, projects, groups, issues, stats.warnings);
+  const planned = await planProjects(db, actor, companyId, mode, projects, groups, issues, stats.warnings);
   if (issues.length) throw new ImportValidationError(issues[0], issues);
 
   for (const { item, label, externalKey, name, existing, group } of planned) {
@@ -491,10 +501,11 @@ export async function runImport(db: D1Database, actor: AuthUser, payload: unknow
     const productLine = text(entry.product_line);
     if (!title || !productLine || !["announcement", "meeting"].includes(entryType) || !["藥品", "醫療器材", "化粧品", "健康食品", "食品", "再生醫療", "包裝容器", "寵物食品", "其他"].includes(productLine)) throw new ImportValidationError(`reg_entries[${entryIndex}] 資料不正確`);
     const entryKey = `${entryDate}\u0000${title}`;
-    if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=?").bind(entryDate, title).first()) { stats.reg_entries.skipped += 1; continue; }
+    // 法規動態屬於匯入者的公司：重複只在同一家公司內判斷。
+    if (writtenEntries.has(entryKey) || await db.prepare("SELECT id FROM reg_entries WHERE entry_date=? AND title=? AND company_id=?").bind(entryDate, title, companyId).first()) { stats.reg_entries.skipped += 1; continue; }
     writtenEntries.add(entryKey);
-    await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
-      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id));
+    await run(db.prepare("INSERT INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,company_id) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(createId("reg"), entryDate, entryType, productLine, text(entry.category), title, text(entry.key_points), text(entry.link), actor.id, companyId));
     stats.reg_entries.created += 1;
   }
   await flush();

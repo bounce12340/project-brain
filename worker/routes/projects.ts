@@ -4,7 +4,8 @@ import type { AppContext, GroupType, ProjectAccess, Visibility } from "../types"
 import { createId, getProjectAccess, touchProject, writeAudit } from "../services/db";
 import { r2FileStore } from "../services/filestore";
 import { booleanInt, boundedNumber, optionalString, requiredString } from "../services/http";
-import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, canViewProject } from "../services/permissions";
+import { canEditProgress, canEditProgressUpdate, canManageProject, canViewFees, canViewProject, sameCompany } from "../services/permissions";
+import { activeUserInCompany } from "../services/tenant";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
 import { stageColorFor } from "../services/stage-colors";
@@ -62,6 +63,8 @@ interface ProjectRow {
   group_name: string;
   group_type: GroupType;
   member_ids_csv: string | null;
+  /** 專案組別所屬的公司。 */
+  company_id: string;
 }
 
 interface ProgressUpdateRow {
@@ -82,18 +85,19 @@ export function requestedStatuses(raw: string | undefined | null): Set<string> {
 }
 
 export function accessFrom(row: ProjectRow): ProjectAccess {
-  return { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] };
+  return { id: row.id, owner_id: row.owner_id, group_id: row.group_id, visibility: row.visibility, company_id: row.company_id, member_ids: row.member_ids_csv?.split(",").filter(Boolean) ?? [] };
 }
 
 const PROJECT_ROW_SELECT = `
-  SELECT p.*, u.name AS owner_name, g.name AS group_name, g.type AS group_type,
+  SELECT p.*, u.name AS owner_name, g.name AS group_name, g.type AS group_type, g.company_id AS company_id,
          GROUP_CONCAT(pm.user_id) AS member_ids_csv
   FROM projects p JOIN users u ON u.id = p.owner_id JOIN groups g ON g.id = p.group_id
   LEFT JOIN project_members pm ON pm.project_id = p.id
 `;
 
-export async function projectRows(db: D1Database): Promise<ProjectRow[]> {
-  const result = await db.prepare(`${PROJECT_ROW_SELECT} GROUP BY p.id ORDER BY p.updated_at DESC`).all<ProjectRow>();
+/** 只列這家公司的專案（專案組別所屬公司）。一定要傳公司，沒有「全部公司」的版本。 */
+export async function projectRows(db: D1Database, companyId: string): Promise<ProjectRow[]> {
+  const result = await db.prepare(`${PROJECT_ROW_SELECT} WHERE g.company_id = ? GROUP BY p.id ORDER BY p.updated_at DESC`).bind(companyId).all<ProjectRow>();
   return result.results;
 }
 
@@ -150,7 +154,7 @@ projectsRoutes.get("/", async (c) => {
   const group = c.req.query("group");
   const statuses = requestedStatuses(c.req.query("status"));
   const keyword = c.req.query("keyword")?.trim().toLowerCase();
-  const rows = (await projectRows(c.env.DB)).filter((row) => {
+  const rows = (await projectRows(c.env.DB, user.company_id)).filter((row) => {
     if (!canViewProject(user, accessFrom(row))) return false;
     if (group && row.group_id !== group) return false;
     if (statuses.size && !statuses.has(row.status)) return false;
@@ -172,7 +176,8 @@ projectsRoutes.post("/", async (c) => {
   const inheritsGroup = Boolean(optionalString(body, "parent_id"));
   const groupId = requiredString(body, "group_id") ?? (inheritsGroup ? "" : null);
   if (!name || groupId === null) return c.json({ error: "專案名稱、組別或可見性不正確" }, 422);
-  const groupRow = inheritsGroup ? null : await c.env.DB.prepare("SELECT id,name FROM groups WHERE id = ?").bind(groupId).first<{ id: string; name: string }>();
+  // 組別只能選自己公司的。
+  const groupRow = inheritsGroup ? null : await c.env.DB.prepare("SELECT id,name FROM groups WHERE id = ? AND company_id = ?").bind(groupId, user.company_id).first<{ id: string; name: string }>();
   if (!inheritsGroup && !groupRow) return c.json({ error: "找不到組別" }, 422);
   // 沒指定可見性時依組別決定：「其他」組沒有組員，預設全公司，否則等於只有自己看得到。
   const visibility = requiredString(body, "visibility") ?? defaultVisibility(groupRow);
@@ -203,7 +208,8 @@ projectsRoutes.post("/", async (c) => {
     if (stages.results.length) await c.env.DB.batch(stages.results.map((stage, position) => c.env.DB.prepare("INSERT INTO stages (id, project_id, name, color, position) VALUES (?, ?, ?, ?, ?)").bind(createId("stage"), id, stage.name, stage.color, position)));
   }
   if (templateId) {
-    const template = await c.env.DB.prepare("SELECT stages_json FROM stage_templates WHERE id = ?").bind(templateId).first<{ stages_json: string }>();
+    // 階段範本只能用自己公司的；別家公司的範本當作不存在。
+    const template = await c.env.DB.prepare("SELECT stages_json FROM stage_templates WHERE id = ? AND company_id = ?").bind(templateId, user.company_id).first<{ stages_json: string }>();
     if (template) {
       const names: unknown = JSON.parse(template.stages_json);
       if (Array.isArray(names)) {
@@ -221,7 +227,7 @@ projectsRoutes.post("/", async (c) => {
 projectsRoutes.get("/:id", async (c) => {
   const user = c.get("user");
   const row = await projectRow(c.env.DB, c.req.param("id"));
-  if (!row) return c.json({ error: "找不到專案" }, 404);
+  if (!row || !sameCompany(user, row)) return c.json({ error: "找不到專案" }, 404);
   const access = accessFrom(row);
   if (!canViewProject(user, access)) return c.json({ error: "沒有檢視權限" }, 403);
   const projectId = row.id;
@@ -284,7 +290,7 @@ projectsRoutes.get("/:id", async (c) => {
 projectsRoutes.patch("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, id);
+  const access = await getProjectAccess(c.env.DB, id, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canEditProgress(user, access)) return c.json({ error: "沒有編輯權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
@@ -310,7 +316,7 @@ projectsRoutes.patch("/:id", async (c) => {
   if (wantedGroup && wantedGroup !== current.group_id) {
     const detaching = "parent_id" in body && !optionalString(body, "parent_id");
     if (current.parent_id && !detaching) return c.json({ error: "子專案的組別跟著母專案，請改母專案的組別" }, 422);
-    nextGroup = await c.env.DB.prepare("SELECT id,name FROM groups WHERE id=?").bind(wantedGroup).first<{ id: string; name: string }>();
+    nextGroup = await c.env.DB.prepare("SELECT id,name FROM groups WHERE id=? AND company_id=?").bind(wantedGroup, user.company_id).first<{ id: string; name: string }>();
     if (!nextGroup) return c.json({ error: "找不到組別" }, 422);
   }
   await c.env.DB.prepare(`UPDATE projects SET name=?, description=?, goal_summary=?, product=?, site=?, visibility=?, status=?, progress=?, start_date=?, target_date=?, auto_archive=?,progress_mode=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?`)
@@ -357,7 +363,7 @@ projectsRoutes.patch("/:id", async (c) => {
 projectsRoutes.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, id);
+  const access = await getProjectAccess(c.env.DB, id, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canManageProject(user, access)) return c.json({ error: "沒有管理權限" }, 403);
   await writeAudit(c.env.DB, user, "delete", "project", id, "刪除專案");
@@ -383,7 +389,7 @@ for (const [path, targetStatus] of [["/:id/archive", "archived"], ["/:id/unarchi
   projectsRoutes.post(path, async (c) => {
     const user = c.get("user");
     const id = c.req.param("id");
-    const access = await getProjectAccess(c.env.DB, id);
+    const access = await getProjectAccess(c.env.DB, id, c.get("user"));
     if (!access) return c.json({ error: "找不到專案" }, 404);
     if (!canManageProject(user, access)) return c.json({ error: "沒有管理權限" }, 403);
     await c.env.DB.prepare("UPDATE projects SET status=?, archived_at=?, updated_at=CURRENT_TIMESTAMP, last_activity_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -394,7 +400,7 @@ for (const [path, targetStatus] of [["/:id/archive", "archived"], ["/:id/unarchi
 }
 
 projectsRoutes.get("/:id/members", async (c) => {
-  const access = await getProjectAccess(c.env.DB, c.req.param("id"));
+  const access = await getProjectAccess(c.env.DB, c.req.param("id"), c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canViewProject(c.get("user"), access)) return c.json({ error: "沒有檢視權限" }, 403);
   const result = await c.env.DB.prepare("SELECT u.id, u.name, u.email, u.role, u.group_id FROM project_members pm JOIN users u ON u.id=pm.user_id WHERE pm.project_id=?").bind(access.id).all();
@@ -404,12 +410,14 @@ projectsRoutes.get("/:id/members", async (c) => {
 projectsRoutes.post("/:id/members", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, id);
+  const access = await getProjectAccess(c.env.DB, id, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canManageProject(user, access)) return c.json({ error: "沒有管理權限" }, 403);
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
   const userId = requiredString(body, "user_id");
   if (!userId) return c.json({ error: "請選擇成員" }, 422);
+  // 成員只能是同公司、啟用中的帳號。
+  if (!(await activeUserInCompany(c.env.DB, userId, access.company_id ?? user.company_id))) return c.json({ error: "找不到這位成員" }, 422);
   await c.env.DB.prepare("INSERT OR IGNORE INTO project_members (project_id, user_id, added_by) VALUES (?, ?, ?)").bind(id, userId, user.id).run();
   await touchProject(c.env.DB, id);
   await writeAudit(c.env.DB, user, "member_add", "project", id, `加入成員 ${userId}`);
@@ -419,7 +427,7 @@ projectsRoutes.post("/:id/members", async (c) => {
 projectsRoutes.delete("/:id/members/:userId", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const access = await getProjectAccess(c.env.DB, id);
+  const access = await getProjectAccess(c.env.DB, id, c.get("user"));
   if (!access) return c.json({ error: "找不到專案" }, 404);
   if (!canManageProject(user, access)) return c.json({ error: "沒有管理權限" }, 403);
   await c.env.DB.prepare("DELETE FROM project_members WHERE project_id=? AND user_id=?").bind(id, c.req.param("userId")).run();

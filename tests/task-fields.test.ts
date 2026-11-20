@@ -8,7 +8,7 @@ import { createTestD1 } from "./helpers/d1-sqlite";
 /** 任務自訂欄位：每個專案自己定義，網站與 MCP 都能填。 */
 
 let db: D1Database;
-const person = (id: string, group: string, role = "member") => ({ id, email: `${id}@example.com`, name: id, role, group_id: group, group_name: group, group_type: "general", must_change_password: 0 }) as AuthUser;
+const person = (id: string, group: string, role = "member") => ({ id, email: `${id}@example.com`, name: id, role, group_id: group, group_name: group, group_type: "general", must_change_password: 0, company_id: "co_uic", company_name: "UIC", is_system_admin: 0 }) as AuthUser;
 const owner = person("owner", "grp_general");
 const outsider = person("bd", "grp_bd");
 const as = (user: AuthUser) => internalApi({ DB: db, APP_BASE_URL: "http://127.0.0.1:8787" } as unknown as Env, undefined, user);

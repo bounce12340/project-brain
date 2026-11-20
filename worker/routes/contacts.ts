@@ -5,7 +5,7 @@ import { isValidEmail } from "../services/registration";
 
 /**
  * 聯絡人資料庫：外部醫院、公司的窗口。
- * 所有登入的人都能查看、新增與修改（大家一起維護才會是最新的）；刪除限建立的人與管理員。
+ * 同一家公司所有登入的人都能查看、新增與修改（大家一起維護才會是最新的），不同公司互相看不到；刪除限建立的人與管理員。
  * 每一筆新增、修改、刪除都記稽核紀錄。同一個機構的同一個人不重複建立。
  */
 export const contactsRoutes = new Hono<AppContext>();
@@ -55,8 +55,9 @@ function cleanFields(body: Record<string, unknown>, partial: boolean): { error: 
   return { values };
 }
 
-async function findDuplicate(db: D1Database, organization: string, name: string, exceptId = ""): Promise<boolean> {
-  return Boolean(await db.prepare("SELECT 1 FROM contacts WHERE lower(organization)=lower(?) AND lower(name)=lower(?) AND id<>?").bind(organization, name, exceptId).first());
+/** 重複只在同一家公司內檢查：別家公司有同名的人不算重複，也不能因此得知對方有這筆資料。 */
+async function findDuplicate(db: D1Database, companyId: string, organization: string, name: string, exceptId = ""): Promise<boolean> {
+  return Boolean(await db.prepare("SELECT 1 FROM contacts WHERE company_id=? AND lower(organization)=lower(?) AND lower(name)=lower(?) AND id<>?").bind(companyId, organization, name, exceptId).first());
 }
 
 async function readObject(request: Request): Promise<Record<string, unknown>> {
@@ -69,7 +70,8 @@ const duplicateError = (organization: string, name: string) => `「${organizatio
 contactsRoutes.get("/contacts", async (c) => {
   const result = await c.env.DB.prepare(`SELECT ct.*, cu.name AS created_by_name, uu.name AS updated_by_name
     FROM contacts ct LEFT JOIN users cu ON cu.id=ct.created_by LEFT JOIN users uu ON uu.id=ct.updated_by
-    ORDER BY ct.organization COLLATE NOCASE, ct.name COLLATE NOCASE LIMIT 5000`).all();
+    WHERE ct.company_id=?
+    ORDER BY ct.organization COLLATE NOCASE, ct.name COLLATE NOCASE LIMIT 5000`).bind(c.get("user").company_id).all();
   return c.json({ contacts: result.results });
 });
 
@@ -78,18 +80,18 @@ contactsRoutes.post("/contacts", async (c) => {
   const cleaned = cleanFields(await readObject(c.req.raw), false);
   if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
   const values = cleaned.values as Record<ContactField, string>;
-  if (await findDuplicate(c.env.DB, values.organization, values.name)) return c.json({ error: duplicateError(values.organization, values.name) }, 409);
+  if (await findDuplicate(c.env.DB, user.company_id, values.organization, values.name)) return c.json({ error: duplicateError(values.organization, values.name) }, 409);
   const id = createId("contact");
   const fields = Object.keys(CONTACT_FIELDS) as ContactField[];
-  await c.env.DB.prepare(`INSERT INTO contacts (id,${fields.join(",")},created_by,updated_by) VALUES (?,${fields.map(() => "?").join(",")},?,?)`)
-    .bind(id, ...fields.map((field) => values[field] ?? ""), user.id, user.id).run();
+  await c.env.DB.prepare(`INSERT INTO contacts (id,${fields.join(",")},company_id,created_by,updated_by) VALUES (?,${fields.map(() => "?").join(",")},?,?,?)`)
+    .bind(id, ...fields.map((field) => values[field] ?? ""), user.company_id, user.id, user.id).run();
   await writeAudit(c.env.DB, user, "create", "contact", id, `新增聯絡人「${values.organization}／${values.name}」`);
   return c.json({ id }, 201);
 });
 
 contactsRoutes.patch("/contacts/:id", async (c) => {
   const user = c.get("user");
-  const current = await c.env.DB.prepare("SELECT id,organization,name,created_by FROM contacts WHERE id=?").bind(c.req.param("id")).first<ContactRow>();
+  const current = await c.env.DB.prepare("SELECT id,organization,name,created_by FROM contacts WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).first<ContactRow>();
   if (!current) return c.json({ error: "找不到聯絡人" }, 404);
   const cleaned = cleanFields(await readObject(c.req.raw), true);
   if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
@@ -97,19 +99,19 @@ contactsRoutes.patch("/contacts/:id", async (c) => {
   if (!changes.length) return c.json({ ok: true });
   const organization = cleaned.values.organization ?? current.organization;
   const name = cleaned.values.name ?? current.name;
-  if (await findDuplicate(c.env.DB, organization, name, current.id)) return c.json({ error: duplicateError(organization, name) }, 409);
-  await c.env.DB.prepare(`UPDATE contacts SET ${changes.map(([field]) => `${field}=?`).join(",")},updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .bind(...changes.map(([, value]) => value), user.id, current.id).run();
+  if (await findDuplicate(c.env.DB, user.company_id, organization, name, current.id)) return c.json({ error: duplicateError(organization, name) }, 409);
+  await c.env.DB.prepare(`UPDATE contacts SET ${changes.map(([field]) => `${field}=?`).join(",")},updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?`)
+    .bind(...changes.map(([, value]) => value), user.id, current.id, user.company_id).run();
   await writeAudit(c.env.DB, user, "update", "contact", current.id, `更新聯絡人「${organization}／${name}」：${changes.map(([field]) => LABELS[field]).join("、")}`);
   return c.json({ ok: true });
 });
 
 contactsRoutes.delete("/contacts/:id", async (c) => {
   const user = c.get("user");
-  const current = await c.env.DB.prepare("SELECT id,organization,name,created_by FROM contacts WHERE id=?").bind(c.req.param("id")).first<ContactRow>();
+  const current = await c.env.DB.prepare("SELECT id,organization,name,created_by FROM contacts WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).first<ContactRow>();
   if (!current) return c.json({ error: "找不到聯絡人" }, 404);
   if (user.role !== "admin" && current.created_by !== user.id) return c.json({ error: "只有建立這筆聯絡人的人或管理員可以刪除" }, 403);
-  await c.env.DB.prepare("DELETE FROM contacts WHERE id=?").bind(current.id).run();
+  await c.env.DB.prepare("DELETE FROM contacts WHERE id=? AND company_id=?").bind(current.id, user.company_id).run();
   await writeAudit(c.env.DB, user, "delete", "contact", current.id, `刪除聯絡人「${current.organization}／${current.name}」`);
   return c.json({ ok: true });
 });

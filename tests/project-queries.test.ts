@@ -9,7 +9,7 @@ const admin: AuthUser = {
 };
 
 const row = (id: string, name: string, groupId = "grp") => ({
-  id, name, description: "說明文字", group_id: groupId, group_name: "Group", group_type: "general",
+  id, name, description: "說明文字", group_id: groupId, group_name: "Group", group_type: "general", company_id: "co_uic",
   owner_id: "usr_admin", owner_name: "Admin", visibility: "all", status: "active", progress: 10, parent_id: null,
   progress_mode: "manual", goal_summary: "目標摘要", start_date: null, target_date: null, auto_archive: 0,
   last_activity_at: "2026-07-30T00:00:00Z", risk_level: null, risk_summary: "風險摘要",
@@ -75,10 +75,12 @@ describe("single project lookup", () => {
   it("keeps the list query sorted for the projects page", async () => {
     const { db, statements } = recordingDb([row("prj_a", "甲案")]);
 
-    await projectRows(db as never);
+    await projectRows(db as never, "co_uic");
 
     expect(statements[0].sql).toContain("ORDER BY p.updated_at DESC");
     expect(statements[0].sql).not.toContain("WHERE p.id = ?");
+    // 一定只列一家公司的專案。
+    expect(statements[0].sql).toContain("WHERE g.company_id = ?");
   });
 });
 

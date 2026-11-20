@@ -7,6 +7,7 @@ import { accessFrom, projectRows } from "./projects";
 import { currentTaipeiQuarter, taipeiDate } from "../services/time";
 import { recomputeAutoProgress } from "../services/auto-progress";
 import { runAutomationRules } from "../services/automation";
+import { projectInCompany } from "../services/workspace-scope";
 
 export const generalRoutes = new Hono<AppContext>();
 
@@ -16,7 +17,7 @@ function placeholders(length: number): string {
 
 generalRoutes.get("/dashboard", async (c) => {
   const user = c.get("user");
-  const visible = (await projectRows(c.env.DB)).filter((row) => canViewProject(user, accessFrom(row)));
+  const visible = (await projectRows(c.env.DB, user.company_id)).filter((row) => canViewProject(user, accessFrom(row)));
   const ids = visible.map((row) => row.id);
   const today = taipeiDate();
   let overdue = 0;
@@ -30,7 +31,8 @@ generalRoutes.get("/dashboard", async (c) => {
   // 先前是逐一 await，等於每載入一次首頁就多付 4 趟 D1 往返的延遲。
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const feeIds = ids.length ? visible.filter((row) => canViewFees(user, accessFrom(row))).map((row) => row.id) : [];
-  const qaIds = ids.length && (user.role === "admin" || user.group_id === "grp_qa")
+  // 證照提醒給管理員與 QA：UIC 是 grp_qa，其他公司是自己類型為 qa 的組別。
+  const qaIds = ids.length && (user.role === "admin" || user.group_id === "grp_qa" || user.group_type === "qa")
     ? visible.filter((row) => row.group_type === "qa").map((row) => row.id) : [];
   const inList = placeholders(ids.length);
   const [overdueResult, updateResult, enrollmentResult, feeResult, krCounts, licenseResult, todoCount, weekUpdates] = await Promise.all([
@@ -74,7 +76,8 @@ generalRoutes.get("/metadata", async (c) => {
   const [groups, templates, users] = await Promise.all([
     // 組別與成員只列自己公司的。
     c.env.DB.prepare("SELECT id,name,type FROM groups WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all(),
-    c.env.DB.prepare("SELECT * FROM stage_templates ORDER BY name").all(),
+    // 階段範本也是每家公司各自的。
+    c.env.DB.prepare("SELECT * FROM stage_templates WHERE company_id=? ORDER BY name").bind(c.get("user").company_id).all(),
     c.env.DB.prepare("SELECT u.id,u.name,u.email,u.role,u.group_id FROM users u JOIN groups g ON g.id=u.group_id WHERE u.is_active=1 AND g.company_id=? ORDER BY u.name").bind(c.get("user").company_id).all(),
   ]);
   return c.json({ groups: groups.results, templates: templates.results, users: users.results });
@@ -92,7 +95,7 @@ generalRoutes.post("/todos", async (c) => {
   const projectId = optionalString(body, "project_id");
   if (projectId) {
     const access = await getProjectAccess(c.env.DB, projectId);
-    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+    if (!access || !(await projectInCompany(c.env.DB, projectId, c.get("user").company_id)) || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
   }
   const id = createId("todo");
   await c.env.DB.prepare("INSERT INTO todos (id,user_id,title,due_date,project_id) VALUES (?,?,?,?,?)").bind(id, c.get("user").id, title, optionalString(body, "due_date"), projectId).run();
@@ -112,7 +115,7 @@ generalRoutes.patch("/todos/:id", async (c) => {
   const nextProjectId = "project_id" in body ? optionalString(body, "project_id") : current.project_id;
   if (nextProjectId) {
     const access = await getProjectAccess(c.env.DB, nextProjectId);
-    if (!access || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
+    if (!access || !(await projectInCompany(c.env.DB, nextProjectId, c.get("user").company_id)) || !canEditProgress(c.get("user"), access)) return c.json({ error: "無法關聯此專案" }, 403);
   }
   await c.env.DB.prepare("UPDATE todos SET title=?,due_date=?,project_id=?,done=?,done_at=? WHERE id=? AND user_id=?")
     .bind(optionalString(body, "title") ?? current.title, "due_date" in body ? optionalString(body, "due_date") : current.due_date, nextProjectId, done, done ? new Date().toISOString() : null, c.req.param("id"), c.get("user").id).run();
@@ -174,7 +177,7 @@ generalRoutes.patch("/profile", async (c) => {
     const cleaned = cleanDisplayName(body.name);
     if ("error" in cleaned) return c.json({ error: cleaned.error }, 422);
     if (cleaned.name !== user.name) {
-      const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE id<>? AND lower(trim(name))=lower(?)").bind(user.id, cleaned.name).first();
+      const taken = await c.env.DB.prepare("SELECT 1 FROM users u JOIN groups g ON g.id=u.group_id WHERE u.id<>? AND g.company_id=? AND lower(trim(u.name))=lower(?)").bind(user.id, user.company_id, cleaned.name).first();
       if (taken) return c.json({ error: `已經有人叫「${cleaned.name}」，請換一個名稱（例如加上姓氏）` }, 409);
       await c.env.DB.prepare("UPDATE users SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(cleaned.name, user.id).run();
       await writeAudit(c.env.DB, user, "update", "user", user.id, `顯示名稱由「${user.name}」改為「${cleaned.name}」`);

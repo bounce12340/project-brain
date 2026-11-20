@@ -309,11 +309,11 @@ describe("擴充工具", () => {
   });
 
   it("聯絡人搜尋與已發布法規查詢：限制輸出，不帶審核草稿", async () => {
-    await db.prepare("INSERT INTO contacts (id,organization,name,email) VALUES ('ct1','醫院','林醫師','LIN@example.com'),('ct2','公司','王先生','wang@example.com')").run();
+    await db.prepare("INSERT INTO contacts (id,organization,name,email,company_id) VALUES ('ct1','醫院','林醫師','LIN@example.com','co_uic'),('ct2','公司','王先生','wang@example.com','co_uic')").run();
     expect((await run("search_contacts", { query: "lin@" })).contacts.map((c: { id: string }) => c.id)).toEqual(["ct1"]);
     expect((await run("search_contacts", { query: "公司", limit: 1 })).count).toBe(1);
     await db.prepare("DELETE FROM reg_entries").run();
-    await db.prepare("INSERT INTO reg_entries (id,title,entry_date,product_line,entry_type,status) VALUES ('reg1','藥品公告','2026-10-01','藥品','announcement','published'),('reg2','藥品草稿','2026-10-02','藥品','announcement','draft')").run();
+    await db.prepare("INSERT INTO reg_entries (id,title,entry_date,product_line,entry_type,status,company_id) VALUES ('reg1','藥品公告','2026-10-01','藥品','announcement','published','co_uic'),('reg2','藥品草稿','2026-10-02','藥品','announcement','draft','co_uic')").run();
     const regs = await run("list_regulations", { keyword: "藥品", year: 2026 });
     expect(regs.entries.map((r: { id: string }) => r.id)).toEqual(["reg1"]);
     expect(regs).not.toHaveProperty("pending_count");

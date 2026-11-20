@@ -10,7 +10,7 @@ const admin: AuthUser = {
 };
 
 const projectRow = {
-  id: "prj_1", name: "案件", description: "", group_id: "grp", group_name: "Group", group_type: "general",
+  id: "prj_1", name: "案件", description: "", group_id: "grp", group_name: "Group", group_type: "general", company_id: "co_uic",
   owner_id: "usr_admin", owner_name: "Admin", visibility: "all", status: "active", progress: 10,
   progress_mode: "manual", goal_summary: "", start_date: null, target_date: null, auto_archive: 0,
   last_activity_at: "2026-08-02T00:00:00Z", risk_level: null, risk_summary: null, risk_suggestions: null,

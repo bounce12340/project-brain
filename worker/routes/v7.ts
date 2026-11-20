@@ -82,12 +82,12 @@ function validateSourceFiles(files: File[]): void {
   if (files.some((file) => !/\.(?:txt|pdf)$/i.test(file.name))) throw new Error("INVALID_FILE_TYPE");
 }
 
-async function existingRegwatchKeys(db: D1Database, entries: RegwatchExtractedEntry[]): Promise<Set<string>> {
+async function existingRegwatchKeys(db: D1Database, companyId: string, entries: RegwatchExtractedEntry[]): Promise<Set<string>> {
   const dates = [...new Set(entries.map((entry) => entry.entry_date))];
   const keys = new Set<string>();
   for (let start = 0; start < dates.length; start += 50) {
     const slice = dates.slice(start, start + 50);
-    const rows = await db.prepare(`SELECT entry_date,title FROM reg_entries WHERE entry_date IN (${slice.map(() => "?").join(",")})`).bind(...slice).all<{ entry_date: string; title: string }>();
+    const rows = await db.prepare(`SELECT entry_date,title FROM reg_entries WHERE company_id=? AND entry_date IN (${slice.map(() => "?").join(",")})`).bind(companyId, ...slice).all<{ entry_date: string; title: string }>();
     for (const row of rows.results) keys.add(`${row.entry_date}\u0000${row.title}`);
   }
   return keys;
@@ -123,7 +123,8 @@ const firstError = (stats: { errors: string[] }) => stats.errors.length ? `, fir
 v7Routes.post("/regwatch/tfda-fetch", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可立即抓取 TFDA" }, 403);
-  const stats = await fetchTfdaDrafts(c.env);
+  // 立即抓取只替自己的公司建草稿；每日排程才替所有使用中的公司各建一份。
+  const stats = await fetchTfdaDrafts(c.env, { companyIds: [user.company_id] });
   await writeAudit(c.env.DB, user, "tfda_fetch", "reg_entry", "tfda_rss", `TFDA RSS 抓取：new_drafts=${stats.new_drafts}, skipped_ref=${stats.skipped_ref}, skipped_rejected=${stats.skipped_rejected}, skipped_dup=${stats.skipped_dup}, ai_fallback=${stats.ai_fallback}, errors=${stats.errors.length}${firstError(stats)}`);
   return c.json(stats);
 });
@@ -131,7 +132,7 @@ v7Routes.post("/regwatch/tfda-fetch", async (c) => {
 v7Routes.post("/regwatch/approve-all", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可核准草稿" }, 403);
-  const result = await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft'").run();
+  const result = await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE status='draft' AND company_id=?").bind(user.company_id).run();
   const approved = result.meta.changes ?? 0;
   await writeAudit(c.env.DB, user, "approve_all", "reg_entry", "drafts", `批次核准 TFDA 草稿：approved=${approved}`);
   return c.json({ approved });
@@ -142,7 +143,7 @@ v7Routes.post("/regwatch/drafts/batch", async (c) => {
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可批次處理草稿" }, 403);
   const input = parseRegwatchDraftBatchInput(await c.req.json().catch(() => null));
   if (!input) return c.json({ error: "批次操作須指定 approve 或 delete，並提供 1 至 100 個 id" }, 422);
-  const result = await processRegwatchDraftBatch(c.env, input, user.id);
+  const result = await processRegwatchDraftBatch(c.env, input, user.id, user.company_id);
   await writeAudit(
     c.env.DB,
     user,
@@ -157,10 +158,10 @@ v7Routes.post("/regwatch/drafts/batch", async (c) => {
 v7Routes.post("/regwatch/:id/approve", async (c) => {
   const user = c.get("user");
   if (!canManageRegwatch(user)) return c.json({ error: "僅 RA/PV 組成員與管理員可核准草稿" }, 403);
-  const entry = await c.env.DB.prepare("SELECT title,status FROM reg_entries WHERE id=?").bind(c.req.param("id")).first<{ title: string; status: string }>();
+  const entry = await c.env.DB.prepare("SELECT title,status FROM reg_entries WHERE id=? AND company_id=?").bind(c.req.param("id"), user.company_id).first<{ title: string; status: string }>();
   if (!entry) return c.json({ error: "找不到法規動態" }, 404);
   if (entry.status !== "draft") return c.json({ error: "此法規動態不是待審草稿" }, 422);
-  await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='draft'").bind(c.req.param("id")).run();
+  await c.env.DB.prepare("UPDATE reg_entries SET status='published',updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=? AND status='draft'").bind(c.req.param("id"), user.company_id).run();
   await writeAudit(c.env.DB, user, "approve", "reg_entry", c.req.param("id"), `核准 TFDA 草稿「${entry.title}」`);
   return c.json({ ok: true });
 });
@@ -188,7 +189,7 @@ v7Routes.post("/regwatch/ai-extract", async (c) => {
   try {
     const extracted = await extractRegwatchEntries(c.env, text, input.mode);
     if (!extracted.length) return c.json({ error: "AI 服務暫時無法使用，可改用手動新增" }, 502);
-    const entries = markRegwatchDuplicates(extracted.map((entry) => ({ ...entry, link: input.sourceLink ?? undefined })), await existingRegwatchKeys(c.env.DB, extracted));
+    const entries = markRegwatchDuplicates(extracted.map((entry) => ({ ...entry, link: input.sourceLink ?? undefined })), await existingRegwatchKeys(c.env.DB, user.company_id, extracted));
     return c.json({ entries });
   } catch (error) {
     console.error(JSON.stringify({ message: "regwatch ai extract failed", error: error instanceof Error ? error.message : String(error) }));
@@ -248,8 +249,8 @@ v7Routes.post("/regwatch/batch", async (c) => {
   }
   const fileId = savedFiles[0]?.id ?? null;
   const pendingEntries = (entries as RegwatchExtractedEntry[]).map((entry) => ({ id: createId("reg"), entry }));
-  const statements = pendingEntries.map(({ id, entry }) => c.env.DB.prepare("INSERT OR IGNORE INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,file_id) VALUES (?,?,?,?,?,?,?,?,?,?)")
-    .bind(id, entry.entry_date, entry.entry_type, entry.product_line, entry.category || null, entry.title, entry.key_points || null, entry.link || null, user.id, fileId));
+  const statements = pendingEntries.map(({ id, entry }) => c.env.DB.prepare("INSERT OR IGNORE INTO reg_entries (id,entry_date,entry_type,product_line,category,title,key_points,link,created_by,file_id,company_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    .bind(id, entry.entry_date, entry.entry_type, entry.product_line, entry.category || null, entry.title, entry.key_points || null, entry.link || null, user.id, fileId, user.company_id));
   let results: D1Result[];
   try {
     results = await c.env.DB.batch(statements);

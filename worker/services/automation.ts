@@ -1,4 +1,5 @@
 import { recomputeAutoProgress } from "./auto-progress";
+import { userInProjectCompany } from "./workspace-scope";
 
 export type TriggerType = "task_done" | "task_moved_to_stage" | "milestone_done" | "progress_reached";
 export type ActionType = "notify_user" | "assign_task_to" | "create_todo_for" | "log_update";
@@ -62,6 +63,8 @@ export async function runAutomationRules(
   for (const rule of rules.results) {
     const event = events.find((candidate) => ruleMatches(rule, candidate));
     if (!event) continue;
+    // 規則指定的對象必須和專案同一家公司；組別或帳號後來換了公司的規則直接略過，不發通知、不指派、不建待辦。
+    if (rule.action_param_user && ["notify_user", "assign_task_to", "create_todo_for"].includes(rule.action_type) && !(await userInProjectCompany(db, rule.action_param_user, projectId))) continue;
     if (rule.action_type === "notify_user" && rule.action_param_user) {
       await db.prepare("INSERT INTO notifications (id,user_id,type,title,body,link) VALUES (?,?,?,?,?,?)")
         .bind(id("noti"), rule.action_param_user, "automation", `自動化：${rule.name}`, rule.action_param_text || "規則已觸發。", `/projects/${projectId}${event.taskId ? `?task=${event.taskId}` : ""}`).run();

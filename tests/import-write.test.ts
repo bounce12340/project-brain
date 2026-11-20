@@ -12,7 +12,7 @@ import { createTestD1 } from "./helpers/d1-sqlite";
  */
 
 let db: D1Database;
-const qa = { id: "elvis", email: "elvis@example.com", name: "陳冠宇", role: "member", group_id: "grp_qa", group_name: "QA組", group_type: "qa" } as AuthUser;
+const qa = { id: "elvis", email: "elvis@example.com", name: "陳冠宇", role: "member", group_id: "grp_qa", group_name: "QA組", group_type: "qa", company_id: "co_uic", company_name: "UIC", is_system_admin: 0 } as AuthUser;
 
 const QA_TEMPLATES: Array<[string, string, string[]]> = [
   ["tpl_capa", "CAPA 矯正預防措施", ["開立", "根因調查", "措施擬定", "執行中", "效期確認", "結案"]],
@@ -68,7 +68,7 @@ beforeEach(async () => {
   await db.prepare("DELETE FROM projects").run();
   await db.prepare("INSERT INTO users (id,email,name,password_hash,role,group_id) VALUES (?,?,?,?,?,?)").bind(qa.id, qa.email, qa.name, "x", "member", "grp_qa").run();
   for (const [id, name, stages] of QA_TEMPLATES) {
-    await db.prepare("INSERT INTO stage_templates (id,name,group_id,stages_json) VALUES (?,?,?,?)").bind(id, name, "grp_qa", JSON.stringify(stages)).run();
+    await db.prepare("INSERT INTO stage_templates (id,name,group_id,stages_json,company_id) VALUES (?,?,?,?,?)").bind(id, name, "grp_qa", JSON.stringify(stages), "co_uic").run();
   }
 });
 

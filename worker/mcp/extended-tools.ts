@@ -1,4 +1,5 @@
 import { isIsoDate } from "../services/importer";
+import { companyGroupIds } from "../services/ai-tenant";
 import { COURSE_CATEGORIES, MEETING_TEXT_FIELDS } from "../routes/meetings";
 import { ToolError, type McpTool, type JsonSchema } from "./protocol";
 import type { ToolContext } from "./tools";
@@ -34,7 +35,9 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       async run(args, ctx) {
         const query = text(args.query);
         if (!query) throw new ToolError("請輸入搜尋關鍵字");
-        const { projects } = await ctx.api.get<{ projects: Array<{ id: string; name: string }> }>(`/api/projects?${new URLSearchParams({ keyword: query })}`);
+        const { projects: listed } = await ctx.api.get<{ projects: Array<{ id: string; name: string; group_id?: string }> }>(`/api/projects?${new URLSearchParams({ keyword: query })}`);
+        const groups = await companyGroupIds(ctx.db, ctx.user.company_id); // 只列自己公司的專案
+        const projects = listed.filter((p) => p.group_id !== undefined && groups.has(p.group_id));
         return { results: projects.slice(0, 100).map((p) => ({ id: p.id, title: p.name, url: projectUrl(ctx, p.id) })) };
       },
     },
@@ -43,8 +46,9 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       description: "Fetch an accessible project by the exact id returned by search. Returns id, title, text, url and metadata suitable for citation. Includes background, board, milestones and recent progress; the source is a live snapshot, not a complete audit history.",
       inputSchema: schema({ id: identifier }, ["id"]),
       async run(args, ctx) {
-        const { projects } = await ctx.api.get<{ projects: Array<{ id: string }> }>("/api/projects?summary=1");
-        if (!projects.some((p) => p.id === args.id)) throw new ToolError("找不到專案，或你沒有檢視權限");
+        const { projects } = await ctx.api.get<{ projects: Array<{ id: string; group_id?: string }> }>("/api/projects?summary=1");
+        const groups = await companyGroupIds(ctx.db, ctx.user.company_id);
+        if (!projects.some((p) => p.id === args.id && p.group_id !== undefined && groups.has(p.group_id))) throw new ToolError("找不到專案，或你沒有檢視權限");
         const detail = await helpers.getProject({ project: args.id, updates_limit: 50 }, ctx) as { id: string; name: string };
         return { id: detail.id, title: detail.name, text: JSON.stringify(detail, null, 2), url: projectUrl(ctx, detail.id), metadata: { timezone: "Asia/Taipei", source: "project-brain" } };
       },
@@ -101,6 +105,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         const query = new URLSearchParams();
         if (args.project !== undefined) query.set("project_id", (await helpers.resolveProject(ctx, args.project)).id);
         if (args.kind) query.set("kind", String(args.kind));
+        // /api/meetings 本身只回自己公司的紀錄。
         const { meetings } = await ctx.api.get<{ meetings: Row[] }>(`/api/meetings?${query}`);
         const keyword = text(args.keyword).toLocaleLowerCase();
         const rows = meetings.filter((m) => (!args.from || String(m.starts_at).slice(0, 10) >= String(args.from)) && (!args.to || String(m.starts_at).slice(0, 10) <= String(args.to)) && (!keyword || [m.title, m.summary, m.attendees, m.organizer].some((v) => String(v ?? "").toLocaleLowerCase().includes(keyword))));
@@ -153,6 +158,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
       async run(args, ctx) {
         const query = text(args.query).toLocaleLowerCase();
         if (!query) throw new ToolError("請輸入搜尋關鍵字");
+        // /api/contacts 本身只回自己公司的聯絡人。
         const { contacts } = await ctx.api.get<{ contacts: Row[] }>("/api/contacts");
         return { ...page(contacts.filter((c) => [c.organization, c.name, c.department, c.email, c.notes].some((v) => String(v ?? "").toLocaleLowerCase().includes(query))), args, "contacts"), note: "網站 API 最多取 5000 筆聯絡人。" };
       },
@@ -165,6 +171,7 @@ export function extendedTools(helpers: Helpers): McpTool<ToolContext>[] {
         const query = new URLSearchParams({ view: "published" });
         for (const key of ["keyword", "year", "page"]) if (args[key] !== undefined) query.set(key, String(args[key]));
         const result = await ctx.api.get<{ entries: Row[]; page: number; total: number; total_pages: number }>(`/api/regwatch?${query}`);
+        // /api/regwatch 本身只回自己公司的法規動態（含系統抓取、沒有建立者的 TFDA 條目）。
         return { entries: result.entries, page: result.page, total: result.total, total_pages: result.total_pages };
       },
     },

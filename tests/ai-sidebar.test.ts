@@ -77,7 +77,7 @@ describe("連線診斷", () => {
 describe("AI 小幫手的可見範圍不能比使用者大", () => {
   it("問答只餵使用者看得到的專案", () => {
     const body = handler(routes, "/assistant");
-    expect(body).toMatch(/projectRows\(c\.env\.DB\)\)\.filter\(\(row\) => canViewProject\(user, accessFrom\(row\)\)\)/);
+    expect(body).toMatch(/projectRows\(c\.env\.DB, user\.company_id\)\)\.filter\(\(row\) => canViewProject\(user, accessFrom\(row\)\)\)/);
   });
 
   it("開著的專案要重新確認可見性，不能因為前端說得出 id 就相信", () => {

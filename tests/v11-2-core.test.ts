@@ -13,8 +13,11 @@ class TestD1 {
   constructor() {
     this.sqlite.exec(`
       PRAGMA foreign_keys=ON;
+      CREATE TABLE companies (id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+      INSERT INTO companies (id, status) VALUES ('co_uic', 'active');
       CREATE TABLE reg_entries (
         id TEXT PRIMARY KEY,
+        company_id TEXT,
         entry_date TEXT NOT NULL,
         entry_type TEXT NOT NULL DEFAULT 'announcement',
         product_line TEXT NOT NULL DEFAULT '其他',
@@ -26,14 +29,17 @@ class TestD1 {
         file_id TEXT,
         status TEXT NOT NULL,
         source TEXT NOT NULL,
-        source_ref TEXT UNIQUE,
+        source_ref TEXT,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE UNIQUE INDEX idx_reg_entries_source_ref ON reg_entries(company_id, source_ref) WHERE source_ref IS NOT NULL;
       CREATE TABLE tfda_rejected (
-        source_ref TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
         title TEXT,
         rejected_by TEXT,
-        rejected_at TEXT DEFAULT CURRENT_TIMESTAMP
+        rejected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (company_id, source_ref)
       );
       CREATE TABLE files (
         id TEXT PRIMARY KEY,
@@ -96,8 +102,8 @@ function insertEntry(
   },
 ) {
   db.sqlite.prepare(`INSERT INTO reg_entries
-    (id,entry_date,title,status,source,source_ref)
-    VALUES (?,?,?,?,?,?)`).run(
+    (id,entry_date,title,status,source,source_ref,company_id)
+    VALUES (?,?,?,?,?,?,'co_uic')`).run(
     values.id,
     values.entryDate ?? "2026-07-26",
     values.title,
@@ -126,7 +132,7 @@ describe("SPEC-V11-2 TFDA rejection tombstones", () => {
     const { db, env } = setup();
     insertEntry(db, { id: "draft-tfda", title: "待駁回公告", sourceRef: "991126001" });
 
-    await expect(deleteRegwatchEntry(env, "draft-tfda", "usr_reviewer")).resolves.toMatchObject({
+    await expect(deleteRegwatchEntry(env, "draft-tfda", "usr_reviewer", "co_uic")).resolves.toMatchObject({
       title: "待駁回公告",
     });
 
@@ -146,7 +152,7 @@ describe("SPEC-V11-2 TFDA rejection tombstones", () => {
     await expect(processRegwatchDraftBatch(env, {
       action: "delete",
       ids: ["draft-a", "draft-b"],
-    }, "usr_reviewer")).resolves.toEqual({ processed: 2, skipped: 0 });
+    }, "usr_reviewer", "co_uic")).resolves.toEqual({ processed: 2, skipped: 0 });
 
     expect(db.sqlite.prepare("SELECT source_ref,title,rejected_by FROM tfda_rejected ORDER BY source_ref").all()).toEqual([
       { source_ref: "991126002", title: "公告 A", rejected_by: "usr_reviewer" },
@@ -156,7 +162,7 @@ describe("SPEC-V11-2 TFDA rejection tombstones", () => {
 
   it("fetch 對墓碑 source_ref 計入 skipped_rejected 且不重建", async () => {
     const { db, env } = setup();
-    db.sqlite.prepare("INSERT INTO tfda_rejected(source_ref,title,rejected_by) VALUES (?,?,?)")
+    db.sqlite.prepare("INSERT INTO tfda_rejected(company_id,source_ref,title,rejected_by) VALUES ('co_uic',?,?,?)")
       .run("991126004", "已駁回公告", "usr_reviewer");
     const extract = vi.fn();
     const feed = `<rss><channel><item>
@@ -191,7 +197,7 @@ describe("SPEC-V11-2 TFDA rejection tombstones", () => {
       sourceRef: null,
     });
 
-    await expect(deleteRegwatchEntry(env, "manual-entry", "usr_reviewer")).resolves.not.toBeNull();
+    await expect(deleteRegwatchEntry(env, "manual-entry", "usr_reviewer", "co_uic")).resolves.not.toBeNull();
 
     expect(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tfda_rejected").get()).toEqual({ count: 0 });
   });
@@ -205,7 +211,7 @@ describe("SPEC-V11-2 TFDA rejection tombstones", () => {
       sourceRef: "991126005",
     });
 
-    await expect(deleteRegwatchEntry(env, "published-tfda", "usr_reviewer")).resolves.not.toBeNull();
+    await expect(deleteRegwatchEntry(env, "published-tfda", "usr_reviewer", "co_uic")).resolves.not.toBeNull();
 
     expect(db.sqlite.prepare("SELECT source_ref,title,rejected_by FROM tfda_rejected").get()).toEqual({
       source_ref: "991126005",

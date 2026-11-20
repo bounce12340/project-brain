@@ -27,6 +27,8 @@ export interface ProjectAccess {
   group_id: string;
   visibility: Visibility;
   member_ids: string[];
+  /** 專案所屬公司（專案組別的 company_id）。每個權限檢查都先比對這個，不同公司一律拒絕。 */
+  company_id: string;
 }
 
 export type AppContext = {

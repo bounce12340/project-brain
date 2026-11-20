@@ -161,18 +161,28 @@ export async function analyzeProjectRisk(env: Env, projectId: string, lang: AiLa
 
 /**
  * 排程：進行中與暫停的專案，從沒分析過或分析超過 {@link RISK_MAX_AGE_DAYS} 天的，最舊的先做，
- * 每次最多 {@link RISK_BATCH_SIZE} 個。AI 失敗就停在這一輪、不寫入規則判斷，下一輪再試。
+ * 每家使用中的公司每次最多 {@link RISK_BATCH_SIZE} 個（專案的公司 = 專案組別所屬公司）。
+ * 某家公司的 AI 失敗就停在這家的這一輪、不寫入規則判斷，下一輪再試；不影響其他公司。
  */
 export async function refreshStaleProjectRisks(env: Env, limit = RISK_BATCH_SIZE): Promise<{ analyzed: number; remaining: number; failed: boolean }> {
-  const stale = `status IN ('active','paused') AND (risk_updated_at IS NULL OR risk_updated_at < datetime('now', '-${RISK_MAX_AGE_DAYS} days'))`;
-  const rows = await env.DB.prepare(`SELECT id FROM projects WHERE ${stale} ORDER BY risk_updated_at IS NOT NULL, risk_updated_at, created_at LIMIT ?`).bind(limit).all<{ id: string }>();
+  const stale = `p.status IN ('active','paused') AND (p.risk_updated_at IS NULL OR p.risk_updated_at < datetime('now', '-${RISK_MAX_AGE_DAYS} days'))`;
+  const companies = await env.DB.prepare("SELECT id FROM companies WHERE status='active' ORDER BY created_at, id").all<{ id: string }>();
   let analyzed = 0;
+  let remaining = 0;
   let failed = false;
-  for (const { id } of rows.results) {
-    const outcome = await analyzeProjectRisk(env, id, "zh", { saveFallback: false });
-    if (outcome?.fallback) { failed = true; break; }
-    if (outcome) analyzed += 1;
+  for (const company of companies.results) {
+    try {
+      const rows = await env.DB.prepare(`SELECT p.id FROM projects p JOIN groups g ON g.id=p.group_id WHERE g.company_id=? AND ${stale} ORDER BY p.risk_updated_at IS NOT NULL, p.risk_updated_at, p.created_at LIMIT ?`).bind(company.id, limit).all<{ id: string }>();
+      for (const { id } of rows.results) {
+        const outcome = await analyzeProjectRisk(env, id, "zh", { saveFallback: false });
+        if (outcome?.fallback) { failed = true; break; }
+        if (outcome) analyzed += 1;
+      }
+      remaining += await env.DB.prepare(`SELECT COUNT(*) AS value FROM projects p JOIN groups g ON g.id=p.group_id WHERE g.company_id=? AND ${stale}`).bind(company.id).first<number>("value") ?? 0;
+    } catch (error) {
+      failed = true;
+      console.error(JSON.stringify({ message: "公司風險分析排程失敗", company_id: company.id, error: error instanceof Error ? error.message : String(error) }));
+    }
   }
-  const remaining = await env.DB.prepare(`SELECT COUNT(*) AS value FROM projects WHERE ${stale}`).first<number>("value") ?? 0;
   return { analyzed, remaining, failed };
 }
